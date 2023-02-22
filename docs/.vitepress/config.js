@@ -38,6 +38,10 @@ export default defineConfig({
     nav: nav(),
 
     outlineTitle: 'На этой странице',
+    returnToTopLabel: 'Наверх',
+    sidebarMenuLabel: 'Меню',
+    darkModeSwitchLabel: 'Тема',
+    lastUpdatedText: 'Последнее обновление',
 
     sidebar: {
       '/guide/': sidebarGuide(),
