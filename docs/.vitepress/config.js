@@ -45,7 +45,7 @@ export default defineConfig({
     },
 
     editLink: {
-      pattern: 'https://github.com/GulomovCreative/FetchIt/edit/main/docs/:path',
+      pattern: 'https://github.com/GulomovCreative/FetchIt/edit/master/docs/:path',
       text: 'Редактировать эту страницу на GitHub'
     },
 
@@ -96,7 +96,7 @@ function nav() {
       items: [
         {
           text: 'История изменений',
-          link: 'https://github.com/GulomovCreative/FetchIt/blob/main/core/components/fetchit/docs/changelog.txt'
+          link: 'https://github.com/GulomovCreative/FetchIt/blob/master/core/components/fetchit/docs/changelog.txt'
         }
       ]
     }
