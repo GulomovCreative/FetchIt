@@ -2,10 +2,10 @@ import { createWriteStream } from 'node:fs'
 import { resolve } from 'node:path'
 import { SitemapStream } from 'sitemap'
 
-const links = []
-
 import { createRequire } from 'module'
 import { defineConfig } from 'vitepress'
+
+const links = []
 
 const require = createRequire(import.meta.url)
 const pkg = require('../../package.json')
