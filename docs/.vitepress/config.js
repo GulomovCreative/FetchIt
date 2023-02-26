@@ -179,5 +179,12 @@ function sidebarGuide() {
         { text: 'Micromodal.js', link: '/examples/modals/micromodaljs' },
       ]
     },
+    {
+      text: 'Валидация',
+      collapsed: true,
+      items: [
+        { text: 'Iodine', link: '/examples/validation/iodine' },
+      ]
+    },
   ]
 }
