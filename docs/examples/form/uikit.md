@@ -36,7 +36,6 @@
 1. Добавить атрибуты `data-error="*"` для элементов которые будут отображены с текстом ошибки.
 2. Для совместимости работы с FormIt нужно указать плейсхолдеры со значениями и ошибками.
 3. В UIkit невалидный статус указывается классом `uk-form-danger`, поэтому вам необходимо в системной настройке `fetchit.frontend.input.invalid.class` указать её.
-4. Добавить атрибут `data-fetchit` элементу формы. <Badge type="info" text="Необязательно" />
 
 ::: info Важно
 Валидаторы разметки до сих пор ругаются на пустой атрибут `action`, поэтому в нём необходимо указывать ссылку на страницу.
@@ -44,7 +43,7 @@
 
 ```modx
 <form> // [!code --]
-<form action="[[~[[*id]]]]" method="post" data-fetchit> // [!code ++]
+<form action="[[~[[*id]]]]" method="post"> // [!code ++]
   <fieldset class="uk-fieldset">
     <legend class="uk-legend">Form legend</legend>
     <div class="uk-margin">

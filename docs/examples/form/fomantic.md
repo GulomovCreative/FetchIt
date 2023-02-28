@@ -24,7 +24,6 @@
 1. Добавить атрибуты `data-custom="*"` для родительских элементов и указав в системной настройке `fetchit.frontend.custom.invalid.class` значение `error`.
 2. Добавить атрибуты `data-error="*"` для элементов которые будут отображены с текстом ошибки.
 3. Для совместимости работы с FormIt нужно указать плейсхолдеры со значениями и ошибками.
-4. Добавить атрибут `data-fetchit` элементу формы. <Badge type="info" text="Необязательно" />
 
 ::: info Важно
 Валидаторы разметки до сих пор ругаются на пустой атрибут `action`, поэтому в нём необходимо указывать ссылку на страницу.
@@ -33,7 +32,7 @@
 ::: code-group
 ```modx [Изменения]
 <form class="ui form"> // [!code --]
-<form action="[[~[[*id]]]]" class="ui form" data-fetchit> // [!code ++]
+<form action="[[~[[*id]]]]" class="ui form"> // [!code ++]
   <div class="field"> // [!code --]
   <div class="field" data-custom="name"> // [!code ++]
     <label>Name</label>
@@ -55,7 +54,7 @@
 </form>
 ```
 ```modx [Готовая разметка]
-<form action="[[~[[*id]]]]" class="ui form" data-fetchit>
+<form action="[[~[[*id]]]]" class="ui form">
   <div class="field" data-custom="name">
     <label>Name</label>
     <input type="text" name="name" value="[[+fi.name]]">

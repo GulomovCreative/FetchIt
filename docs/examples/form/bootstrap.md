@@ -25,7 +25,6 @@
 1. Добавить атрибуты `data-error="*"` для элементов которые будут отображены с текстом ошибки.
 2. Для совместимости работы с FormIt нужно указать плейсхолдеры со значениями и ошибками.
 3. Т.к. в Bootstrap при невалидным статусе нужно добавлять класс `is-invalid`, вам необходимо в системной настройке `fetchit.frontend.input.invalid.class` указать `is-invalid`, но в данном случае это значение является значением по умолчанию.
-4. Добавить атрибут `data-fetchit` элементу формы. <Badge type="info" text="Необязательно" />
 
 ::: info Важно
 Валидаторы разметки до сих пор ругаются на пустой атрибут `action`, поэтому в нём необходимо указывать ссылку на страницу.
@@ -33,7 +32,7 @@
 
 ```modx
 <form class="row g-3"> // [!code --]
-<form action="[[~[[*id]]]]" class="row g-3" data-fetchit> // [!code ++]
+<form action="[[~[[*id]]]]" class="row g-3"> // [!code ++]
   <div class="col-md-4">
     <label for="name" class="form-label">First name</label>
     <input type="text" class="form-control" id="name" name="name" value=""> // [!code --]
