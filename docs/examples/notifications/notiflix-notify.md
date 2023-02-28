@@ -8,7 +8,7 @@
 <script type="module">
   import Notiflix from 'https://cdn.jsdelivr.net/npm/notiflix@3/+esm';
 
-  window.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', () => {
     FetchIt.Message = {
       success(message) {
         Notiflix.Notify.success(message);

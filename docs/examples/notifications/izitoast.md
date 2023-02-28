@@ -15,7 +15,7 @@
 <script type="module">
   import izitoast from 'https://cdn.jsdelivr.net/npm/izitoast@1/+esm';
 
-  window.addEventListener('DOMContentLoaded', () => {
+  document.addEventListener('DOMContentLoaded', () => {
     FetchIt.Message = {
       success(message) {
         izitoast.success({ message });

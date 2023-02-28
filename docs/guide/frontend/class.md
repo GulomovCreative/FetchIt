@@ -84,7 +84,7 @@ FetchIt.Message = {
 А в случае с инлайновым скриптом, вам нужно дождаться выполнения скрипта, а это возможно в обработчике события `DOMContentLoaded`. Пример:
 
 ```js
-window.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', () => {
   console.log(FetchIt);
 });
 ```

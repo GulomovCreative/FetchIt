@@ -17,7 +17,7 @@
 - И определить свойство [`FetchIt.Message`](/guide/frontend/class#fetchit-message-object) следующим образом:
 
 ```js
-window.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', () => {
   FetchIt.Message = {
     success(message) {
       alertify.success(message);

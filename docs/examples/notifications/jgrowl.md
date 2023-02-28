@@ -22,7 +22,7 @@
 - Далее, определим свойство [`FetchIt.Message`](/guide/frontend/class#fetchit-message-object) следующим образом:
 
 ```js
-window.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', () => {
   FetchIt.Message = {
     success(message) {
       $.jGrowl(message, { theme: 'custom-success' });
