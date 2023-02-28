@@ -1,6 +1,7 @@
 import { createWriteStream } from 'node:fs'
 import { resolve } from 'node:path'
 import { SitemapStream } from 'sitemap'
+import { highlight } from './highlight'
 
 import { createRequire } from 'module'
 import { defineConfig } from 'vitepress'
@@ -10,7 +11,7 @@ const links = []
 const require = createRequire(import.meta.url)
 const pkg = require('../../package.json')
 
-export default defineConfig({
+export default async () => defineConfig({
   base: '',
   lang: 'ru-RU',
   title: 'FetchIt',
@@ -32,6 +33,8 @@ export default defineConfig({
     headers: {
       level: [0, 0],
     },
+
+    highlight: await highlight(),
   },
 
   themeConfig: {
