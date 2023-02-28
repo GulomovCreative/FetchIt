@@ -14,7 +14,7 @@
 
 Ничего необычного, кроме атрибута `novalidate` добавленного элементу формы. Он нужен для того, чтобы отключить встроенную в браузер валидацию.
 
-```html
+```modx
 <form action="[[~[[*id]]]]" method="post" novalidate>
   <label> Имя
     <input type="text" name="name" value="[[+fi.name]]" />
@@ -167,13 +167,13 @@ document.addEventListener('fetchit:before', (e) => {
 Пример вызова сниппета с валидацией **FormIt**:
 
 :::code-group
-```php [Шаблонизатор MODX]
+```modx
 [[!FetchIt?
   &form=`myForm.tpl`,
   &validate=`name:required:minLength=^5^,email:required:email`
 ]]
 ```
-```php [fenom]
+```fenom
 {'!FetchIt' | snippet : [
   'form' => 'myForm.tpl',
   'validate' => 'name:required:minLength=^5^,email:required:email',

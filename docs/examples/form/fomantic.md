@@ -31,7 +31,7 @@
 :::
 
 ::: code-group
-```html [Изменения]
+```modx [Изменения]
 <form class="ui form"> // [!code --]
 <form action="[[~[[*id]]]]" class="ui form" data-fetchit> // [!code ++]
   <div class="field"> // [!code --]
@@ -54,7 +54,7 @@
   <button class="ui button" type="reset">Reset</button>
 </form>
 ```
-```html [Готовая разметка]
+```modx [Готовая разметка]
 <form action="[[~[[*id]]]]" class="ui form" data-fetchit>
   <div class="field" data-custom="name">
     <label>Name</label>

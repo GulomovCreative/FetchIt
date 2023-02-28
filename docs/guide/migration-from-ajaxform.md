@@ -19,7 +19,7 @@
 Сниппет **FetchIt** сохранил основные параметры нетронутыми, но мы перенесли некоторые из них в [системные настройки](/guide/settings).
 
 :::code-group
-```html [Шаблонизатор MODX]
+```modx
 [[!FetchIt?
   &form=`название чанка`
   &snippet=`FormIt`
@@ -31,7 +31,7 @@
   &formSelector=`` // [!code --]
 ]]
 ```
-```html [fenom]
+```fenom
 {'!FetchIt' | snippet : [
   'form' => 'название чанка',
   'snippet' => 'FormIt',
@@ -49,7 +49,7 @@
 
 Сама разметка формы не изменилась, а лишь изменились [селекторы](/guide/selectors). Посмотрим на чанк с формой для примера **AjaxForm**:
 
-```html
+```modx
 <form action="[[~[[*id]]]]" method="post" class="ajax_form"> // [!code --]
 <form action="[[~[[*id]]]]" method="post"> // [!code ++]
 

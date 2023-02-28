@@ -30,7 +30,7 @@
 Валидаторы разметки до сих пор ругаются на пустой атрибут `action`, поэтому в нём необходимо указывать ссылку на страницу.
 :::
 
-```html
+```modx
 <form> // [!code --]
 <form action="[[~[[*id]]]]" method="post" data-fetchit> // [!code ++]
   <div class="p-form-validation"> // [!code --]

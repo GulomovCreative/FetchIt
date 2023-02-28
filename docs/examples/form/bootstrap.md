@@ -31,7 +31,7 @@
 Валидаторы разметки до сих пор ругаются на пустой атрибут `action`, поэтому в нём необходимо указывать ссылку на страницу.
 :::
 
-```html
+```modx
 <form class="row g-3"> // [!code --]
 <form action="[[~[[*id]]]]" class="row g-3" data-fetchit> // [!code ++]
   <div class="col-md-4">

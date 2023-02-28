@@ -8,7 +8,7 @@
 
 ::: code-group
 
-```php [MODX шаблонизатор]
+```modx
 [[!FetchIt?
   &snippet=`FormIt`
   &form=`myForm.tpl`
@@ -21,7 +21,7 @@
 ]]
 ```
 
-```php [fenom]
+```fenom
 {'!FetchIt' | snippet : [
   'snippet' => 'FormIt',
   'form' => 'myForm.tpl',
@@ -55,7 +55,7 @@
 Остальное на ваш вкус и цвет.
 
 ::: code-group
-```html [myForm.tpl]
+```modx [myForm.tpl]
 <form action="[[~[[*id]]]]" method="post">
   <input type="text" name="name" placeholder="Ваше имя" value="[[+fi.name]]">
   <span class="input-error" data-error="name">[[+fi.error.name]]</span>
