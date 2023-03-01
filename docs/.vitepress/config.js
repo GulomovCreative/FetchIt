@@ -98,6 +98,7 @@ function nav() {
   return [
     { text: 'Документация', link: '/guide/introduction', activeMatch: '/guide/' },
     { text: 'Примеры', link: '/examples/', activeMatch: '/examples/' },
+    { text: '🧡 Поблагодарить', link: 'https://pay.cloudtips.ru/p/d4668b63' },
     {
       text: pkg.version,
       items: [
