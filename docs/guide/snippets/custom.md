@@ -26,13 +26,13 @@ else {
 Вызываем так:
 
 :::code-group
-```modx [Шаблонизатор MODX]
+```modx
 [[!FetchIt?
   &snippet=`MySnippet`
   &form=`tpl.FetchIt.example`
 ]]
 ```
-```fenom [fenom]
+```fenom
 {'!FetchIt' | snippet : [
   'snippet' => 'MySnippet',
   'form' => 'tpl.FetchIt.example',
