@@ -122,7 +122,13 @@ document.addEventListener('fetchit:before', (e) => {
 
 ## Событие `af_complete`
 
-У **AjaxForm** есть одно событие, и оно срабатывает после успешной отправки формы. Аналогичным событием является [fetchit:after](/guide/frontend/events#fetchit-after).
+У **AjaxForm** есть одно событие, и оно срабатывает после ответа сервера. Аналогичным событием является [`fetchit:after`](/guide/frontend/events#fetchit-after).
+
+::: info Помните
+Событие [`fetchit:after`](/guide/frontend/events#fetchit-after) срабатывает в любом случае после ответа сервера, вне зависимости от её статуса.
+
+Если вам необходимо реализовать функционал в зависимости от статуса, то воспользуйтесь событиями [`fetchit:success`](/guide/frontend/events#fetchit-success) и [`fetchit:error`](/guide/frontend/events#fetchit-error).
+:::
 
 Было:
 ```js
