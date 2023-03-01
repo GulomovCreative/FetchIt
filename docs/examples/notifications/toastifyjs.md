@@ -12,7 +12,7 @@
 <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/toastify-js@1/src/toastify.min.css">
 ```
 
-- Создадим экземпляр класса уведомлений и определим свойство [`FetchIt.Message`](/guide/frontend/class#fetchit-message-object) следующим образом:
+- И определим свойство [`FetchIt.Message`](/guide/frontend/class#fetchit-message-object) следующим образом:
 
 ```js
 document.addEventListener('DOMContentLoaded', () => {

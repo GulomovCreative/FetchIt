@@ -24,6 +24,8 @@
 - Либо в своём файловом скрипте с атрибутом подключения `defer`, тогда вам не нужно накладывать обработчик на событие `DOMContentLoaded` и получить прямой доступ к классу FetchIt:
 
 ```js
+import Notiflix from 'https://cdn.jsdelivr.net/npm/notiflix@3/+esm';
+
 FetchIt.Message = {
   success(message) {
     Notiflix.Notify.success(message);
