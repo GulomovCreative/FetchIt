@@ -28,7 +28,7 @@
 
 - Маркетплейса [modstore.pro](https://modstore.pro/packages/utilities/fetchit)
   - [Инструкция](https://modstore.pro/faq) по подключению данного репозитория
-- Оффициального репозитория [modx.com](https://modx.com/extras/)
+- Оффициального репозитория [modx.com](https://modx.com/extras/package/fetchit)
 
 ## Благодарность
 
