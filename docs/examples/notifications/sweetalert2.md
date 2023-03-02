@@ -2,11 +2,13 @@
 
 [SweetAlert2](https://sweetalert2.github.io/) это одна из самых популярных библиотек уведомлений у которой нет зависимостей. Для её подключения нам необходимо проделать следующие действия.
 
-- Подключим скрипты и стили библиотеки. Для простоты примера сделаем это через CDN, в котором они идут одним комплектом.
+- Подключим скрипты и стили библиотеки. Для простоты примера сделаем это через CDN.
 
 ```html
-<!-- All in One -->
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11" defer></script>
+<!-- JavaScript -->
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2-neutral/dist/sweetalert2.all.min.js"></script>
+<!-- CSS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2-neutral/dist/sweetalert2.min.css">
 ```
 
 - И определим свойство [`FetchIt.Message`](/guide/frontend/class#fetchit-message-object) следующим образом:
