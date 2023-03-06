@@ -1,7 +1,6 @@
 import { createWriteStream } from 'node:fs'
 import { resolve } from 'node:path'
 import { SitemapStream } from 'sitemap'
-import { highlight } from './highlight'
 
 import { createRequire } from 'module'
 import { defineConfig } from 'vitepress'
@@ -10,8 +9,24 @@ const links = []
 
 const require = createRequire(import.meta.url)
 const pkg = require('../../package.json')
+const modxGrammar = require('modx-tmlanguage/modx.tmLanguage.json')
+import fenomGrammar from './syntaxes/fenom.tmLanguage.json'
 
-export default async () => defineConfig({
+const modx = {
+  id: 'modx',
+  scopeName: 'text.html.modx',
+  grammar: modxGrammar,
+  aliases: ['modx'],
+}
+
+const fenom = {
+  id: 'fenom',
+  scopeName: 'text.html.fenom',
+  grammar: fenomGrammar,
+  aliases: ['fenom'],
+}
+
+export default defineConfig({
   base: '',
   lang: 'ru-RU',
   title: 'FetchIt',
@@ -34,7 +49,7 @@ export default async () => defineConfig({
       level: [0, 0],
     },
 
-    highlight: await highlight(),
+    languages: [modx, fenom],
   },
 
   themeConfig: {
