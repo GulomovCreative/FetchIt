@@ -2,7 +2,7 @@
 
 class FetchIt
 {
-    public $version = '1.0.0-beta';
+    public $version = '1.0.0';
     /** @var modX $modx */
     public $modx;
     /** @var array $config */
