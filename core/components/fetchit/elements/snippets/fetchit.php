@@ -50,7 +50,7 @@ if (!empty(session_id())) {
 // Call snippet for preparation of form
 $action = !empty($_SERVER['HTTP_X_FETCHIT_ACTION'])
     ? $_SERVER['HTTP_X_FETCHIT_ACTION']
-    : $hash;
+    : $action;
 
 $FetchIt->process($action, $_REQUEST);
 
