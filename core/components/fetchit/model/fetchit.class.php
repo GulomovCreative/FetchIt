@@ -71,24 +71,27 @@ class FetchIt
 
     public function registerScript()
     {
-        if ($_SESSION['fetchit_called'] && $js = trim($this->config['frontend_js'])) {
-            if (preg_match('/\.js/i', $js)) {
-                $js = '<script src="' . str_replace('[[+assetsUrl]]', $this->config['assetsUrl'], $js) . '?v=' . $this->version . '" defer></script>';
-
-                if (stripos($this->modx->resource->_output, $js) === false) {
-                    if (preg_match('#(?:<head>[\s\S]*?)(\s*?<script[\s\S]*?((</script>)|(/>)))(?:[\s\S]*?</head>)#i', $this->modx->resource->_output, $matches)) {
-                        $script = $matches[1];
-                        $script = preg_replace('/<script[\s\S]*<\/script>/', $js, $script);
-                        $output = &$this->modx->resource->_output;
-                        $output = preg_replace('#(<head>[\s\S]*?)(\s*?<script[\s\S]*?</script>)([\s\S]*?</head>)#', "$1$js$2$3", $output, 1);
-                    } else {
-                        $this->modx->regClientStartupScript($js);
-                    }
-                }
-
-                unset($_SESSION['fetchit_called']);
-            }
+        if (!$_SESSION['fetchit_called']) {
+            return;
         }
+
+        $js = trim($this->config['frontend_js']);
+        if (!preg_match('/\.js/i', $js)) {
+            return;
+        }
+
+        $js = '<script src="' . str_replace('[[+assetsUrl]]', $this->config['assetsUrl'], $js) . '?v=' . $this->version . '" defer></script>';
+        $output = &$this->modx->resource->_output;
+
+        if (preg_match('#(?:<head>[\s\S]*?)(\s*?<script[\s\S]*?((</script>)|(/>)))(?:[\s\S]*?</head>)#i', $output, $matches)) {
+            $script = $matches[1];
+            $script = preg_replace('/<script[\s\S]*<\/script>/', $js, $script);
+            $output = preg_replace('#(<head>[\s\S]*?)(\s*?<script[\s\S]*?</script>)([\s\S]*?</head>)#', "$1$js$2$3", $output, 1);
+        } else {
+            $this->modx->regClientStartupScript($js);
+        }
+
+        unset($_SESSION['fetchit_called']);
     }
 
 
