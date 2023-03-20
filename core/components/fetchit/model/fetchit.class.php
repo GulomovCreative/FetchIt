@@ -47,24 +47,9 @@ class FetchIt
      */
     public function loadScript($action)
     {
-        if ($js = trim($this->config['frontend_js'])) {
-            if (preg_match('/\.js/i', $js)) {
-                $js = '<script src="' . str_replace('[[+assetsUrl]]', $this->config['assetsUrl'], $js) . '?v=' . $this->version . '" defer></script>';
+        $_SESSION['fetchit_called'] = true;
 
-                if (stripos($this->modx->resource->_output, $js) === false) {
-                    if (preg_match('#(?:<head>[\s\S]*?)(\s*?<script[\s\S]*?((</script>)|(/>)))(?:[\s\S]*?</head>)#i', $this->modx->resource->_output, $matches)) {
-                        $script = $matches[1];
-                        $script = preg_replace('/<script[\s\S]*<\/script>/', $js, $script);
-                        $this->modx->resource->_output = preg_replace('#(<head>[\s\S]*?)(\s*?<script[\s\S]*?</script>)([\s\S]*?</head>)#', "$1$js$2$3",
-                                        $this->modx->resource->_output, 1);
-                    } else {
-                        $this->modx->regClientStartupScript($js);
-                    }
-                }
-            }
-        }
-
-        $config = $this->modx->toJSON(array(
+        $config = $this->modx->toJSON([
             'action' => $action,
             'assetsUrl' => $this->config['assetsUrl'],
             'actionUrl' => str_replace('[[+assetsUrl]]', $this->config['assetsUrl'], $this->config['actionUrl']),
@@ -74,9 +59,36 @@ class FetchIt
             'pageId' => !empty($this->modx->resource)
                 ? $this->modx->resource->get('id')
                 : 0,
-        ));
+        ]);
         $js_classname = trim($this->modx->getOption('fetchit.frontend.js.classname', null, 'FetchIt', true));
         $this->modx->regClientHTMLBlock("<script>window.addEventListener('DOMContentLoaded', () => {$js_classname}.create($config));</script>");
+    }
+
+
+    /**
+     * Registers the main script first
+     */
+
+    public function registerScript()
+    {
+        if ($_SESSION['fetchit_called'] && $js = trim($this->config['frontend_js'])) {
+            if (preg_match('/\.js/i', $js)) {
+                $js = '<script src="' . str_replace('[[+assetsUrl]]', $this->config['assetsUrl'], $js) . '?v=' . $this->version . '" defer></script>';
+
+                if (stripos($this->modx->resource->_output, $js) === false) {
+                    if (preg_match('#(?:<head>[\s\S]*?)(\s*?<script[\s\S]*?((</script>)|(/>)))(?:[\s\S]*?</head>)#i', $this->modx->resource->_output, $matches)) {
+                        $script = $matches[1];
+                        $script = preg_replace('/<script[\s\S]*<\/script>/', $js, $script);
+                        $output = &$this->modx->resource->_output;
+                        $output = preg_replace('#(<head>[\s\S]*?)(\s*?<script[\s\S]*?</script>)([\s\S]*?</head>)#', "$1$js$2$3", $output, 1);
+                    } else {
+                        $this->modx->regClientStartupScript($js);
+                    }
+                }
+
+                unset($_SESSION['fetchit_called']);
+            }
+        }
     }
 
 
