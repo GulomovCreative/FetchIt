@@ -178,3 +178,5 @@ document.addEventListener('fetchit:before', (e) => {
 ]}
 ```
 :::
+
+Со списком всех валидаторов **FormIt** можете ознакомиться на [сайте документации](https://docs.modx.com/3.x/en/extras/formit/formit.validators) компонента.
