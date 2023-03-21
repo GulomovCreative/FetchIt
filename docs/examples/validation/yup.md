@@ -4,19 +4,9 @@
 
 <!--@include: ../../parts/validation.warning.md-->
 
-## Подключение библиотеки
-
-Для простоты примера подключим её через CDN и воспользуемся импортом.
-
-```html
-<script type="module">
-  import * as yup from 'https://cdn.jsdelivr.net/npm/yup@1/+esm';
-</script>
-```
-
 ## Разметка формы
 
-Ничего необычного, кроме атрибута `novalidate` добавленного элементу формы. Он нужен для того, чтобы отключить встроенную в браузер валидацию.
+Здесь ничего необычного, кроме атрибута `novalidate` добавленного элементу формы. Он нужен для того, чтобы отключить встроенную в браузер валидацию.
 
 ```modx
 <form action="[[~[[*id]]]]" method="post" novalidate>
@@ -30,6 +20,16 @@
   </label>
   <button>Можно?</button>
 </form>
+```
+
+## Подключение библиотеки
+
+Для простоты примера подключим её через CDN и воспользуемся импортом.
+
+```html
+<script type="module">
+  import * as yup from 'https://cdn.jsdelivr.net/npm/yup@1/+esm';
+</script>
 ```
 
 ## Обработчик
@@ -96,7 +96,7 @@
       age: yup // [!code focus]
         .number() // [!code focus]
         .required('Введите свой возраст') // [!code focus]
-        .moreThan(18, 'Вам должно быть больше 18-ти') // [!code focus]
+        .min(18, 'Вам должно быть 18 лет') // [!code focus]
         .integer() // [!code focus]
         .typeError('Поле должно быть числом'), // [!code focus]
     }); // [!code focus]
@@ -125,13 +125,13 @@
       age: yup
         .number()
         .required('Введите свой возраст')
-        .moreThan(18, 'Вам должно быть больше 18-ти')
+        .min(18, 'Вам должно быть 18 лет')
         .integer()
         .typeError('Поле должно быть числом'),
     });
 
     try { // [!code focus]
-      formSchema.validateSync(data, { abortEarly: false }); // [!code focus]
+      formSchema.validateSync(fields, { abortEarly: false }); // [!code focus]
     } catch (err) { // [!code focus]
        // [!code focus]
     } // [!code focus]
@@ -156,13 +156,13 @@
       age: yup
         .number()
         .required('Введите свой возраст')
-        .moreThan(18, 'Вам должно быть больше 18-ти')
+        .min(18, 'Вам должно быть 18 лет')
         .integer()
         .typeError('Поле должно быть числом'),
     });
 
     try {
-      formSchema.validateSync(data, { abortEarly: false });
+      formSchema.validateSync(fields, { abortEarly: false });
     } catch (err) {
       e.preventDefault(); // [!code focus]
 
@@ -191,13 +191,13 @@
       age: yup
         .number()
         .required('Введите свой возраст')
-        .moreThan(18, 'Вам должно быть больше 18-ти')
+        .min(18, 'Вам должно быть 18 лет')
         .integer()
         .typeError('Поле должно быть числом'),
     });
 
     try {
-      formSchema.validateSync(data, { abortEarly: false });
+      formSchema.validateSync(fields, { abortEarly: false });
     } catch (err) {
       e.preventDefault();
 
