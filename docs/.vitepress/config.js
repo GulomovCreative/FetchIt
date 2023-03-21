@@ -203,6 +203,7 @@ function sidebarGuide() {
       collapsed: true,
       items: [
         { text: 'Iodine', link: '/examples/validation/iodine' },
+        { text: 'yup', link: '/examples/validation/yup' },
       ]
     },
   ]
