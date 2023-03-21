@@ -83,12 +83,16 @@ class FetchIt
         $js = '<script src="' . str_replace('[[+assetsUrl]]', $this->config['assetsUrl'], $js) . '?v=' . $this->version . '" defer></script>';
         $output = &$this->modx->resource->_output;
 
+        if (strpos($output, '</head>') === false) {
+            return;
+        }
+
         if (preg_match('#(?:<head>[\s\S]*?)(\s*?<script[\s\S]*?((</script>)|(/>)))(?:[\s\S]*?</head>)#i', $output, $matches)) {
             $script = $matches[1];
             $script = preg_replace('/<script[\s\S]*<\/script>/', $js, $script);
             $output = preg_replace('#(<head>[\s\S]*?)(\s*?<script[\s\S]*?</script>)([\s\S]*?</head>)#', "$1$js$2$3", $output, 1);
         } else {
-            $this->modx->regClientStartupScript($js);
+            $output = preg_replace("/(<\/head>)/i", $js . "\n\\1", $output, 1);
         }
 
         unset($_SESSION['fetchit_called']);
