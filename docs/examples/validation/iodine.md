@@ -42,7 +42,7 @@ document.addEventListener('fetchit:before', (e) => {
 });
 ```
 
-2. Получение ссылок на экземпляры классов **FormData** и **FetchIt**.
+2. Получение ссылок на экземпляры классов [`FormData`](https://developer.mozilla.org/ru/docs/Web/API/FormData) и [`FetchIt`](/guide/frontend/instance).
 
 ```js
 document.addEventListener('fetchit:before', (e) => {
