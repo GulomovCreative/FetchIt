@@ -116,9 +116,7 @@ document.addEventListener('fetchit:before', (e) => {
 });
 ```
 
-::: danger Важно!
-Валидация на стороне клиента небезопасна и должна быть реализована только для удобства пользователя.
-:::
+<!--@include: ../parts/validation.warning.md-->
 
 ## Событие `af_complete`
 
