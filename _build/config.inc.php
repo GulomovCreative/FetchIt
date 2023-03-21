@@ -11,7 +11,7 @@ if (!defined('MODX_CORE_PATH')) {
 return [
     'name' => 'FetchIt',
     'name_lower' => 'fetchit',
-    'version' => '1.0.0',
+    'version' => '1.0.1',
     'release' => 'pl',
     // Install package to site right after build
     'install' => true,
@@ -19,11 +19,13 @@ return [
     'update' => [
         'chunks' => false,
         'snippets' => true,
+        'plugins' => true,
     ],
     // Which elements should be static by default
     'static' => [
         'chunks' => false,
         'snippets' => false,
+        'plugins' => false,
     ],
     // Log settings
     'log_level' => !empty($_REQUEST['download']) ? 0 : 3,
