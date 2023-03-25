@@ -10,8 +10,11 @@ $FetchIt = new FetchIt($modx, $scriptProperties);
 $snippet = $modx->getOption('snippet', $scriptProperties, 'FormIt', true);
 $tpl = $modx->getOption('form', $scriptProperties, 'tpl.FetchIt.example', true);
 
+$versionData = $modx->getVersionData();
+$version = (int) $versionData['version'];
+
 /** @var pdoTools $pdo */
-if (class_exists('pdoTools') && $pdo = $modx->getService('pdoTools')) {
+if ($pdo = $version === 3 ? $modx->services->get('pdoTools') : $modx->getService('pdoTools')) {
     $content = $pdo->getChunk($tpl, $scriptProperties);
 } else {
     $content = $modx->getChunk($tpl, $scriptProperties);
