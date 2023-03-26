@@ -1,4 +1,7 @@
 <?php
+
+use FetchIt\FetchIt;
+
 /** @var modX $modx */
 /** @var FetchIt $FetchIt */
 /** @var array $scriptProperties */
@@ -10,11 +13,14 @@ $FetchIt = new FetchIt($modx, $scriptProperties);
 $snippet = $modx->getOption('snippet', $scriptProperties, 'FormIt', true);
 $tpl = $modx->getOption('form', $scriptProperties, 'tpl.FetchIt.example', true);
 
-$versionData = $modx->getVersionData();
-$version = (int) $versionData['version'];
+$isMODX3 = class_exists('MODX\Revolution\modX');
 
 /** @var pdoTools $pdo */
-if ($pdo = $version === 3 ? $modx->services->get('pdoTools') : $modx->getService('pdoTools')) {
+if ($pdo =
+    $isMODX3 && $modx->services->has('pdoTools') ?
+    $modx->services->get('pdoTools') :
+    $modx->getService('pdoTools')
+) {
     $content = $pdo->getChunk($tpl, $scriptProperties);
 } else {
     $content = $modx->getChunk($tpl, $scriptProperties);

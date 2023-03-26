@@ -72,7 +72,15 @@ class FetchItPackage
     {
         $this->modx = $modX;
         $this->modx->initialize('mgr');
-        $this->modx->getService('error', MODX3 ? modError3::class : 'error.modError');
+
+        if (MODX3) {
+            if (!$this->modx->services->has('error')) {
+                $this->modx->services->add('error', new modError3($this->modx));
+            }
+            $this->modx->error = $this->modx->services->get('error');
+        } else {
+            $this->modx->getService('error', 'error.modError');
+        }
 
         $root = dirname(__FILE__, 2) . '/';
         $assets = $root . 'assets/components/' . $config['name_lower'] . '/';

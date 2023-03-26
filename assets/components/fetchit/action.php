@@ -1,5 +1,6 @@
 <?php
 
+use FetchIt\FetchIt;
 use MODX\Revolution\Error\modError;
 
 if (!file_exists($_SERVER['DOCUMENT_ROOT'] . '/config.core.php')) {
@@ -11,22 +12,21 @@ define('MODX_API_MODE', true);
 require_once $_SERVER['DOCUMENT_ROOT'] . '/config.core.php';
 require_once MODX_CORE_PATH . 'model/modx/modx.class.php';
 
-/** @var modX $modx */
+/** @var MODX\Revolution\modX|modX $modx */
 $modx = new modX();
 $modx->initialize('web');
 
-$versionData = $modx->getVersionData();
-$version = (int) $versionData['version'];
+$isMODX3 = class_exists('MODX\Revolution\modX');
 
-if ($version === 2) {
-    $modx->getService('error', 'error.modError');
-    $modx->setLogLevel(modX::LOG_LEVEL_ERROR);
-    $modx->setLogTarget('FILE');
-} else {
+if ($isMODX3) {
     if (!$modx->services->has('error')) {
         $modx->services->add('error', new modError($modx));
     }
     $modx->error = $modx->services->get('error');
+} else {
+    $modx->getService('error', 'error.modError');
+    $modx->setLogLevel(modX::LOG_LEVEL_ERROR);
+    $modx->setLogTarget('FILE');
 }
 
 // Switch context if need
@@ -39,9 +39,13 @@ if (!empty($_REQUEST['pageId'])) {
     }
 }
 
-require_once $modx->getOption('fetchit.core_path', null, $modx->getOption('core_path') . 'components/fetchit/') . 'model/fetchit.class.php';
 /** @var FetchIt $FetchIt */
-$FetchIt = new FetchIt($modx);
+if ($isMODX3 && $modx->services->has(FetchIt::class)) {
+    $FetchIt = $modx->services->get(FetchIt::class);
+} else {
+    require_once $modx->getOption('fetchit.core_path', null, $modx->getOption('core_path') . 'components/fetchit/') . 'model/fetchit.class.php';
+    $FetchIt = new FetchIt($modx);
+}
 
 if (!isset($_POST)) {
     $modx->sendRedirect($modx->makeUrl($modx->getOption('site_start'), '', '', 'full'));
