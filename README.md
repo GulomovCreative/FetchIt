@@ -2,7 +2,7 @@
 
 Компонент для MODX Revolution для отправки форм с помощью Fetch Api.
 
-![Логотип FetchIt](https://github.com/GulomovCreative/FetchIt/blob/master/fetchit-logo.svg?raw=true&v=3)
+![Логотип FetchIt](https://github.com/GulomovCreative/FetchIt/blob/next/fetchit-logo.svg?raw=true&v=3)
 
 В **CMS/CMF MODX Revolution** есть компонент [FormIt](https://github.com/Sterc/FormIt), который реализует отправку и обработку форм, но он работает стандартным методом браузера, т.е. с перезагрузкой страницы. Но современный веб требователен и прогрессивным шагом является их обработка "на лету". Именно для этих задач нужен **FetchIt** который использует **FormIt**, но Вы сможете использовать и свой скрипт.
 
