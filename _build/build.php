@@ -1,5 +1,38 @@
 <?php
 
+use MODX\Revolution\modX;
+use MODX\Revolution\Error\modError;
+use MODX\Revolution\modCategory;
+use MODX\Revolution\Processors\System\ClearCache;
+use MODX\Revolution\Transport\modPackageBuilder;
+use MODX\Revolution\Transport\modTransportPackage;
+use MODX\Revolution\modSystemSetting;
+use MODX\Revolution\modPlugin;
+use MODX\Revolution\modPluginEvent;
+use MODX\Revolution\modSnippet;
+use MODX\Revolution\modChunk;
+use xPDO\Transport\xPDOTransport;
+use xPDO\xPDO;
+
+/** @var array $config */
+if (!file_exists(__DIR__ . '/config.inc.php')) {
+    exit('Could not load MODX config. Please specify correct MODX_CORE_PATH constant in config file!');
+}
+$config = require(__DIR__ . '/config.inc.php');
+require_once MODX_CORE_PATH . 'model/modx/modx.class.php';
+
+if (!defined('LOG_LEVEL_INFO')) {
+    define('LOG_LEVEL_INFO', xPDO::LOG_LEVEL_INFO);
+}
+
+if (!defined('LOG_LEVEL_ERROR')) {
+    define('LOG_LEVEL_ERROR', xPDO::LOG_LEVEL_ERROR);
+}
+
+if (!defined('XPDO_PHP_VERSION')) {
+    define('XPDO_PHP_VERSION', PHP_VERSION);
+}
+
 class FetchItPackage
 {
     /** @var modX $modx */
@@ -22,21 +55,22 @@ class FetchItPackage
      * @param $core_path
      * @param array $config
      */
-    public function __construct($core_path, array $config = [])
+    public function __construct($modX, array $config = [])
     {
-        /** @noinspection PhpIncludeInspection */
-        require($core_path . 'model/modx/modx.class.php');
-        /** @var modX $modx */
-        $this->modx = new modX();
+        $this->modx = $modX;
         $this->modx->initialize('mgr');
-        $this->modx->getService('error', 'error.modError');
 
-        $root = dirname(dirname(__FILE__)) . '/';
+        if (!$this->modx->services->has('error')) {
+            $this->modx->services->add('error', new modError($this->modx));
+        }
+        $this->modx->error = $this->modx->services->get('error');
+
+        $root = dirname(__FILE__, 2) . '/';
         $assets = $root . 'assets/components/' . $config['name_lower'] . '/';
         $core = $root . 'core/components/' . $config['name_lower'] . '/';
 
         $this->config = array_merge([
-            'log_level' => modX::LOG_LEVEL_INFO,
+            'log_level' => LOG_LEVEL_INFO,
             'log_target' => XPDO_CLI_MODE ? 'ECHO' : 'HTML',
 
             'root' => $root,
@@ -59,12 +93,13 @@ class FetchItPackage
      */
     protected function initialize()
     {
-        $this->builder = $this->modx->getService('transport.modPackageBuilder');
+        $this->builder = new modPackageBuilder($this->modx);
         $this->builder->createPackage($this->config['name_lower'], $this->config['version'], $this->config['release']);
-        $this->builder->registerNamespace($this->config['name_lower'], false, true, '{core_path}components/' . $this->config['name_lower'] . '/');
-        $this->modx->log(modX::LOG_LEVEL_INFO, 'Created Transport Package and Namespace.');
 
-        $this->category = $this->modx->newObject('modCategory');
+        $this->builder->registerNamespace($this->config['name_lower'], false, true, '{core_path}components/' . $this->config['name_lower'] . '/');
+        $this->modx->log(LOG_LEVEL_INFO, 'Created Transport Package and Namespace.');
+
+        $this->category = $this->modx->newObject(modCategory::class);
         $this->category->set('category', $this->config['name']);
         $this->category_attributes = [
             xPDOTransport::UNIQUE_KEY => 'category',
@@ -73,36 +108,7 @@ class FetchItPackage
             xPDOTransport::RELATED_OBJECTS => true,
             xPDOTransport::RELATED_OBJECT_ATTRIBUTES => [],
         ];
-        $this->modx->log(modX::LOG_LEVEL_INFO, 'Created main Category.');
-    }
-
-
-    /**
-     * Update the model
-     */
-    protected function model()
-    {
-        $model_file = $this->config['core'] . 'model/schema/' . $this->config['name_lower'] . '.mysql.schema.xml';
-        if (!file_exists($model_file) || empty(file_get_contents($model_file))) {
-            return;
-        }
-        /** @var xPDOCacheManager $cache */
-        if ($cache = $this->modx->getCacheManager()) {
-            $cache->deleteTree(
-                $this->config['core'] . 'model/' . $this->config['name_lower'] . '/mysql',
-                ['deleteTop' => true, 'skipDirs' => false, 'extensions' => []]
-            );
-        }
-
-        /** @var xPDOManager $manager */
-        $manager = $this->modx->getManager();
-        /** @var xPDOGenerator $generator */
-        $generator = $manager->getGenerator();
-        $generator->parseSchema(
-            $this->config['core'] . 'model/schema/' . $this->config['name_lower'] . '.mysql.schema.xml',
-            $this->config['core'] . 'model/'
-        );
-        $this->modx->log(modX::LOG_LEVEL_INFO, 'Model updated');
+        $this->modx->log(LOG_LEVEL_INFO, 'Created main Category.');
     }
 
 
@@ -115,7 +121,7 @@ class FetchItPackage
         if (!file_exists($this->config['build'] . 'node_modules')) {
             putenv('PATH=' . trim(shell_exec('echo $PATH')) . ':' . dirname(MODX_BASE_PATH) . '/');
             if (file_exists($this->config['build'] . 'package.json')) {
-                $this->modx->log(modX::LOG_LEVEL_INFO, 'Trying to install or update nodejs dependencies');
+                $this->modx->log(LOG_LEVEL_INFO, 'Trying to install or update nodejs dependencies');
                 $output = [
                     shell_exec('cd ' . $this->config['build'] . ' && npm config set scripts-prepend-node-path true && npm install'),
                 ];
@@ -127,12 +133,12 @@ class FetchItPackage
                 ]);
             }
             if ($output) {
-                $this->modx->log(xPDO::LOG_LEVEL_INFO, implode("\n", array_map('trim', $output)));
+                $this->modx->log(LOG_LEVEL_INFO, implode("\n", array_map('trim', $output)));
             }
         }
         if (file_exists($this->config['build'] . 'gulpfile.js')) {
             $output = shell_exec('cd ' . $this->config['build'] . ' && gulp default 2>&1');
-            $this->modx->log(xPDO::LOG_LEVEL_INFO, 'Compile scripts and styles ' . trim($output));
+            $this->modx->log(LOG_LEVEL_INFO, 'Compile scripts and styles ' . trim($output));
         }
     }
 
@@ -142,10 +148,9 @@ class FetchItPackage
      */
     protected function settings()
     {
-        /** @noinspection PhpIncludeInspection */
         $settings = include($this->config['elements'] . 'settings.php');
         if (!is_array($settings)) {
-            $this->modx->log(modX::LOG_LEVEL_ERROR, 'Could not package in System Settings');
+            $this->modx->log(LOG_LEVEL_ERROR, 'Could not package in System Settings');
 
             return;
         }
@@ -157,7 +162,7 @@ class FetchItPackage
         ];
         foreach ($settings as $name => $data) {
             /** @var modSystemSetting $setting */
-            $setting = $this->modx->newObject('modSystemSetting');
+            $setting = $this->modx->newObject(modSystemSetting::class);
             $setting->fromArray(array_merge([
                 'key' => $this->config['name_lower'] . '.' . $name,
                 'namespace' => $this->config['name_lower'],
@@ -165,7 +170,7 @@ class FetchItPackage
             $vehicle = $this->builder->createVehicle($setting, $attributes);
             $this->builder->putVehicle($vehicle);
         }
-        $this->modx->log(modX::LOG_LEVEL_INFO, 'Packaged in ' . count($settings) . ' System Settings');
+        $this->modx->log(LOG_LEVEL_INFO, 'Packaged in ' . count($settings) . ' System Settings');
     }
 
 
@@ -174,10 +179,9 @@ class FetchItPackage
      */
     protected function plugins()
     {
-        /** @noinspection PhpIncludeInspection */
         $plugins = include($this->config['elements'] . 'plugins.php');
         if (!is_array($plugins)) {
-            $this->modx->log(modX::LOG_LEVEL_ERROR, 'Could not package in Plugins');
+            $this->modx->log(LOG_LEVEL_ERROR, 'Could not package in Plugins');
 
             return;
         }
@@ -197,7 +201,7 @@ class FetchItPackage
         $objects = [];
         foreach ($plugins as $name => $data) {
             /** @var modPlugin $plugin */
-            $plugin = $this->modx->newObject('modPlugin');
+            $plugin = $this->modx->newObject(modPlugin::class);
             $plugin->fromArray(array_merge([
                 'name' => $name,
                 'category' => 0,
@@ -212,7 +216,7 @@ class FetchItPackage
             if (!empty($data['events'])) {
                 foreach ($data['events'] as $event_name => $event_data) {
                     /** @var modPluginEvent $event */
-                    $event = $this->modx->newObject('modPluginEvent');
+                    $event = $this->modx->newObject(modPluginEvent::class);
                     $event->fromArray(array_merge([
                         'event' => $event_name,
                         'priority' => 0,
@@ -227,7 +231,7 @@ class FetchItPackage
             $objects[] = $plugin;
         }
         $this->category->addMany($objects);
-        $this->modx->log(modX::LOG_LEVEL_INFO, 'Packaged in ' . count($objects) . ' Plugins');
+        $this->modx->log(LOG_LEVEL_INFO, 'Packaged in ' . count($objects) . ' Plugins');
     }
 
 
@@ -236,22 +240,21 @@ class FetchItPackage
      */
     protected function snippets()
     {
-        /** @noinspection PhpIncludeInspection */
         $snippets = include($this->config['elements'] . 'snippets.php');
         if (!is_array($snippets)) {
-            $this->modx->log(modX::LOG_LEVEL_ERROR, 'Could not package in Snippets');
+            $this->modx->log(LOG_LEVEL_ERROR, 'Could not package in Snippets');
 
             return;
         }
         $this->category_attributes[xPDOTransport::RELATED_OBJECT_ATTRIBUTES]['Snippets'] = [
+            xPDOTransport::UNIQUE_KEY => 'name',
             xPDOTransport::PRESERVE_KEYS => false,
             xPDOTransport::UPDATE_OBJECT => !empty($this->config['update']['snippets']),
-            xPDOTransport::UNIQUE_KEY => 'name',
         ];
         $objects = [];
         foreach ($snippets as $name => $data) {
-            /** @var modSnippet[] $objects */
-            $objects[$name] = $this->modx->newObject('modSnippet');
+            /** @var modSnippet $objects */
+            $objects[$name] = $this->modx->newObject(modSnippet::class);
             $objects[$name]->fromArray(array_merge([
                 'id' => 0,
                 'name' => $name,
@@ -272,7 +275,7 @@ class FetchItPackage
             $objects[$name]->setProperties($properties);
         }
         $this->category->addMany($objects);
-        $this->modx->log(modX::LOG_LEVEL_INFO, 'Packaged in ' . count($objects) . ' Snippets');
+        $this->modx->log(LOG_LEVEL_INFO, 'Packaged in ' . count($objects) . ' Snippets');
     }
 
 
@@ -281,22 +284,21 @@ class FetchItPackage
      */
     protected function chunks()
     {
-        /** @noinspection PhpIncludeInspection */
         $chunks = include($this->config['elements'] . 'chunks.php');
         if (!is_array($chunks)) {
-            $this->modx->log(modX::LOG_LEVEL_ERROR, 'Could not package in Chunks');
+            $this->modx->log(LOG_LEVEL_ERROR, 'Could not package in Chunks');
 
             return;
         }
         $this->category_attributes[xPDOTransport::RELATED_OBJECT_ATTRIBUTES]['Chunks'] = [
+            xPDOTransport::UNIQUE_KEY => 'name',
             xPDOTransport::PRESERVE_KEYS => false,
             xPDOTransport::UPDATE_OBJECT => !empty($this->config['update']['chunks']),
-            xPDOTransport::UNIQUE_KEY => 'name',
         ];
         $objects = [];
         foreach ($chunks as $name => $data) {
-            /** @var modChunk[] $objects */
-            $objects[$name] = $this->modx->newObject('modChunk');
+            /** @var modChunk $objects */
+            $objects[$name] = $this->modx->newObject(modChunk::class);
             $objects[$name]->fromArray(array_merge([
                 'id' => 0,
                 'name' => $name,
@@ -309,7 +311,7 @@ class FetchItPackage
             $objects[$name]->setProperties(@$data['properties']);
         }
         $this->category->addMany($objects);
-        $this->modx->log(modX::LOG_LEVEL_INFO, 'Packaged in ' . count($objects) . ' Chunks');
+        $this->modx->log(LOG_LEVEL_INFO, 'Packaged in ' . count($objects) . ' Chunks');
     }
 
 
@@ -323,7 +325,7 @@ class FetchItPackage
         if (file_exists($filename)) {
             $file = trim(file_get_contents($filename));
 
-            return preg_match('#\<\?php(.*)#is', $file, $data)
+            return preg_match('#<\?php(.*)#is', $file, $data)
                 ? rtrim(rtrim(trim(@$data[1]), '?>'))
                 : $file;
         }
@@ -342,8 +344,9 @@ class FetchItPackage
         $versionSignature = explode('.', $sig[1]);
 
         /** @var modTransportPackage $package */
-        if (!$package = $this->modx->getObject('transport.modTransportPackage', ['signature' => $signature])) {
-            $package = $this->modx->newObject('transport.modTransportPackage');
+        if (!$package = $this->modx->getObject(modTransportPackage::class,
+            ['signature' => $signature])) {
+            $package = $this->modx->newObject(modTransportPackage::class);
             $package->set('signature', $signature);
             $package->fromArray([
                 'created' => date('Y-m-d h:i:s'),
@@ -369,7 +372,7 @@ class FetchItPackage
             $package->save();
         }
         if ($package->install()) {
-            $this->modx->runProcessor('system/clearcache');
+            $this->modx->runProcessor(ClearCache::class);
         }
     }
 
@@ -379,7 +382,6 @@ class FetchItPackage
      */
     public function process()
     {
-        $this->model();
         $this->assets();
 
         // Add elements
@@ -395,7 +397,6 @@ class FetchItPackage
         }
 
         // Create main vehicle
-        /** @var modTransportVehicle $vehicle */
         $vehicle = $this->builder->createVehicle($this->category, $this->category_attributes);
 
         // Files resolvers
@@ -410,28 +411,17 @@ class FetchItPackage
 
         // Add resolvers into vehicle
         $resolvers = scandir($this->config['resolvers']);
-        // Remove Office files
-        if (!in_array('office', $resolvers)) {
-            if ($cache = $this->modx->getCacheManager()) {
-                $dirs = [
-                    $this->config['assets'] . 'js/office',
-                    $this->config['core'] . 'controllers/office',
-                    $this->config['core'] . 'processors/office',
-                ];
-                foreach ($dirs as $dir) {
-                    $cache->deleteTree($dir, ['deleteTop' => true, 'skipDirs' => false, 'extensions' => []]);
-                }
-            }
-            $this->modx->log(modX::LOG_LEVEL_INFO, 'Deleted Office files');
-        }
         foreach ($resolvers as $resolver) {
-            if (in_array($resolver[0], ['_', '.'])) {
+            if (mb_strpos($resolver, '_') === 0 || in_array($resolver, ['.', '..'], true)) {
                 continue;
             }
-            if ($vehicle->resolve('php', ['source' => $this->config['resolvers'] . $resolver])) {
-                $this->modx->log(modX::LOG_LEVEL_INFO, 'Added resolver ' . preg_replace('#\.php$#', '', $resolver));
+            if ($vehicle->resolve('php', ['source' => $this->config['resolvers'].$resolver])) {
+                $this->modx->log(LOG_LEVEL_INFO, 'Added resolver '.preg_replace('#\.php$#', '', $resolver));
+            } else {
+                $this->modx->log(LOG_LEVEL_INFO, 'Could not add resolver "'.$resolver.'" to category.');
             }
         }
+
         $this->builder->putVehicle($vehicle);
 
         $this->builder->setPackageAttributes([
@@ -439,9 +429,9 @@ class FetchItPackage
             'license' => file_get_contents($this->config['core'] . 'docs/license.txt'),
             'readme' => file_get_contents($this->config['core'] . 'docs/readme.txt'),
         ]);
-        $this->modx->log(modX::LOG_LEVEL_INFO, 'Added package attributes and setup options.');
+        $this->modx->log(LOG_LEVEL_INFO, 'Added package attributes and setup options.');
 
-        $this->modx->log(modX::LOG_LEVEL_INFO, 'Packing up transport package zip...');
+        $this->modx->log(LOG_LEVEL_INFO, 'Packing up transport package zip...');
         $this->builder->pack();
 
         if (!empty($this->config['install'])) {
@@ -453,12 +443,8 @@ class FetchItPackage
 
 }
 
-/** @var array $config */
-if (!file_exists(dirname(__FILE__) . '/config.inc.php')) {
-    exit('Could not load MODX config. Please specify correct MODX_CORE_PATH constant in config file!');
-}
-$config = require(dirname(__FILE__) . '/config.inc.php');
-$install = new FetchItPackage(MODX_CORE_PATH, $config);
+$modx = new modX();
+$install = new FetchItPackage($modx, $config);
 $builder = $install->process();
 
 if (!empty($config['download'])) {

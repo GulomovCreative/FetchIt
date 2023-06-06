@@ -1,8 +1,10 @@
 <?php
 
+namespace FetchIt;
+
 class FetchIt
 {
-    public $version = '1.0.1';
+    public $version = '3.0.0';
     /** @var modX $modx */
     public $modx;
     /** @var array $config */
@@ -13,7 +15,7 @@ class FetchIt
      * @param modX $modx
      * @param array $config
      */
-    function __construct(modX &$modx, array $config = array())
+    function __construct(&$modx, array $config = array())
     {
         $this->modx =& $modx;
 

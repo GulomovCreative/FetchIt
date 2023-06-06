@@ -1,17 +1,23 @@
 <?php
+
+use FetchIt\FetchIt;
+
 /** @var modX $modx */
 /** @var FetchIt $FetchIt */
 /** @var array $scriptProperties */
-if (!$modx->loadClass('fetchit', MODX_CORE_PATH . 'components/fetchit/model/', false, true)) {
-    return false;
-}
+
+require_once MODX_CORE_PATH . 'components/fetchit/src/FetchIt.php';
 $FetchIt = new FetchIt($modx, $scriptProperties);
 
 $snippet = $modx->getOption('snippet', $scriptProperties, 'FormIt', true);
 $tpl = $modx->getOption('form', $scriptProperties, 'tpl.FetchIt.example', true);
 
 /** @var pdoTools $pdo */
-if (class_exists('pdoTools') && $pdo = $modx->getService('pdoTools')) {
+if ($pdo =
+    $modx->services->has('pdoTools') ?
+    $modx->services->get('pdoTools') :
+    false
+) {
     $content = $pdo->getChunk($tpl, $scriptProperties);
 } else {
     $content = $modx->getChunk($tpl, $scriptProperties);

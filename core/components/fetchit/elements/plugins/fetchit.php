@@ -6,8 +6,9 @@
 
 switch ($modx->event->name) {
     case 'OnWebPagePrerender':
-        if ($FetchIt = $modx->getService('FetchIt', 'FetchIt', MODX_CORE_PATH . 'components/fetchit/model/')) {
+        if ($FetchIt = $modx->services->get('FetchIt')) {
             $FetchIt->registerScript();
         }
+
         break;
 }
