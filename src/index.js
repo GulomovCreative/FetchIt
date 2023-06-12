@@ -50,6 +50,8 @@ class FetchIt {
         },
       });
 
+      FetchIt?.Message?.before?.();
+
       if (!document.dispatchEvent(beforeEvent)) {
         return;
       }
@@ -69,6 +71,8 @@ class FetchIt {
             fetchit: this,
           },
         });
+
+        FetchIt?.Message?.after?.(response.message);
 
         if (!document.dispatchEvent(afterEvent)) {
           return;
@@ -255,6 +259,23 @@ class FetchIt {
   }
 
   static create(config) {
+    if (
+      config.defaultNotifier
+      && typeof window.Notyf === 'function'
+      && typeof FetchIt.Message === 'undefined'
+    ) {
+      const notyf = new Notyf();
+
+      FetchIt.Message = {
+        success(message) {
+          notyf.success(message);
+        },
+        error(message) {
+          notyf.error(message);
+        },
+      }
+    }
+
     if (!config.action) {
       throw new Error('Нет идентификатора формы FetchIt');
     }

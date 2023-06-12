@@ -21,4 +21,9 @@ return [
         'value' => '',
         'area' => 'fetchit_main',
     ],
+    'frontend.default.notifier' => [
+        'xtype' => 'combo-boolean',
+        'value' => 0,
+        'area' => 'fetchit_main',
+    ],
 ];

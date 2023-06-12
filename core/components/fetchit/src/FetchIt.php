@@ -27,6 +27,8 @@ class FetchIt
             $this->modx->getOption('assets_url') . 'components/fetchit/');
         $frontend_js = $this->modx->getOption('fetchit.frontend.js', null,
             '[[+assetsUrl]]js/default.js');
+        $default_notifier = (bool)$this->modx->getOption('fetchit.frontend.default.notifier', null,
+            true, false);
 
         $this->modx->lexicon->load('fetchit:default');
 
@@ -40,6 +42,8 @@ class FetchIt
             'assetsPath' => $assetsPath,
 
             'frontend_js' => $frontend_js,
+
+            'default_notifier' => $default_notifier,
         ), $config);
     }
 
@@ -58,6 +62,7 @@ class FetchIt
             'inputInvalidClass' => trim(preg_replace('/\s+/', ' ', $this->modx->getOption('fetchit.frontend.input.invalid.class'))),
             'customInvalidClass' => trim(preg_replace('/\s+/', ' ', $this->modx->getOption('fetchit.frontend.custom.invalid.class'))),
             'clearFieldsOnSuccess' => (bool)$this->modx->getOption('clearFieldsOnSuccess', $this->config, 1, false),
+            'defaultNotifier' => $this->config['default_notifier'],
             'pageId' => !empty($this->modx->resource)
                 ? $this->modx->resource->get('id')
                 : 0,
@@ -82,7 +87,16 @@ class FetchIt
             return;
         }
 
-        $js = '<script src="' . str_replace('[[+assetsUrl]]', $this->config['assetsUrl'], $js) . '?v=' . $this->version . '" defer></script>';
+        $assets = ['<script src="' . str_replace('[[+assetsUrl]]', $this->config['assetsUrl'], $js) . '?v=' . $this->version . '" defer></script>'];
+
+        if ($this->config['default_notifier']) {
+            array_unshift($assets,
+                '<link rel="stylesheet" href="' . $this->config['assetsUrl'] . 'lib/notyf.min.css?v=' . $this->version . '" />',
+                '<script src="' . $this->config['assetsUrl'] . 'lib/notyf.min.js?v=' . $this->version . '" defer></script>'
+            );
+        }
+
+        $assets = join($assets, PHP_EOL);
         $output = &$this->modx->resource->_output;
 
         if (strpos($output, '</head>') === false) {
@@ -91,10 +105,10 @@ class FetchIt
 
         if (preg_match('#(?:<head>[\s\S]*?)(\s*?<script[\s\S]*?((</script>)|(/>)))(?:[\s\S]*?</head>)#i', $output, $matches)) {
             $script = $matches[1];
-            $script = preg_replace('/<script[\s\S]*<\/script>/', $js, $script);
-            $output = preg_replace('#(<head>[\s\S]*?)(\s*?<script[\s\S]*?</script>)([\s\S]*?</head>)#', "$1$js$2$3", $output, 1);
+            $script = preg_replace('/<script[\s\S]*<\/script>/', $assets, $script);
+            $output = preg_replace('#(<head>[\s\S]*?)(\s*?<script[\s\S]*?</script>)([\s\S]*?</head>)#', "$1$assets$2$3", $output, 1);
         } else {
-            $output = preg_replace("/(<\/head>)/i", $js . "\n\\1", $output, 1);
+            $output = preg_replace("/(<\/head>)/i", $assets . "\n\\1", $output, 1);
         }
 
         unset($_SESSION['fetchit_called']);
