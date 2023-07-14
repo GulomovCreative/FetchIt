@@ -96,7 +96,7 @@ class FetchIt
             );
         }
 
-        $assets = join($assets, PHP_EOL);
+        $assets = join(PHP_EOL, $assets);
         $output = &$this->modx->resource->_output;
 
         if (strpos($output, '</head>') === false) {
