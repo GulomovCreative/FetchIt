@@ -191,6 +191,10 @@ class FetchIt
             $errors['recaptcha'] = $this->modx->placeholders[$plPrefix . 'error.recaptchav2_error'];
         }
 
+        if (!empty($this->modx->placeholders[$plPrefix . 'error.recaptchav3_error'])) {
+            $errors['recaptcha'] = $this->modx->placeholders[$plPrefix . 'error.recaptchav3_error'];
+        }
+        
         if (!empty($errors)) {
             $message = !empty($this->modx->placeholders[$plPrefix . 'validation_error_message'])
                 ? $this->modx->placeholders[$plPrefix . 'validation_error_message']
