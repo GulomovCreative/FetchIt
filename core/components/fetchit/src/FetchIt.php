@@ -4,7 +4,7 @@ namespace FetchIt;
 
 class FetchIt
 {
-    public $version = '3.1.1';
+    public $version = '3.1.2';
     /** @var modX $modx */
     public $modx;
     /** @var array $config */
