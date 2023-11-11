@@ -3,13 +3,13 @@
 use FetchIt\FetchIt;
 use MODX\Revolution\Error\modError;
 
-if (!file_exists($_SERVER['DOCUMENT_ROOT'] . '/config.core.php')) {
+if (!file_exists(dirname(__DIR__, 3) . '/config.core.php')) {
     header("HTTP/1.1 500 Internal Server Error");
     exit('Server initialization error!');
 }
 
 define('MODX_API_MODE', true);
-require_once $_SERVER['DOCUMENT_ROOT'] . '/config.core.php';
+require_once dirname(__DIR__, 3) . '/config.core.php';
 require_once MODX_CORE_PATH . 'model/modx/modx.class.php';
 
 /** @var MODX\Revolution\modX|modX $modx */
