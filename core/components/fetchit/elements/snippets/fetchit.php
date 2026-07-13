@@ -41,6 +41,9 @@ $FetchIt->loadScript($action);
 // Save snippet properties
 if (!empty(session_id())) {
     // ... to user`s session
+    if (!isset($_SESSION['FetchIt'])) {
+        $_SESSION['FetchIt'] = array();
+    }
     $_SESSION['FetchIt'][$action] = $scriptProperties;
 } else {
     // ... to cache file
