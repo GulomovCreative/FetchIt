@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Custom `successMessage` snippet parameter is now passed to FormIt placeholders in `handleFormIt()`.
+- Custom `successMessage` snippet parameter is now used in the AJAX success response.
 
 ## [1.1.2] - 2023-11-11
 
