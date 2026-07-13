@@ -176,10 +176,6 @@ class FetchIt
             ? $scriptProperties['placeholderPrefix']
             : 'fi.';
 
-        if (!empty($scriptProperties['successMessage'])) {
-            $this->modx->setPlaceholder($plPrefix . 'successMessage', $scriptProperties['successMessage']);
-        }
-
         $errors = array();
         foreach ($scriptProperties['fields'] as $k => $v) {
             if (isset($this->modx->placeholders[$plPrefix . 'error.' . $k])) {
@@ -205,9 +201,11 @@ class FetchIt
                 : 'fetchit_err_has_errors';
             $status = 'error';
         } else {
-            $message = isset($this->modx->placeholders[$plPrefix . 'successMessage'])
-                ? $this->modx->placeholders[$plPrefix . 'successMessage']
-                : 'fetchit_success_submit';
+            $message = !empty($scriptProperties['successMessage'])
+                ? $scriptProperties['successMessage']
+                : (isset($this->modx->placeholders[$plPrefix . 'successMessage'])
+                    ? $this->modx->placeholders[$plPrefix . 'successMessage']
+                    : 'fetchit_success_submit');
             $status = 'success';
         }
 
