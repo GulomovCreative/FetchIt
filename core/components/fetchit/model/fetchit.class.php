@@ -176,6 +176,10 @@ class FetchIt
             ? $scriptProperties['placeholderPrefix']
             : 'fi.';
 
+        if (!empty($scriptProperties['successMessage'])) {
+            $this->modx->setPlaceholder($plPrefix . 'successMessage', $scriptProperties['successMessage']);
+        }
+
         $errors = array();
         foreach ($scriptProperties['fields'] as $k => $v) {
             if (isset($this->modx->placeholders[$plPrefix . 'error.' . $k])) {
