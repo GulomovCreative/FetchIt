@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Whitespace-only FormIt field errors (e.g. `fi.error.email`) no longer mark the form as failed ([#10]). Placeholders are sanitized with `strip_tags` and `html_entity_decode`; blank `validation_error_message` falls back to the lexicon key.
+
 ## [1.1.2] - 2023-11-11
 
 ### Added
