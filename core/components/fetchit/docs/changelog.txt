@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- PHP 8 warning for undefined `$_SESSION['fetchit_called']` in `registerScript()`.
+- PHP 8 warning for undefined `$_SESSION['fetchit_called']` in `registerScript()` ([#7], [#9]).
 - PHP 8 warnings for undefined `$_SESSION['FetchIt']` when saving or reading snippet properties.
 
 ## [1.1.2] - 2023-11-11
