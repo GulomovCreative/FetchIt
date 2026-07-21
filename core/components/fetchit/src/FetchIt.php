@@ -4,7 +4,7 @@ namespace FetchIt;
 
 class FetchIt
 {
-    public $version = '3.1.2';
+    public $version = '3.1.3';
     /** @var modX $modx */
     public $modx;
     /** @var array $config */
@@ -116,6 +116,48 @@ class FetchIt
 
 
     /**
+     * Persist snippet properties for AJAX process(); strip non-serializable values (#17).
+     *
+     * @param string $action
+     * @param array $scriptProperties
+     */
+    public function saveActionProperties($action, array $scriptProperties)
+    {
+        foreach ($scriptProperties as $key => $value) {
+            if (is_object($value) || is_resource($value)) {
+                unset($scriptProperties[$key]);
+            }
+        }
+
+        if (!empty(session_id())) {
+            $_SESSION['FetchIt'][$action] = $scriptProperties;
+        } else {
+            $this->modx->cacheManager->set('fetchit/props_' . $action, $scriptProperties, 3600);
+        }
+    }
+
+
+    /**
+     * Stored action properties, or null if missing.
+     *
+     * @param string $action
+     * @return array|null
+     */
+    public function getActionProperties($action)
+    {
+        $stored = !empty(session_id())
+            ? (isset($_SESSION['FetchIt'][$action]) ? $_SESSION['FetchIt'][$action] : null)
+            : $this->modx->cacheManager->get('fetchit/props_' . $action);
+
+        if (empty($stored) || !is_array($stored)) {
+            return null;
+        }
+
+        return $stored;
+    }
+
+
+    /**
      * Loads snippet for form processing
      *
      * @param $action
@@ -125,16 +167,16 @@ class FetchIt
      */
     public function process($action, array $fields = array())
     {
-        $scriptProperties = !empty(session_id())
-            ? @$_SESSION['FetchIt'][$action]
-            : $this->modx->cacheManager->get('fetchit/props_' . $action);
-
-        if (empty($scriptProperties)) {
+        $stored = $this->getActionProperties($action);
+        if ($stored === null) {
             return $this->error('fetchit_err_action_nf');
         }
 
-        $scriptProperties['fields'] = $fields;
-        $scriptProperties['FetchIt'] = $this;
+        // Do not set FetchIt=>$this here (PDO in session, #17).
+        // Custom snippets: $modx->services->get('FetchIt').
+        $scriptProperties = array_merge($stored, array(
+            'fields' => $fields,
+        ));
 
         $name = $scriptProperties['snippet'];
         $set = '';
