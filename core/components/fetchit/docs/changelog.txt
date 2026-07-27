@@ -10,6 +10,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Form-level success and validation messages now update in the form on AJAX submit via `[data-success]` and `[data-validation-error]` ([#11]). Custom templates need these attributes instead of `[[+fi.success:…]]` conditionals for AJAX.
+- Whitespace-only FormIt field errors (e.g. `fi.error.email`) no longer mark the form as failed ([#10]). Placeholders are sanitized with `strip_tags` and `html_entity_decode`; blank `validation_error_message` falls back to the lexicon key.
+- PHP 8 warning for undefined `$_SESSION['fetchit_called']` in `registerScript()` ([#7], [#9]).
+- PHP 8 warnings for undefined `$_SESSION['FetchIt']` when saving or reading snippet properties.
+- Dead `!isset($_POST)` check in `action.php` replaced with `empty($_POST)` so GET requests redirect correctly.
+- Session/cache storage for snippet properties moved to `storeActionProperties()` / `loadActionProperties()`.
 - Custom `successMessage` from the FetchIt snippet call is used in the AJAX success response ([#5], [#11]).
 
 ## [1.1.2] - 2023-11-11

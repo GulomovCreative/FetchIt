@@ -1,0 +1,55 @@
+name: Баг
+description: Что-то сломалось или ведёт себя не так
+title: "[bug]: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Что произошло
+      description: Факт. Без догадок.
+      placeholder: При отправке формы с пустым email в data-error="email" попадает пробел, форма показывается как ошибочная.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Ожидание
+      placeholder: Поле без ошибки валидации не подсвечивается, data-error остаётся пустым.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Шаги
+      placeholder: |
+        1. Вызвать FetchIt с tpl.FetchIt.example
+        2. Оставить email пустым / заполнить валидным
+        3. Отправить форму
+      render: markdown
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Версии
+      description: "FetchIt / MODX / PHP"
+      placeholder: "FetchIt 1.1.2, MODX 2.8.4-pl, PHP 7.4.33"
+    validations:
+      required: true
+  - type: textarea
+    id: snippet
+    attributes:
+      label: Вызов сниппета / фрагмент чанка
+      description: Минимальный код, который воспроизводит баг.
+      render: php
+    validations:
+      required: false
+  - type: textarea
+    id: extra
+    attributes:
+      label: Логи / ответ JSON
+      description: Текст warning, Network → Response.
+      render: shell
+    validations:
+      required: false
