@@ -51,7 +51,9 @@ class FetchIt
      */
     public function loadScript($action)
     {
-        $_SESSION['fetchit_called'] = true;
+        if (!empty(session_id())) {
+            $_SESSION['fetchit_called'] = true;
+        }
 
         $config = $this->modx->toJSON([
             'action' => $action,
@@ -76,7 +78,7 @@ class FetchIt
 
     public function registerScript()
     {
-        if (!$_SESSION['fetchit_called']) {
+        if (empty($_SESSION['fetchit_called'])) {
             return;
         }
 
@@ -114,6 +116,54 @@ class FetchIt
 
 
     /**
+     * @param string $action
+     *
+     * @return string
+     */
+    protected function getActionPropertiesCacheKey($action)
+    {
+        return 'fetchit/props_' . $action;
+    }
+
+
+    /**
+     * @param string $action
+     * @param array $scriptProperties
+     */
+    public function storeActionProperties($action, array $scriptProperties)
+    {
+        if (!empty(session_id())) {
+            if (!isset($_SESSION['FetchIt'])) {
+                $_SESSION['FetchIt'] = array();
+            }
+            $_SESSION['FetchIt'][$action] = $scriptProperties;
+            return;
+        }
+
+        $this->modx->cacheManager->set(
+            $this->getActionPropertiesCacheKey($action),
+            $scriptProperties,
+            3600
+        );
+    }
+
+
+    /**
+     * @param string $action
+     *
+     * @return array|null
+     */
+    public function loadActionProperties($action)
+    {
+        if (!empty(session_id()) && isset($_SESSION['FetchIt'][$action])) {
+            return $_SESSION['FetchIt'][$action];
+        }
+
+        return $this->modx->cacheManager->get($this->getActionPropertiesCacheKey($action));
+    }
+
+
+    /**
      * Loads snippet for form processing
      *
      * @param $action
@@ -123,9 +173,7 @@ class FetchIt
      */
     public function process($action, array $fields = array())
     {
-        $scriptProperties = !empty(session_id())
-            ? @$_SESSION['FetchIt'][$action]
-            : $this->modx->cacheManager->get('fetchit/props_' . $action);
+        $scriptProperties = $this->loadActionProperties($action);
 
         if (empty($scriptProperties)) {
             return $this->error('fetchit_err_action_nf');
