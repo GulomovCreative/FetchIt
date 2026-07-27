@@ -249,9 +249,11 @@ class FetchIt
                 : 'fetchit_err_has_errors';
             $status = 'error';
         } else {
-            $message = isset($this->modx->placeholders[$plPrefix . 'successMessage'])
-                ? $this->modx->placeholders[$plPrefix . 'successMessage']
-                : 'fetchit_success_submit';
+            $message = !empty($scriptProperties['successMessage'])
+                ? $scriptProperties['successMessage']
+                : (isset($this->modx->placeholders[$plPrefix . 'successMessage'])
+                    ? $this->modx->placeholders[$plPrefix . 'successMessage']
+                    : 'fetchit_success_submit');
             $status = 'success';
         }
 

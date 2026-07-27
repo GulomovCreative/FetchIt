@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PHP 8 warnings for undefined `$_SESSION['FetchIt']` when saving or reading snippet properties.
 - Dead `!isset($_POST)` check in `action.php` replaced with `empty($_POST)` so GET requests redirect correctly.
 - Session/cache storage for snippet properties moved to `storeActionProperties()` / `loadActionProperties()`.
+- Custom `successMessage` snippet parameter is now used in the AJAX success response.
 
 ## [1.1.2] - 2023-11-11
 
