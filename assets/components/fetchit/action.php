@@ -21,7 +21,7 @@ if (!empty($_REQUEST['pageId'])) {
 $FetchIt = $modx->getService('fetchit', 'FetchIt', $modx->getOption('fetchit.core_path', null,
         $modx->getOption('core_path') . 'components/fetchit/') . 'model/', []);
 
-if (!isset($_POST)) {
+if (empty($_POST)) {
     $modx->sendRedirect($modx->makeUrl($modx->getOption('site_start'), '', '', 'full'));
 } elseif (empty($_SERVER['HTTP_X_FETCHIT_ACTION'])) {
     echo $FetchIt->error('fetchit_err_action_ns');

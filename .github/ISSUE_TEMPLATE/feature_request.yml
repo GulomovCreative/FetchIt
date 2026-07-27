@@ -1,0 +1,27 @@
+name: Улучшение
+description: Новое поведение или API
+title: "[feat]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Задача
+      description: Какую боль закрываете. Не «было бы круто».
+      placeholder: В кастомном чанке success-блок не обновляется после AJAX, только после reload.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Предложение
+      placeholder: Добавить [data-success] и обновлять его из response.message, как [data-error] для полей.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Альтернативы
+      description: Что уже пробовали или почему не хватает событий fetchit:success.
+    validations:
+      required: false

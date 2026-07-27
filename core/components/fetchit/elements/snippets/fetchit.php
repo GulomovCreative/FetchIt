@@ -39,13 +39,7 @@ if (preg_match('#<form.*?data-fetchit=(?:"|\')(.*?)(?:"|\')#i', $content, $match
 $FetchIt->loadScript($action);
 
 // Save snippet properties
-if (!empty(session_id())) {
-    // ... to user`s session
-    $_SESSION['FetchIt'][$action] = $scriptProperties;
-} else {
-    // ... to cache file
-    $modx->cacheManager->set('fetchit/props_' . $action, $scriptProperties, 3600);
-}
+$FetchIt->storeActionProperties($action, $scriptProperties);
 
 // Call snippet for preparation of form
 $action = !empty($_SERVER['HTTP_X_FETCHIT_ACTION'])
