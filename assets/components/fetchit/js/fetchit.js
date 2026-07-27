@@ -99,6 +99,10 @@
             }
 
             for (const [ name, message ] of Object.entries(response.data)) {
+              if (!FetchIt.hasErrorMessage(message)) {
+                continue;
+              }
+
               this.setError(name, message);
             }
 
@@ -188,6 +192,10 @@
     }
 
     setError (name, message = '') {
+      if (!FetchIt.hasErrorMessage(message)) {
+        return;
+      }
+
       this.getFields(name).forEach(field => {
         if (this.inputInvalidClasses) {
           field.classList.add(...this.inputInvalidClasses);
@@ -204,8 +212,9 @@
       }
 
       this.getErrors(name).forEach(error => {
+        const safeMessage = FetchIt.sanitizeHTML(String(message)).trim();
         error.style.display = '';
-        error.innerHTML = message;
+        error.textContent = safeMessage;
       });
     }
 
@@ -259,6 +268,10 @@
 
     static sanitizeHTML (str = '') {
       return str.replace(/(<([^>]+)>)/gi, '');
+    }
+
+    static hasErrorMessage (message = '') {
+      return FetchIt.sanitizeHTML(String(message)).trim() !== '';
     }
 
     static create(config) {
