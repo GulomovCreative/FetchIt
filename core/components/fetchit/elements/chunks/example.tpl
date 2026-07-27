@@ -27,11 +27,7 @@
       <button type="submit">[[%fetchit_submit]]</button>
     </div>
 
-    [[+fi.success:is=`1`:then=`
-    <div role="alert">[[+fi.successMessage]]</div>
-    `]]
-    [[+fi.validation_error:is=`1`:then=`
-    <div role="alert">[[+fi.validation_error_message]]</div>
-    `]]
+    <div role="alert" data-success style="display: [[+fi.success:is=`1`:then=``:else=`none`]];">[[+fi.successMessage]]</div>
+    <div role="alert" data-validation-error style="display: [[+fi.validation_error:is=`1`:then=``:else=`none`]];">[[+fi.validation_error_message]]</div>
   </fieldset>
 </form>

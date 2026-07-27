@@ -40,6 +40,7 @@ class FetchIt {
       this.formData.set('pageId', this.config.pageId);
 
       this.clearErrors();
+      this.clearFormMessages();
 
       const beforeEvent = new CustomEvent(FetchIt.events.before, {
         cancelable: true,
@@ -103,10 +104,13 @@ class FetchIt {
             this.setError(name, message);
           }
 
+          this.setFormMessage('validation', response.message);
+
           return;
         }
 
         this.clearErrors();
+        this.setFormMessage('success', response.message);
         FetchIt?.Message?.success?.(response.message);
 
         const successEvent = new CustomEvent(FetchIt.events.success, {
@@ -127,7 +131,9 @@ class FetchIt {
         }
 
         if (this.config.clearFieldsOnSuccess) {
+          this.preserveFormMessagesOnReset = true;
           this.form.reset();
+          this.preserveFormMessagesOnReset = false;
         }
       } catch (e) {
         console.error(e);
@@ -146,6 +152,9 @@ class FetchIt {
 
       document.dispatchEvent(resetEvent);
       this.clearErrors();
+      if (!this.preserveFormMessagesOnReset) {
+        this.clearFormMessages();
+      }
       FetchIt?.Message?.reset?.();
     });
 
@@ -212,6 +221,33 @@ class FetchIt {
       const safeMessage = FetchIt.sanitizeHTML(String(message)).trim();
       error.style.display = '';
       error.textContent = safeMessage;
+    });
+  }
+
+  clearFormMessages () {
+    this.form.querySelectorAll('[data-success], [data-validation-error]').forEach(element => {
+      element.style.display = 'none';
+      element.textContent = '';
+    });
+  }
+
+  setFormMessage (type, message = '') {
+    const safeMessage = FetchIt.sanitizeHTML(String(message)).trim();
+    if (safeMessage === '') {
+      return;
+    }
+
+    const showSelector = type === 'success' ? '[data-success]' : '[data-validation-error]';
+    const hideSelector = type === 'success' ? '[data-validation-error]' : '[data-success]';
+
+    this.form.querySelectorAll(hideSelector).forEach(element => {
+      element.style.display = 'none';
+      element.textContent = '';
+    });
+
+    this.form.querySelectorAll(showSelector).forEach(element => {
+      element.style.display = '';
+      element.textContent = safeMessage;
     });
   }
 
