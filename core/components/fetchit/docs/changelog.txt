@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fatal error `Serialization of 'PDO' is not allowed` on frontend with PHP 8.3+ (#17). Action properties are stripped of objects/resources before session/cache write; `$scriptProperties['FetchIt']` is no longer injected — use `$modx->getService('fetchit', 'FetchIt', MODX_CORE_PATH . 'components/fetchit/model/', [])`.
 - Form-level success and validation messages now update in the form on AJAX submit via `[data-success]` and `[data-validation-error]` ([#11]). Custom templates need these attributes instead of `[[+fi.success:…]]` conditionals for AJAX.
 - Whitespace-only FormIt field errors (e.g. `fi.error.email`) no longer mark the form as failed ([#10]). Placeholders are sanitized with `strip_tags` and `html_entity_decode`; blank `validation_error_message` falls back to the lexicon key.
 - PHP 8 warning for undefined `$_SESSION['fetchit_called']` in `registerScript()` ([#7], [#9]).
