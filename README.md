@@ -1,39 +1,39 @@
 # FetchIt
 
-Компонент для MODX Revolution для отправки форм с помощью Fetch Api.
+Компонент [MODX Revolution](https://modx.com/) для отправки форм через [Fetch API](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API) без перезагрузки страницы.
 
 ![Логотип FetchIt](https://github.com/GulomovCreative/FetchIt/blob/master/fetchit-logo.svg?raw=true&v=3)
 
-В **CMS/CMF MODX Revolution** есть компонент [FormIt](https://github.com/Sterc/FormIt), который реализует отправку и обработку форм, но он работает стандартным методом браузера, т.е. с перезагрузкой страницы. Но современный веб требователен и прогрессивным шагом является их обработка "на лету". Именно для этих задач нужен **FetchIt** который использует **FormIt**, но Вы сможете использовать и свой скрипт.
+На сервере по умолчанию вызывается [FormIt](https://github.com/Sterc/FormIt). Можно указать свой сниппет.
 
-Для таких целей есть компонент [AjaxForm](https://github.com/modx-pro/AjaxForm) (хоть **FetchIt** по серверной части практически 1 в 1), но у **FetchIt** есть ряд преимуществ:
+## Особенности
 
-## Никаких зависимостей
+- без jQuery, [jquery-form](https://github.com/jquery-form/form/) и [jGrowl](https://github.com/stanlemon/jGrowl) (в отличие от [AjaxForm](https://github.com/modx-pro/AjaxForm))
+- минифицированный скрипт ~4 КБ, подключается с атрибутом `defer`
+- своя вёрстка, уведомления и модалки через события и JS API
 
-**FetchIt** не имеет никаких зависимостей, тогда как у **AjaxForm** их три: Большая библиотека [jquery](https://github.com/jquery/jquery) и плагины к нему [jquery-form](https://github.com/jquery-form/form/) и  [jGrowl](https://github.com/stanlemon/jGrowl).
+## Ветки и версии
 
-Если с последним особых проблем нет (можно переопределить методы для показа уведомлений), то с двумя первыми всё сложно.
+| Ветка | Пакет | MODX |
+|-------|-------|------|
+| `master` | 1.x | 2.x |
+| `next` | 3.x | 3.x |
 
-## Современный код
-
-Минифицированный скрипт весит 5 килобайт и сниппет регистрирует его с атрибутом `defer` тем самым не мешая загрузке страницы.
-
-## Удобство
-
-Встраивание вашей вёрстки, добавление всплывающих сообщений и модальных окон, это задачи которые Вы сможете решить очень просто.
+На [extras.modx.com](https://extras.modx.com/package/fetchit): **3.1.2-pl** (MODX 3) и **1.1.2-pl** (MODX 2).
 
 ## Документация
 
-У компонента есть подробная [документация](https://docs.modx.pro/components/fetchit/) с десятками примеров на все случаи.
+[docs.modx.pro/components/fetchit](https://docs.modx.pro/components/fetchit/)
 
-# Установка
+## Установка
 
-Компонент доступен бесплатно для установки через Менеджер пакетов из:
+Через Менеджер пакетов:
 
-- Маркетплейса [modstore.pro](https://modstore.pro/packages/utilities/fetchit)
-  - [Инструкция](https://modstore.pro/faq) по подключению данного репозитория
-- Оффициального репозитория [modx.com](https://modx.com/extras/package/fetchit)
+- [modstore.pro](https://modstore.pro/packages/utilities/fetchit) ([как подключить репозиторий](https://modstore.pro/faq))
+- [modx.com](https://modx.com/extras/package/fetchit)
+
+Либо соберите transport-пакет из `_build/` в этом репозитории.
 
 ---
 
-💗 Угостить автора чашкой кофе можно здесь: [cloudtips.ru](https://pay.cloudtips.ru/p/d4668b6e)
+Поддержать автора: [cloudtips.ru](https://pay.cloudtips.ru/p/d4668b6e)
