@@ -1,16 +1,26 @@
 # FetchIt
 
-Компонент [MODX Revolution](https://modx.com/) для отправки форм через [Fetch API](https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API) без перезагрузки страницы.
+Компонент для MODX Revolution для отправки форм с помощью Fetch API.
 
 ![Логотип FetchIt](https://github.com/GulomovCreative/FetchIt/blob/master/fetchit-logo.svg?raw=true&v=3)
 
-На сервере по умолчанию вызывается [FormIt](https://github.com/Sterc/FormIt). Можно указать свой сниппет.
+В CMS/CMF MODX Revolution есть компонент [FormIt](https://github.com/Sterc/FormIt): он отправляет и обрабатывает формы стандартным методом браузера, с перезагрузкой страницы. FetchIt использует FormIt (или ваш сниппет) и обрабатывает формы «на лету» через Fetch API.
 
-## Особенности
+Близкий по серверной части аналог — [AjaxForm](https://github.com/modx-pro/AjaxForm). У FetchIt другие плюсы на фронте:
 
-- без jQuery, [jquery-form](https://github.com/jquery-form/form/) и [jGrowl](https://github.com/stanlemon/jGrowl) (в отличие от [AjaxForm](https://github.com/modx-pro/AjaxForm))
-- минифицированный скрипт ~4 КБ, подключается с атрибутом `defer`
-- своя вёрстка, уведомления и модалки через события и JS API
+## Никаких зависимостей
+
+FetchIt не тянет внешних JS-библиотек. У AjaxForm их три: [jQuery](https://github.com/jquery/jquery), [jquery-form](https://github.com/jquery-form/form/) и [jGrowl](https://github.com/stanlemon/jGrowl).
+
+Уведомления (jGrowl) можно переопределить и в AjaxForm. jQuery и jquery-form заменить сложнее.
+
+## Современный код
+
+Минифицированный скрипт весит около 4 КБ. Сниппет подключает его с атрибутом `defer`, чтобы не блокировать загрузку страницы.
+
+## Удобство
+
+Свою вёрстку, всплывающие сообщения и модальные окна подключаете через события и JS API. Примеры есть в документации.
 
 ## Ветки и версии
 
@@ -23,17 +33,18 @@
 
 ## Документация
 
-[docs.modx.pro/components/fetchit](https://docs.modx.pro/components/fetchit/)
+Подробная [документация](https://docs.modx.pro/components/fetchit/) с примерами: разметка, уведомления, модалки, валидация.
 
-## Установка
+# Установка
 
-Через Менеджер пакетов:
+Компонент бесплатно ставится через Менеджер пакетов из:
 
-- [modstore.pro](https://modstore.pro/packages/utilities/fetchit) ([как подключить репозиторий](https://modstore.pro/faq))
-- [modx.com](https://modx.com/extras/package/fetchit)
+- маркетплейса [modstore.pro](https://modstore.pro/packages/utilities/fetchit)
+  - [инструкция](https://modstore.pro/faq) по подключению репозитория
+- официального репозитория [modx.com](https://modx.com/extras/package/fetchit)
 
 Либо соберите transport-пакет из `_build/` в этом репозитории.
 
 ---
 
-Поддержать автора: [cloudtips.ru](https://pay.cloudtips.ru/p/d4668b6e)
+💗 Угостить автора чашкой кофе: [cloudtips.ru](https://pay.cloudtips.ru/p/d4668b6e)
