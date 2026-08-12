@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main, next]
+  pull_request:
+
+jobs:
+  syntax:
+    name: PHP syntax (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4']
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      - name: Syntax check (php -l)
+        run: |
+          set -e
+          while IFS= read -r -d '' file; do
+            php -l "$file"
+          done < <(find . -name '*.php' -not -path './.git/*' -not -path './vendor/*' -not -path './node_modules/*' -not -path './modx/*' -print0)
+
+  assets:
+    name: Frontend build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Build assets
+        run: |
+          npm ci
+          npm run build
