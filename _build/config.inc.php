@@ -1,11 +1,15 @@
 <?php
 
 if (!defined('MODX_CORE_PATH')) {
-    $path = dirname(__FILE__);
-    while (!file_exists($path . '/core/config/config.inc.php') && (strlen($path) > 1)) {
-        $path = dirname($path);
+    if (getenv('MODX_CORE_PATH')) {
+        define('MODX_CORE_PATH', rtrim(getenv('MODX_CORE_PATH'), '/') . '/');
+    } else {
+        $path = dirname(__FILE__);
+        while (!file_exists($path . '/core/config/config.inc.php') && (strlen($path) > 1)) {
+            $path = dirname($path);
+        }
+        define('MODX_CORE_PATH', $path . '/core/');
     }
-    define('MODX_CORE_PATH', $path . '/core/');
 }
 
 return [
@@ -13,8 +17,8 @@ return [
     'name_lower' => 'fetchit',
     'version' => '1.1.3',
     'release' => 'pl',
-    // Install package to site right after build
-    'install' => true,
+    // Install package to site right after build; PKG_DIST=1 only builds it
+    'install' => !getenv('PKG_DIST'),
     // Which elements should be updated on package upgrade
     'update' => [
         'chunks' => false,
