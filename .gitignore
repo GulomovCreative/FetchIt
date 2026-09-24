@@ -25,7 +25,6 @@ cache
 *.sw?
 
 config.core.php
-assets/components/fetchit/lib
 
 # Tooling
 vendor

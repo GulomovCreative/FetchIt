@@ -58,7 +58,7 @@ response="$(submit "$action" -F email=ann@example.com -F "topics[]=news" -F "top
 check "array fields arrive as arrays" json '.data.topics == ["news", "events"]' "$response"
 check "an uploaded file reaches the snippet" json '.data.file == "hello.txt:5"' "$response"
 
-for asset in lib/notyf.min.js lib/notyf.min.css js/fetchit.min.js; do
+for asset in js/fetchit.min.js js/fetchit.d.ts; do
     status="$(curl -s -o /dev/null -w '%{http_code}' "$base/assets/components/fetchit/$asset" || true)"
     check "the package ships $asset" test "$status" = 200
 done

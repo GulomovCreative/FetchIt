@@ -384,8 +384,8 @@ class FetchItPackage
      */
     public function process()
     {
-        // The notifier comes from npm run build and is not in git.
-        foreach (['lib/notyf.min.js', 'lib/notyf.min.css', 'js/fetchit.js', 'js/fetchit.min.js'] as $file) {
+        // The script and its types come from npm run build.
+        foreach (['js/fetchit.js', 'js/fetchit.min.js', 'js/fetchit.d.ts'] as $file) {
             if (!is_file($this->config['assets'] . $file)) {
                 $this->fail("assets/components/fetchit/{$file} is missing: run npm ci && npm run build first.");
             }

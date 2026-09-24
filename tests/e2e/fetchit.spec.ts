@@ -216,14 +216,17 @@ test.describe('default notifier @notifier', () => {
     await page.goto(`/index.php?id=${fixtures.custom}`)
   })
 
-  test('links Notyf and shows the answers as toasts', async ({ page }) => {
-    await expect(page.locator('link[href*="lib/notyf.min.css"]')).toHaveCount(1)
+  test('shows the answers as toasts, with no other files', async ({ page }) => {
+    await expect(page.locator('link[rel="stylesheet"][href*="components/fetchit"]')).toHaveCount(0)
 
     await page.getByRole('button', { name: 'Send' }).click()
-    await expect(page.locator('.notyf__toast', { hasText: 'Check the form' })).toBeVisible()
+    const error = page.getByRole('alert').filter({ hasText: 'Check the form' })
+    await expect(error).toBeVisible()
+    await error.getByRole('button', { name: 'Close' }).click()
+    await expect(error).toHaveCount(0)
 
     await page.locator('input[name="email"]').fill('ann@example.com')
     await page.getByRole('button', { name: 'Send' }).click()
-    await expect(page.locator('.notyf__toast', { hasText: 'Thanks, ann@example.com' })).toBeVisible()
+    await expect(page.getByRole('status').filter({ hasText: 'Thanks, ann@example.com' })).toBeVisible()
   })
 })

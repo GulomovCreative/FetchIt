@@ -94,6 +94,38 @@ describe('FetchIt.create', () => {
     expect(() => FetchIt.create(config({ action: '' }))).toThrow()
   })
 
+  it('turns the built-in notifier on when the config asks for it', async () => {
+    const form = mountForm()
+    FetchIt.create(config({ defaultNotifier: true, notifierCloseLabel: 'Закрыть' }))
+    vi.stubGlobal('fetch', answerWith({ success: true, message: 'Thanks', data: [] }))
+
+    await submit(form)
+
+    const toast = document.querySelector('.fetchit-toast[data-type="success"]')
+    expect(toast?.textContent).toContain('Thanks')
+    expect(toast?.querySelector('button')?.getAttribute('aria-label')).toBe('Закрыть')
+  })
+
+  it('leaves a FetchIt.Message of the site alone', async () => {
+    const own = { success: vi.fn() }
+    FetchIt.Message = own
+    const form = mountForm()
+    FetchIt.create(config({ defaultNotifier: true }))
+    vi.stubGlobal('fetch', answerWith({ success: true, message: 'Thanks', data: [] }))
+
+    await submit(form)
+
+    expect(FetchIt.Message).toBe(own)
+    expect(own.success).toHaveBeenCalledWith('Thanks')
+    expect(document.querySelector('.fetchit-toast')).toBeNull()
+  })
+
+  it('gives the built-in notifier to sites without the setting', () => {
+    FetchIt.createNotifier().error('Failed')
+
+    expect(document.querySelector('.fetchit-toast[data-type="error"]')?.textContent).toContain('Failed')
+  })
+
   it('rejects anything but a form', () => {
     // For scripts without types: the types allow only a form.
     expect(() => new FetchIt(document.createElement('div') as unknown as HTMLFormElement, config())).toThrow()
