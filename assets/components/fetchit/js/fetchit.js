@@ -2,6 +2,7 @@
 	window.FetchIt = class FetchIt {
 		static forms = [];
 		static instances = /* @__PURE__ */ new Map();
+		static defaultRequestErrorMessage = "Could not send the form. Please try again.";
 		static events = {
 			before: "fetchit:before",
 			success: "fetchit:success",
@@ -28,6 +29,7 @@
 		prepareEvents() {
 			this.form.addEventListener("submit", async (event) => {
 				event.preventDefault();
+				if (this.pending) return;
 				this.formData = new FormData(this.form);
 				this.formData.set("pageId", String(this.config.pageId));
 				this.clearErrors();
@@ -42,14 +44,19 @@
 				});
 				FetchIt?.Message?.before?.();
 				if (!document.dispatchEvent(beforeEvent)) return;
+				this.pending = true;
 				this.disableFields();
+				let shown = false;
 				try {
 					let response;
 					try {
-						response = await (await fetch(this.request, {
+						const query = await fetch(this.request, {
 							method: "post",
 							body: this.formData
-						})).json();
+						});
+						const body = await query.json();
+						if (!FetchIt.isResponse(body)) throw new Error(`FetchIt: unexpected answer from ${query.url || this.config.actionUrl} (HTTP ${query.status})`);
+						response = body;
 					} catch (error) {
 						this.failRequest(error);
 						return;
@@ -77,15 +84,17 @@
 							}
 						});
 						if (!document.dispatchEvent(errorEvent)) return;
-						for (const [name, message] of Object.entries(response.data)) {
+						for (const [name, message] of Object.entries(response.data ?? {})) {
 							if (!FetchIt.hasErrorMessage(message)) continue;
 							this.setError(name, message);
 						}
 						this.setFormMessage("validation", response.message);
+						shown = true;
 						return;
 					}
 					this.clearErrors();
 					this.setFormMessage("success", response.message);
+					shown = true;
 					FetchIt?.Message?.success?.(response.message);
 					const successEvent = new CustomEvent(FetchIt.events.success, { detail: {
 						form: this.form,
@@ -101,9 +110,11 @@
 						this.preserveFormMessagesOnReset = false;
 					}
 				} catch (error) {
-					console.error(error);
+					if (shown) console.error(error);
+					else this.failRequest(error);
 				} finally {
 					this.enableFields();
+					this.pending = false;
 				}
 			});
 			this.form.addEventListener("reset", () => {
@@ -123,13 +134,15 @@
 			});
 		}
 		/**
-		* The request failed or the answer was not JSON (a PHP error page,
-		* a redirect): tell the visitor instead of failing silently.
+		* fetch() rejected (network error), the body was not a FetchIt answer
+		* (a PHP error page, HTML after a redirect, JSON from a firewall), or
+		* handling the answer threw: tell the visitor instead of failing silently.
+		* An HTTP error status with a FetchIt answer goes the normal way.
 		*/
 		failRequest(error) {
 			console.error(error);
-			const message = this.config.requestErrorMessage ?? "";
-			if (message) FetchIt?.Message?.error?.(message);
+			const message = this.config.requestErrorMessage || FetchIt.defaultRequestErrorMessage;
+			FetchIt?.Message?.error?.(message);
 			const errorEvent = new CustomEvent(FetchIt.events.error, {
 				cancelable: true,
 				detail: {
@@ -236,10 +249,14 @@
 			return this.config.customInvalidClass ? this.config.customInvalidClass.split(" ") : [];
 		}
 		/**
-		* Escape a value for a double-quoted attribute selector.
+		* Escape a value for a double-quoted attribute selector: only " and \
+		* need it there.
 		*/
 		static escapeAttribute(value) {
 			return value.replace(/["\\]/g, "\\$&");
+		}
+		static isResponse(value) {
+			return typeof value === "object" && value !== null && typeof value.success === "boolean";
 		}
 		static sanitizeHTML(str = "") {
 			return str.replace(/(<([^>]+)>)/gi, "");

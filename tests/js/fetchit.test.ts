@@ -52,6 +52,10 @@ function respond(body: unknown) {
   return fetch
 }
 
+function answerWith(body: unknown, status = 200) {
+  return vi.fn(async () => ({ status, url: actionUrl, json: async () => body }))
+}
+
 async function submit(form: HTMLFormElement) {
   form.dispatchEvent(new Event('submit', { cancelable: true }))
   // The handler awaits fetch() and json(); let both settle.
@@ -287,7 +291,26 @@ describe('reset', () => {
   })
 })
 
-describe('known bugs', () => {
+describe('binding and fields', () => {
+  it('ignores a second submit while the first request is in flight', async () => {
+    const form = mountForm()
+    FetchIt.create(config())
+    let finish: (() => void) | undefined
+    const fetch = vi.fn(() => new Promise(resolve => {
+      finish = () => resolve({ json: async () => ({ success: true, message: '', data: [] }) })
+    }))
+    vi.stubGlobal('fetch', fetch)
+
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    finish?.()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(fetch).toHaveBeenCalledOnce()
+    expect(field(form, 'email').disabled).toBe(false)
+  })
+
   it('binds a form once when create() runs twice for the same action', async () => {
     // Two identical snippet calls give the same action and two create() calls.
     const form = mountForm()
@@ -317,6 +340,22 @@ describe('known bugs', () => {
 
     expect(() => FetchIt.create(config())).not.toThrow()
     expect(warn).toHaveBeenCalled()
+  })
+
+  it('handles field names with backslashes and custom error elements', async () => {
+    document.body.innerHTML = `
+      <form data-fetchit="${action}">
+        <input name="a\\b" value="">
+        <div data-custom="a\\b"></div>
+      </form>`
+    const form = document.querySelector('form') as HTMLFormElement
+    FetchIt.create(config())
+    respond({ success: false, message: 'Errors', data: { 'a\\b': 'Required' } })
+
+    await submit(form)
+
+    expect(field(form, 'a\\b').getAttribute('aria-invalid')).toBe('true')
+    expect(element(form, '[data-custom]').classList.contains('has-error')).toBe(true)
   })
 
   it('handles field names with quotes', async () => {
@@ -357,6 +396,8 @@ describe('failed requests', () => {
   const cases = {
     'a response that is not JSON': vi.fn(async () => ({ json: async () => { throw new SyntaxError('Unexpected token <') } })),
     'a network failure': vi.fn(async () => { throw new TypeError('Failed to fetch') }),
+    'JSON from something else (a firewall)': answerWith({ error: 'Forbidden' }, 403),
+    'a null answer': answerWith(null),
   }
 
   for (const [name, fetch] of Object.entries(cases)) {
@@ -371,4 +412,40 @@ describe('failed requests', () => {
       expect(field(form, 'email').disabled).toBe(false)
     })
   }
+
+  it('falls back to a built-in message when the config has none', async () => {
+    const form = mountForm()
+    FetchIt.create(config())
+    vi.stubGlobal('fetch', cases['a network failure'])
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await submit(form)
+
+    expect(element(form, '[data-validation-error]').textContent).toBe(FetchIt.defaultRequestErrorMessage)
+  })
+
+  it('leaves the form message to a handler that cancels fetchit:error', async () => {
+    const form = mountForm()
+    FetchIt.create(config({ requestErrorMessage }))
+    vi.stubGlobal('fetch', cases['a network failure'])
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    on('fetchit:error', event => event.preventDefault())
+
+    await submit(form)
+
+    expect(element(form, '[data-validation-error]').textContent).toBe('')
+  })
+
+  it('tells the visitor when handling the answer throws', async () => {
+    const form = mountForm()
+    FetchIt.create(config({ requestErrorMessage }))
+    respond({ success: false, message: 'Errors', data: { email: 'Required' } })
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    FetchIt.Message = { error: vi.fn(), after: () => { throw new Error('broken notifier') } }
+
+    await submit(form)
+
+    expect(FetchIt.Message.error).toHaveBeenCalledWith(requestErrorMessage)
+    expect(field(form, 'email').disabled).toBe(false)
+  })
 })
