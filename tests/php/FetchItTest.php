@@ -474,15 +474,43 @@ class FetchItTest extends TestCase
         $this->assertStringNotContainsString('<link', $html);
     }
 
+    private function scriptConfig()
+    {
+        $this->modx->htmlBlocks = [];
+        $this->fetchit()->loadScript('abc');
+        preg_match('/\.create\((\{.*?\})\);/', $this->modx->htmlBlocks[0], $match);
+
+        return json_decode($match[1], true);
+    }
+
     public function testTheScriptGetsTheNotifierAndItsCloseLabel()
     {
         $this->modx->options['fetchit.frontend.default.notifier'] = true;
-        $this->fetchit()->loadScript('abc');
-        preg_match('/\.create\((\{.*?\})\);/', $this->modx->htmlBlocks[0], $match);
-        $config = json_decode($match[1], true);
+        $this->modx->lexicon->entries['fetchit_notifier_close'] = 'Закрыть';
+
+        $config = $this->scriptConfig();
 
         $this->assertTrue($config['defaultNotifier']);
-        $this->assertSame('fetchit_notifier_close', $config['notifierCloseLabel']);
+        $this->assertSame('Закрыть', $config['notifierCloseLabel']);
+    }
+
+    public function testWithoutTheLexiconEntryTheScriptLabelsTheButtonItself()
+    {
+        // MODX gives the key back; the button would be read as "fetchit_notifier_close".
+        $this->modx->options['fetchit.frontend.default.notifier'] = true;
+
+        $this->assertSame('', $this->scriptConfig()['notifierCloseLabel']);
+    }
+
+    public function testNoCloseLabelWithoutTheNotifier()
+    {
+        $this->modx->options['fetchit.frontend.default.notifier'] = false;
+        $this->modx->lexicon->entries['fetchit_notifier_close'] = 'Закрыть';
+
+        $config = $this->scriptConfig();
+
+        $this->assertFalse($config['defaultNotifier']);
+        $this->assertSame('', $config['notifierCloseLabel']);
     }
 
     public function testNothingIsInjectedWhenTheSnippetDidNotRun()

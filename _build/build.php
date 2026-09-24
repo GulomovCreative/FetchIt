@@ -390,6 +390,10 @@ class FetchItPackage
                 $this->fail("assets/components/fetchit/{$file} is missing: run npm ci && npm run build first.");
             }
         }
+        // Notyf of a build before FetchIt 4 would go into the package.
+        if (is_dir($this->config['assets'] . 'lib')) {
+            $this->fail('assets/components/fetchit/lib is left from an older build: run npm run build, which removes it.');
+        }
 
         // Add elements
         $elements = scandir($this->config['elements']);

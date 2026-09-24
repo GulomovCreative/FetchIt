@@ -15,6 +15,12 @@ class SetupResolverTest extends TestCase
     /** @var Closure */
     private $downloadPackage;
 
+    /** @var Closure */
+    private $notifierNotes;
+
+    /** @var modX */
+    private $modx;
+
     /** @var string */
     private $dir;
 
@@ -27,6 +33,8 @@ class SetupResolverTest extends TestCase
         $this->assertTrue(require dirname(__DIR__, 2) . '/_build/resolvers/setup.php');
         $this->readAnswer = $readAnswer;
         $this->downloadPackage = $downloadPackage;
+        $this->notifierNotes = $notifierNotes;
+        $this->modx = $transport->xpdo;
 
         $this->dir = sys_get_temp_dir() . '/fetchit-setup-' . uniqid();
         mkdir($this->dir);
@@ -147,5 +155,35 @@ class SetupResolverTest extends TestCase
         $this->assertNotNull(call_user_func($this->downloadPackage, $this->dir . '/empty.zip', $this->dir . '/b.zip'));
         $this->assertFileDoesNotExist($this->dir . '/a.zip');
         $this->assertFileDoesNotExist($this->dir . '/b.zip');
+    }
+
+    public function testAnUpgradeWithoutTheNotifierSaysNothingOfIt()
+    {
+        $this->modx->options['fetchit.frontend.default.notifier'] = false;
+
+        $this->assertSame([], ($this->notifierNotes)());
+    }
+
+    public function testAnUpgradeWithTheNotifierSaysNotyfIsGone()
+    {
+        $this->modx->options['fetchit.frontend.default.notifier'] = true;
+        $this->modx->options['fetchit.frontend.js'] = '[[+assetsUrl]]js/fetchit.min.js';
+
+        $notes = ($this->notifierNotes)();
+
+        $this->assertCount(1, $notes);
+        $this->assertSame(modX::LOG_LEVEL_WARN, $notes[0][0]);
+        $this->assertStringContainsString('no longer loads Notyf', $notes[0][1]);
+    }
+
+    public function testAnUpgradeWithTheNotifierAndAScriptOfTheSiteSaysBoth()
+    {
+        $this->modx->options['fetchit.frontend.default.notifier'] = true;
+        $this->modx->options['fetchit.frontend.js'] = '/assets/js/my-fetchit.js';
+
+        $notes = ($this->notifierNotes)();
+
+        $this->assertCount(2, $notes);
+        $this->assertStringContainsString('fetchit.frontend.js is "/assets/js/my-fetchit.js"', $notes[1][1]);
     }
 }

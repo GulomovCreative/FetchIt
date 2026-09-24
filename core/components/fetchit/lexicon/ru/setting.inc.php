@@ -7,7 +7,7 @@ $_lang['setting_fetchit.frontend.js.classname'] = 'Название JavaScript �
 $_lang['setting_fetchit.frontend.input.invalid.class'] = 'CSS класс который будет добавлен элементу не прошедшему валидацию.';
 $_lang['setting_fetchit.frontend.custom.invalid.class'] = 'CSS класс который будет добавлен кастомному элементу по ключу не прошедшему валидацию.';
 $_lang['setting_fetchit.frontend.default.notifier'] = 'Показывать ответы уведомлениями.';
-$_lang['setting_fetchit.frontend.default.notifier_desc'] = 'Если "Да", ответы сервера показываются ещё и уведомлениями в углу страницы, если сайт не задал свой FetchIt.Message. Уведомления встроены в скрипт FetchIt, других файлов не подключается.';
+$_lang['setting_fetchit.frontend.default.notifier_desc'] = 'Если "Да", ответы сервера и ошибки отправки показываются ещё и уведомлениями в углу страницы, если только сайт не задал свой FetchIt.Message. Уведомления встроены в поставляемый скрипт FetchIt, других файлов не подключается.';
 
 $_lang['area_fetchit_protection'] = 'Защита от спама';
 $_lang['setting_fetchit.protection'] = 'Защита от спама';

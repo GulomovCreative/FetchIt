@@ -7,7 +7,7 @@ $_lang['setting_fetchit.frontend.js.classname'] = 'The JavaScript class name who
 $_lang['setting_fetchit.frontend.input.invalid.class'] = 'CSS class that will be added to invalid input field.';
 $_lang['setting_fetchit.frontend.custom.invalid.class'] = 'CSS class that will be added to invalid custom element.';
 $_lang['setting_fetchit.frontend.default.notifier'] = 'Show the answers as notifications.';
-$_lang['setting_fetchit.frontend.default.notifier_desc'] = 'If "Yes", the answers of the server are also shown as notifications in a corner of the page, unless the site sets its own FetchIt.Message. The notifier is part of the FetchIt script: no other files are loaded.';
+$_lang['setting_fetchit.frontend.default.notifier_desc'] = 'If "Yes", the answers of the server and failed submissions are also shown as notifications in a corner of the page, unless the site sets its own FetchIt.Message. The notifier is part of the bundled FetchIt script: no other files are loaded.';
 
 $_lang['area_fetchit_protection'] = 'Spam protection';
 $_lang['setting_fetchit.protection'] = 'Spam protection';
