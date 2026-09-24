@@ -210,6 +210,7 @@
 @media (max-width: 30rem) { .fetchit-toasts { inset-inline: 1rem; width: auto; max-width: none; } }
 `;
 	let warned = false;
+	let origin = null;
 	function addStyles() {
 		if (document.getElementById(STYLE_ID)) return;
 		const style = document.createElement("style");
@@ -310,14 +311,13 @@
 		let timer;
 		let hovered = false;
 		let focused = false;
-		let before = null;
 		const remove = () => {
 			clearTimeout(timer);
 			if (toast.contains(document.activeElement)) {
 				const others = Array.from(toasts.querySelectorAll(".fetchit-toast__close")).filter((button) => !toast.contains(button));
 				const next = others.find((button) => toast.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING) ?? others.at(-1);
 				if (next) next.focus();
-				else if (focusable(before)) before.focus();
+				else if (focusable(origin)) origin.focus();
 				else document.activeElement?.blur();
 			}
 			toast.remove();
@@ -337,7 +337,8 @@
 			start();
 		});
 		toast.addEventListener("focusin", (event) => {
-			if (!focused && !toast.contains(event.relatedTarget)) before = event.relatedTarget;
+			const from = event.relatedTarget;
+			if (!from || !toasts.contains(from)) origin = from;
 			focused = true;
 			stop();
 		});

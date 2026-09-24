@@ -223,6 +223,23 @@ describe('the built-in notifier', () => {
     expect(document.activeElement).toBe(input)
   })
 
+  it('gives the focus back after the focus went from toast to toast', () => {
+    document.body.innerHTML = '<input id="email">'
+    const input = document.querySelector<HTMLInputElement>('#email')!
+    const notifier = createNotifier()
+    notifier.error('One')
+    notifier.error('Two')
+    const [first, second] = toasts()
+
+    input.focus()
+    closeButton(first!).focus()
+    closeButton(first!).click()
+    expect(document.activeElement).toBe(closeButton(second!))
+    closeButton(second!).click()
+
+    expect(document.activeElement).toBe(input)
+  })
+
   it('keeps the three newest, but not away from the focus', () => {
     const notifier = createNotifier()
     for (const message of ['One', 'Two', 'Three']) {
