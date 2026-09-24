@@ -1,106 +1,103 @@
-# FetchIt
+<p align="center"><img src=".github/logo/logo@2x.png" width="320" alt="FetchIt"></p>
 
-Компонент для MODX Revolution для отправки форм с помощью Fetch API.
+**Формы на MODX без перезагрузки страницы, с защитой от спама из коробки.**
 
-![Логотип FetchIt](https://github.com/GulomovCreative/FetchIt/blob/master/fetchit-logo.svg?raw=true&v=3)
+[![MODX 2.8+ | 3.x](https://img.shields.io/badge/MODX-2.8%2B%20%7C%203.x-102C53)](https://modx.com/)
+[![PHP 7.4+](https://img.shields.io/badge/PHP-7.4%2B-777BB4)](https://www.php.net/)
+[![TypeScript](https://img.shields.io/badge/types-TypeScript-3178C6)](#typescript)
+[![CI](https://github.com/GulomovCreative/FetchIt/actions/workflows/ci.yml/badge.svg)](https://github.com/GulomovCreative/FetchIt/actions/workflows/ci.yml)
+[![License: GPL-2.0](https://img.shields.io/badge/License-GPL--2.0-blue)](core/components/fetchit/docs/license.txt)
 
-В CMS/CMF MODX Revolution есть компонент [FormIt](https://github.com/Sterc/FormIt): он отправляет и обрабатывает формы стандартным методом браузера, с перезагрузкой страницы. FetchIt использует FormIt (или ваш сниппет) и обрабатывает формы «на лету» через Fetch API.
+FetchIt отправляет формы на сайте MODX через Fetch API: без перезагрузки страницы, без jQuery и других библиотек. Обрабатывает их [FormIt](https://github.com/Sterc/FormIt) со всеми его хуками и валидацией или ваш сниппет. Каждая форма сразу защищена от спама: одноразовый токен, время заполнения, поле-ловушка и лимит отправок, а при необходимости proof-of-work и капча. Один пакет для MODX 2.8 и MODX 3.
 
-Близкий по серверной части аналог — [AjaxForm](https://github.com/modx-pro/AjaxForm). У FetchIt другие плюсы на фронте:
+## Содержание
 
-## Никаких зависимостей
-
-FetchIt не тянет внешних JS-библиотек. У AjaxForm их три: [jQuery](https://github.com/jquery/jquery), [jquery-form](https://github.com/jquery-form/form/) и [jGrowl](https://github.com/stanlemon/jGrowl).
-
-Уведомления (jGrowl) можно переопределить и в AjaxForm. jQuery и jquery-form заменить сложнее.
-
-## Современный код
-
-Скрипт вместе с proof-of-work, адаптерами капч и уведомлениями весит около 30 КБ, в gzip около 9 КБ. Минифицированный `fetchit.min.js` весит около 17 КБ, в gzip около 7 КБ: его можно поставить в настройку `fetchit.frontend.js`. Других файлов скрипт не подключает. Сниппет подключает его с атрибутом `defer`, чтобы не блокировать загрузку страницы. На фронте — нативный Fetch API и `FormData` (включая файлы).
-
-## Удобство
-
-Свою вёрстку оставляете как есть: достаточно чанка формы и атрибутов `data-error`. Всплывающие сообщения и модалки подключаете через события и `FetchIt.Message`. В документации есть готовые примеры под Bootstrap, Bulma, UIKit, Notyf, SweetAlert2 и другие.
+- [Возможности](#возможности)
+- [Установка](#установка)
+- [Быстрый старт](#быстрый-старт)
+- [Параметры сниппета](#параметры-сниппета)
+- [Защита от спама](#защита-от-спама)
+- [Уведомления](#уведомления)
+- [События и JavaScript](#события-и-javascript)
+- [TypeScript](#typescript)
+- [Системные настройки](#системные-настройки)
+- [Переход на FetchIt 4](#переход-на-fetchit-4)
+- [Требования](#требования)
+- [Разработка](#разработка)
+- [Лицензия](#лицензия)
 
 ## Возможности
 
-- **FormIt из коробки.** Параметры вроде `&hooks`, `&validate`, `&emailTo` передаются в FormIt без обёрток.
-- **Свой сниппет.** В `&snippet` указываете обработчик, который возвращает JSON (`success`, `message`, `data`).
-- **Ошибки полей.** Элементы с `data-error="fieldName"` получают текст валидации; к полям можно повесить CSS-классы из системных настроек.
-- **События.** `fetchit:before` (можно отменить отправку и дополнить `FormData`), `fetchit:after`, `fetchit:success`, `fetchit:error`, `fetchit:reset`.
-- **Уведомления.** Свой `FetchIt.Message` или встроенные уведомления через настройку `fetchit.frontend.default.notifier`, без сторонних библиотек.
-- **Типы для TypeScript.** Рядом со скриптом лежит `fetchit.d.ts`: `window.FetchIt`, конфигурация, `FetchIt.Message` и события с их `detail`.
-- **Несколько форм на странице.** Каждый вызов сниппета получает свой ключ `data-fetchit`, каждая форма свой экземпляр обработчика.
-- **Защита от спама.** Включена по умолчанию: одноразовый подписанный токен, минимальное время заполнения, скрытое поле-ловушка и лимит отправок, и при отправке через FetchIt, и без JavaScript. Свои правила добавляются плагином на событие `OnFetchItBeforeProcess`.
-- **Очистка после успеха.** Параметр `&clearFieldsOnSuccess` (по умолчанию включён).
-- **Fenom.** Вызов через pdoTools/`{'!FetchIt' | snippet}` поддерживается.
+- **FormIt из коробки.** Параметры вроде `&hooks`, `&validate`, `&emailTo` передаются в FormIt как есть, без обёрток. Вместо FormIt можно указать свой сниппет, который возвращает JSON (`success`, `message`, `data`).
+- **Своя вёрстка.** Нужны только чанк формы и атрибуты: `data-error` для ошибок полей, `data-success` и `data-validation-error` для сообщений формы. Классы для полей с ошибкой задаются в системных настройках.
+- **Работает и без JavaScript.** Форма отправляется обычным способом, сообщения и введённые значения выводятся плейсхолдерами FormIt.
+- **Защита от спама по умолчанию:** одноразовый подписанный токен, минимальное время заполнения, скрытое поле-ловушка и лимит отправок. По желанию proof-of-work и капча: Cloudflare Turnstile, Google reCAPTCHA v3 или Яндекс SmartCaptcha. Свои правила добавляются плагином.
+- **Никаких зависимостей.** Скрипт не тянет jQuery и сторонних библиотек, использует нативные Fetch API и `FormData` (с файлами). Подключается с `defer`, других файлов не грузит.
+- **Встроенные уведомления** или свои через `FetchIt.Message`: Bootstrap, SweetAlert2, что угодно.
+- **События** `fetchit:before`, `fetchit:after`, `fetchit:success`, `fetchit:error`, `fetchit:reset`: дополнить данные, отменить отправку, показать модалку.
+- **Типы для TypeScript** лежат рядом со скриптом.
+- **Несколько форм на странице**, каждая со своим ключом и обработчиком.
+- **Fenom и `@FILE`-чанки** через pdoTools на MODX 2 и MODX 3.
 
-## Уведомления
+## Установка
 
-![Встроенные уведомления FetchIt: ошибка и успешная отправка](docs/images/notifier-desktop-ru.png)
+FetchIt бесплатно ставится через Менеджер пакетов из официального репозитория [modx.com](https://modx.com/extras/package/fetchit) или из маркетплейса [modstore.pro](https://modstore.pro/packages/utilities/fetchit) ([как подключить репозиторий](https://modstore.pro/faq)). FormIt при установке ставится вместе с ним.
 
-С настройкой `fetchit.frontend.default.notifier` ответы сервера и ошибки отправки показываются ещё и уведомлениями в углу страницы. Текст выводится как текст: теги из него убираются, HTML-сущности вроде `&amp;` остаются как есть.
+Пакет можно собрать и из этого репозитория, см. [Разработка](#разработка).
 
-- Программы экранного доступа читают уведомления из двух скрытых live-областей, которые есть на странице заранее: ошибку сразу (`role="alert"`), успех в свою очередь (`role="status"`).
-- Уведомление закрывается кнопкой или само через 6 секунд. Пока на нём курсор или фокус, отсчёт стоит, а потом начинается заново. Если закрыть уведомление с клавиатуры, фокус перейдёт на соседнее уведомление или вернётся туда, откуда пришёл.
-- Одновременно видно не больше трёх. Уведомление, на котором фокус, лишним не считается.
+## Быстрый старт
 
-Стили подключаются первыми в `<head>`, с селекторами из одного класса. Они сильнее общих правил сайта для элементов (`button { … }`) и проигрывают любому правилу сайта с классом. Правила внутри `@layer` (например, в Tailwind 4) им проигрывают, для них проще менять переменные. По умолчанию это пастельные цвета Tailwind CSS 4, как в его алертах: фон из оттенка 100, рамка из 200, текст из 800 (контраст текста около 6.5:1, с запасом для WCAG AA). Там, где браузер понимает `oklch()`, они заданы точно, в остальных браузерах в hex:
-
-```css
-.fetchit-toasts {
-  --fetchit-toast-success-bg: oklch(96.2% 0.044 156.743);     /* green-100, #dcfce7 */
-  --fetchit-toast-success-border: oklch(92.5% 0.084 155.995); /* green-200, #b9f8cf */
-  --fetchit-toast-success-text: oklch(44.8% 0.119 151.328);   /* green-800, #016630 */
-  --fetchit-toast-error-bg: oklch(93.6% 0.032 17.717);        /* red-100, #ffe2e2 */
-  --fetchit-toast-error-border: oklch(88.5% 0.062 18.334);    /* red-200, #ffc9c9 */
-  --fetchit-toast-error-text: oklch(44.4% 0.177 26.899);      /* red-800, #9f0712 */
-}
-```
-
-На сайте с Tailwind 4 можно взять его переменные, например `--fetchit-toast-success-bg: var(--color-emerald-100)`.
-
-Если на сайте Content-Security-Policy запрещает встроенные стили (`style-src` без `'unsafe-inline'`), дайте скрипту FetchIt `nonce`: стили получат тот же. Иначе FetchIt предупредит в консоли, и уведомления придётся оформить самим.
-
-Свой `FetchIt.Message` важнее настройки. Если в нём нет ни `success`, ни `error` (например, только спиннер в `before` и `after`), встроенные уведомления их добавят. Включить уведомления можно и из своего скрипта, с другой подписью кнопки или временем показа (`0` значит «пока не закроют»): `FetchIt.Message = FetchIt.createNotifier({ closeLabel: 'Закрыть', duration: 4000 })`.
-
-До FetchIt 4 настройка подключала библиотеку Notyf. Теперь её нет: стили для `.notyf__toast` и скрипты, которые вызывают `new Notyf()`, нужно поменять или подключить Notyf самим.
-
-## TypeScript
-
-Типы лежат в `assets/components/fetchit/js/fetchit.d.ts`. Скопируйте файл в проект или подключите его:
-
-```ts
-/// <reference path="../assets/components/fetchit/js/fetchit.d.ts" />
-
-// События приходят на document и не всплывают.
-document.addEventListener('fetchit:error', event => {
-  // response равен null, если ответа FetchIt нет: сеть, чужой ответ, капча без ответа
-  if (event.detail.response === null) {
-    console.error(event.detail.error)
-  }
-})
-
-const form = document.querySelector('form')
-if (form) {
-  FetchIt.instances.get(form)?.setError('email', 'Проверьте адрес')
-}
-```
-
-Скрипт проверяется по этому же файлу: и `FetchIt` с экземплярами форм, и `detail` каждого события, так что типы и код не расходятся. Уберите своё объявление `FetchIt`, если оно было (`declare var FetchIt: any`): они будут конфликтовать. Глобальный `FetchIt` появляется, когда отработал отложенный `fetchit.js`, поэтому `FetchIt.Message` задавайте из отложенного скрипта или по `DOMContentLoaded`.
-
-Минимальный вызов:
+Вызов сниппета там, где должна быть форма:
 
 ```modx
 [[!FetchIt?
-  &snippet=`FormIt`
   &form=`myForm.tpl`
   &hooks=`email`
-  &emailTo=`info@domain.com`
-  &validate=`name:required,email:required`
+  &emailTo=`info@example.com`
+  &emailSubject=`Заявка с сайта`
+  &validate=`name:required,email:email:required`
   &successMessage=`Сообщение отправлено`
 ]]
 ```
+
+Чанк `myForm.tpl`, обычная форма с атрибутами FetchIt:
+
+```html
+<form action="[[~[[*id]]]]" method="post">
+  <label>Имя
+    <input type="text" name="name" value="[[+fi.name]]">
+    <span data-error="name">[[+fi.error.name]]</span>
+  </label>
+  <label>Email
+    <input type="email" name="email" value="[[+fi.email]]">
+    <span data-error="email">[[+fi.error.email]]</span>
+  </label>
+  <button type="submit">Отправить</button>
+
+  <div data-success style="display: [[+fi.success:is=`1`:then=``:else=`none`]]">[[+fi.successMessage]]</div>
+  <div data-validation-error style="display: [[+fi.validation_error:is=`1`:then=``:else=`none`]]">[[+fi.validation_error_message]]</div>
+</form>
+```
+
+- `data-error="name"` получает текст ошибки поля `name`, а само поле получает `aria-invalid` и класс из `fetchit.frontend.input.invalid.class`.
+- `data-custom="name"` (необязательно) получает класс из `fetchit.frontend.custom.invalid.class`: например, обёртка поля.
+- `data-success` и `data-validation-error` показывают сообщение формы.
+- Плейсхолдеры `[[+fi.…]]` нужны для отправки без JavaScript. Если это не важно, их можно не ставить.
+
+FetchIt сам добавит в форму ключ `data-fetchit`, служебные поля защиты и подключит скрипт. Готовый пример есть в чанке `tpl.FetchIt.example`.
+
+Подробная [документация](https://docs.modx.pro/components/fetchit/) с примерами: разметка, уведомления, модалки, клиентская валидация, JS API.
+
+## Параметры сниппета
+
+| Параметр | По умолчанию | Что делает |
+|---|---|---|
+| `form` | `tpl.FetchIt.example` | Чанк формы. С pdoTools можно `@FILE`, `@INLINE` и Fenom |
+| `snippet` | `FormIt` | Сниппет, который обрабатывает форму. Свой сниппет получает поля в `$fields` и возвращает JSON через `$FetchIt->success()` или `$FetchIt->error()` |
+| `actionUrl` | `[[+assetsUrl]]action.php` | Адрес, на который отправляется форма |
+| `clearFieldsOnSuccess` | `1` | Очистить поля после успешной отправки |
+
+Остальные параметры передаются обрабатывающему сниппету: для FormIt это `&hooks`, `&validate`, `&emailTo`, `&successMessage`, `&placeholderPrefix` и все прочие.
 
 ## Защита от спама
 
@@ -115,7 +112,7 @@ if (form) {
 
 ### Proof-of-work и капча
 
-Обе проверки выключены по умолчанию и нужны, если спам проходит через основные проверки. Работают они, только когда включена защита (`fetchit.protection`).
+Обе проверки выключены по умолчанию и нужны, если спам проходит через основные. Работают они, только когда включена защита (`fetchit.protection`).
 
 **Proof-of-work.** `fetchit.protection.pow` задаёт сложность в битах: 0 выключает, больше 24 не бывает (значение сверх этого или не число пишется в журнал и заменяется). Перед отправкой браузер ищет число `n`, для которого SHA-256 от `токен:n` начинается с этого количества нулевых бит, и отправляет его в поле `fetchit_pow`. Решение начинается, как только посетитель зашёл в форму, так что к нажатию кнопки оно обычно готово, а боту каждая отправка стоит работы процессора. При 16 битах в среднем нужно около 65 тысяч хешей: компьютеру около трети секунды, телефону в несколько раз больше. Каждый следующий бит удваивает время, 20 бит примерно в 16 раз дольше. Если страница из кеша просит меньше, чем сервер, FetchIt сам решит задачу заново и отправит форму ещё раз. Форму без JavaScript при включённом proof-of-work отправить нельзя.
 
@@ -158,17 +155,117 @@ if (preg_match('/@(mailinator|tempmail)\./i', $email)) {
 
 Событие срабатывает и при выключенной защите.
 
-## Ветки и версии
+## Уведомления
 
-| Ветка | Пакет | MODX |
-|-------|-------|------|
-| `master` | 1.x | 2.x |
-| `4.x` | 4.x (в разработке) | 2.x и 3.x |
-| `next` | 3.x | 3.x |
+![Встроенные уведомления FetchIt: ошибка и успешная отправка](docs/images/notifier-desktop-ru.png)
 
-FetchIt 4 будет одним пакетом для MODX 2 и MODX 3 и заменит линии 1.x и 3.x. Он разрабатывается в ветке `4.x`; с выходом 4.0 она станет `master`, а `next` будет заморожена.
+С настройкой `fetchit.frontend.default.notifier` ответы сервера и ошибки отправки показываются ещё и уведомлениями в углу страницы. Текст выводится как текст: теги из него убираются, HTML-сущности вроде `&amp;` остаются как есть.
 
-На [extras.modx.com](https://extras.modx.com/package/fetchit): **3.1.2-pl** (MODX 3) и **1.1.2-pl** (MODX 2).
+- Программы экранного доступа читают уведомления из двух скрытых live-областей, которые есть на странице заранее: ошибку сразу (`role="alert"`), успех в свою очередь (`role="status"`).
+- Уведомление закрывается кнопкой или само через 6 секунд. Пока на нём курсор или фокус, отсчёт стоит, а потом начинается заново. Если закрыть уведомление с клавиатуры, фокус перейдёт на соседнее уведомление или вернётся туда, откуда пришёл.
+- Одновременно видно не больше трёх. Уведомление, на котором фокус, лишним не считается.
+
+Стили подключаются первыми в `<head>`, с селекторами из одного класса. Они сильнее общих правил сайта для элементов (`button { … }`) и проигрывают любому правилу сайта с классом. Правила внутри `@layer` (например, в Tailwind 4) им проигрывают, для них проще менять переменные. По умолчанию это пастельные цвета Tailwind CSS 4, как в его алертах: фон из оттенка 100, рамка из 200, текст из 800 (контраст текста около 6.5:1, с запасом для WCAG AA). Там, где браузер понимает `oklch()`, они заданы точно, в остальных браузерах в hex:
+
+```css
+.fetchit-toasts {
+  --fetchit-toast-success-bg: oklch(96.2% 0.044 156.743);     /* green-100, #dcfce7 */
+  --fetchit-toast-success-border: oklch(92.5% 0.084 155.995); /* green-200, #b9f8cf */
+  --fetchit-toast-success-text: oklch(44.8% 0.119 151.328);   /* green-800, #016630 */
+  --fetchit-toast-error-bg: oklch(93.6% 0.032 17.717);        /* red-100, #ffe2e2 */
+  --fetchit-toast-error-border: oklch(88.5% 0.062 18.334);    /* red-200, #ffc9c9 */
+  --fetchit-toast-error-text: oklch(44.4% 0.177 26.899);      /* red-800, #9f0712 */
+}
+```
+
+На сайте с Tailwind 4 можно взять его переменные, например `--fetchit-toast-success-bg: var(--color-emerald-100)`.
+
+Если на сайте Content-Security-Policy запрещает встроенные стили (`style-src` без `'unsafe-inline'`), дайте скрипту FetchIt `nonce`: стили получат тот же. Иначе FetchIt предупредит в консоли, и уведомления придётся оформить самим.
+
+Свой `FetchIt.Message` важнее настройки. Если в нём нет ни `success`, ни `error` (например, только спиннер в `before` и `after`), встроенные уведомления их добавят. Включить уведомления можно и из своего скрипта, с другой подписью кнопки или временем показа (`0` значит «пока не закроют»): `FetchIt.Message = FetchIt.createNotifier({ closeLabel: 'Закрыть', duration: 4000 })`.
+
+До FetchIt 4 настройка подключала библиотеку Notyf. Теперь её нет: стили для `.notyf__toast` и скрипты, которые вызывают `new Notyf()`, нужно поменять или подключить Notyf самим.
+
+## События и JavaScript
+
+События приходят на `document` и не всплывают. В `event.detail` лежат форма (`form`), её данные (`formData`), экземпляр FetchIt (`fetchit`) и ответ сервера (`response`).
+
+| Событие | Когда | Отмена (`event.preventDefault()`) |
+|---|---|---|
+| `fetchit:before` | перед отправкой, в `formData` можно дописать поля | форма не отправляется |
+| `fetchit:after` | пришёл ответ FetchIt | ответ не обрабатывается: ни ошибок полей, ни сообщения, ни очистки |
+| `fetchit:success` | форма принята | поля не очищаются |
+| `fetchit:error` | форма отклонена или не отправилась; `response` равен `null`, если ответа FetchIt нет, причина в `error` | ошибки полей и сообщение формы не выводятся |
+| `fetchit:reset` | форма очищена | нельзя |
+
+```js
+document.addEventListener('fetchit:before', ({ detail }) => {
+  detail.formData.append('page', location.pathname)
+})
+
+document.addEventListener('fetchit:success', ({ detail }) => {
+  ym(12345678, 'reachGoal', 'form_' + detail.form.id)
+})
+```
+
+`FetchIt.Message` принимает хуки `before`, `after(message)`, `success(message)`, `error(message)` и `reset`. Они вызываются перед событием того же момента, так что отмена события их не отменяет:
+
+```js
+FetchIt.Message = {
+  success (message) { Swal.fire({ icon: 'success', text: message }) },
+  error (message) { Swal.fire({ icon: 'error', text: message }) },
+}
+```
+
+Глобальный `FetchIt` появляется, когда отработал отложенный `fetchit.js`, поэтому `FetchIt.Message` задавайте из отложенного скрипта или по `DOMContentLoaded`. Экземпляр формы: `FetchIt.instances.get(form)`, у него есть `setError(name, message)`, `clearErrors()`, `setFormMessage(type, message)` и другие методы.
+
+## TypeScript
+
+Типы лежат в `assets/components/fetchit/js/fetchit.d.ts`. Скопируйте файл в проект или подключите его:
+
+```ts
+/// <reference path="../assets/components/fetchit/js/fetchit.d.ts" />
+
+document.addEventListener('fetchit:error', event => {
+  // response равен null, если ответа FetchIt нет: сеть, чужой ответ, капча без ответа
+  if (event.detail.response === null) {
+    console.error(event.detail.error)
+  }
+})
+
+const form = document.querySelector('form')
+if (form) {
+  FetchIt.instances.get(form)?.setError('email', 'Проверьте адрес')
+}
+```
+
+Скрипт проверяется по этому же файлу: и `FetchIt` с экземплярами форм, и `detail` каждого события, так что типы и код не расходятся. Уберите своё объявление `FetchIt`, если оно было (`declare var FetchIt: any`): они будут конфликтовать.
+
+## Системные настройки
+
+Все настройки в пространстве имён `fetchit`.
+
+| Настройка | По умолчанию | Что делает |
+|---|---|---|
+| `fetchit.frontend.js` | `[[+assetsUrl]]js/fetchit.js` | Скрипт FetchIt. `js/fetchit.min.js` вдвое меньше |
+| `fetchit.frontend.js.classname` | `FetchIt` | Класс, который обрабатывает формы, если вы расширили встроенный |
+| `fetchit.frontend.input.invalid.class` | `is-invalid` | Класс поля с ошибкой |
+| `fetchit.frontend.custom.invalid.class` | | Класс для элементов `data-custom` поля с ошибкой |
+| `fetchit.frontend.default.notifier` | `Нет` | Показывать ответы встроенными [уведомлениями](#уведомления) |
+| `fetchit.protection` | `Да` | [Защита от спама](#защита-от-спама). Выключайте только для отладки |
+| `fetchit.protection.secret` | случайный | Ключ подписи токенов, генерируется при установке |
+| `fetchit.protection.min_time` | `3` | Минимальное время заполнения, секунд; 0 выключает |
+| `fetchit.protection.token_ttl` | `86400` | Сколько секунд страница с формой остаётся действительной; 0 значит 30 дней |
+| `fetchit.protection.rate_limit` | `10` | Отправок одной формы с одного адреса за окно; 0 выключает |
+| `fetchit.protection.rate_window` | `600` | Окно лимита, секунд |
+| `fetchit.protection.log` | `1` | Журнал защиты: 0 ничего, 1 проблемы, 2 все отказы |
+| `fetchit.protection.proxies` | | Доверенные прокси или CDN, IP или CIDR через запятую |
+| `fetchit.protection.ip_header` | `X-Forwarded-For` | Заголовок с адресом посетителя от доверенного прокси |
+| `fetchit.protection.pow` | `0` | Сложность proof-of-work, бит; 0 выключает, не больше 24 |
+| `fetchit.captcha` | | `turnstile`, `recaptcha` или `smartcaptcha`; пусто без капчи |
+| `fetchit.captcha.site_key` | | Ключ сайта у сервиса капчи |
+| `fetchit.captcha.secret_key` | | Секретный ключ у сервиса капчи |
+| `fetchit.captcha.min_score` | `0.5` | reCAPTCHA v3: минимальная оценка, от 0 до 1 |
 
 ## Переход на FetchIt 4
 
@@ -183,6 +280,8 @@ FetchIt 4 это один пакет для MODX 2.8 и MODX 3 вместо ли
 
 Что может задеть ваш код:
 
+- в форму добавляются служебные поля защиты; свой JS вместо встроенного должен отправлять токен (см. [Что стоит учесть](#что-стоит-учесть));
+- настройка уведомлений больше не подключает Notyf (см. [Уведомления](#уведомления));
 - `fetchit:error` срабатывает и при сбое запроса; тогда `detail.response` равен `null`, а ошибка лежит в `detail.error`;
 - обрабатывающий сниппет получает в `fields` только отправленную форму: `$_POST` и файлы из `$_FILES` при отправке через FetchIt, только `$_POST` при обычной отправке формы; без GET-параметров и cookies;
 - `fetchit:success` можно отменить: `event.preventDefault()` оставит поля заполненными;
@@ -191,37 +290,33 @@ FetchIt 4 это один пакет для MODX 2.8 и MODX 3 вместо ли
 
 Полный список изменений в [changelog](core/components/fetchit/docs/changelog.txt).
 
-## Документация
+## Требования
 
-Подробная [документация](https://docs.modx.pro/components/fetchit/) с примерами: разметка, уведомления, модалки, клиентская валидация, JS API.
+- MODX 2.8 или MODX 3 (проверяется на 2.8.6 и 3.2.4).
+- PHP 7.4 или новее (проверяется до PHP 8.4).
+- FormIt, если формы обрабатывает он; ставится вместе с FetchIt.
+- pdoTools, если чанки форм на Fenom или в файлах.
+- Браузеры с поддержкой ES-модулей: все актуальные. Без JavaScript формы работают как обычные.
 
-# Установка
+## Разработка
 
-Компонент бесплатно ставится через Менеджер пакетов из:
-
-- маркетплейса [modstore.pro](https://modstore.pro/packages/utilities/fetchit)
-  - [инструкция](https://modstore.pro/faq) по подключению репозитория
-- официального репозитория [modx.com](https://modx.com/extras/package/fetchit)
-
-Либо соберите transport-пакет из `_build/` в этом репозитории.
-
-# Разработка
+### Окружение
 
 Нужны Node.js 22.22+ или 24.15+ (версия для CI в `.node-version`), PHP 7.4+ с Composer и Docker.
 
 ```sh
 npm ci && composer install
 
-npm run build       # src/ → assets/components/fetchit/js/: скрипт и fetchit.d.ts
-npm run lint        # oxlint
-npm run typecheck   # tsc: код и собранные публичные типы глазами сайта (tests/types, после npm run build)
-npm test            # Vitest
-vendor/bin/phpunit  # PHPUnit
+npm run build        # src/ → assets/components/fetchit/js/: скрипт и fetchit.d.ts
+npm run lint         # oxlint
+npm run typecheck    # tsc: код и собранные публичные типы глазами сайта (tests/types, после npm run build)
+npm test             # Vitest
+vendor/bin/phpunit   # PHPUnit
+npm run screenshots  # снимки уведомлений в docs/images/, после правок их стилей
+npm run logo         # логотип из .github/logo/logo.html
 ```
 
-`npm run screenshots` снимает уведомления на демо-форме со свежесобранным скриптом и кладёт картинки в `docs/images/`: для README, документации и статей. Это вид целиком (компьютер, телефон, тёмная тема) и отдельные уведомления, на русском и английском. После правок стилей уведомлений снимки стоит обновить.
-
-## Локальные сайты
+### Локальные сайты
 
 Два сайта, MODX 2.8.6 на PHP 7.4 и MODX 3.2.4 на PHP 8.3. Папки компонента из репозитория подключены в оба, поэтому правки PHP и собранного JS видны сразу. Правки в `src/` видны после `npm run build`.
 
@@ -240,7 +335,7 @@ docker compose exec -u www-data modx2 php /extra/_build/ci/install.php /extra/_p
 docker compose exec -u www-data modx3 php /extra/_build/ci/install.php /extra/_packages/fetchit-<версия>-<релиз>.transport.zip
 ```
 
-Без `PKG_DIST=1` `build.php` сразу ставит пакет на тот сайт, где его собирают.
+Без `PKG_DIST=1` `build.php` сразу ставит пакет на тот сайт, где его собирают. Для проверки обновлений со старых версий есть чистые сайты без папок репозитория, см. `compose.clean.yml`.
 
 Проверки через HTTP и браузерные тесты на локальном сайте:
 
@@ -251,9 +346,17 @@ npx playwright install chromium
 BASE_URL=http://localhost:8052 FIXTURES="$fixtures" npm run e2e
 ```
 
-## CI и релизы
+### Как устроено
 
-CI проверяет каждый PR: синтаксис PHP 7.4–8.4, PHPUnit, линтер, типы, тесты и актуальность собранного JS, workflow и shell-скрипты, согласованность версий. Затем собирает пакет на MODX 2.8.6, ставит его на MODX 2.8.6 и 3.2.4 и отправляет формы через HTTP (с анонимными сессиями и без) и из браузера (Playwright), в том числе со встроенным уведомителем.
+- **Сниппет** (`core/components/fetchit/elements/snippets/`) выводит чанк формы, ставит ей ключ `data-fetchit` и служебные поля защиты, запоминает свои параметры по этому ключу и при обычной отправке формы без JavaScript обрабатывает её сам.
+- **Плагин** на `OnWebPagePrerender` подключает скрипт в `<head>`, если на странице есть форма.
+- **Скрипт** (`src/`, собирается в `assets/components/fetchit/js/`) отправляет форму на `action.php` с заголовком `X-FetchIt-Action`, решает proof-of-work, получает ответ капчи, выводит ошибки и сообщения, отправляет события.
+- **`action.php`** находит параметры формы по ключу, проверяет защиту и вызывает FormIt или ваш сниппет.
+- **`FetchItGuard`** проверяет токен, лимит, ловушку, proof-of-work, время заполнения и капчу (`FetchItCaptcha`), затем вызывает `OnFetchItBeforeProcess`.
+
+### Проверки и релизы
+
+CI проверяет каждый PR: синтаксис PHP 7.4–8.4, PHPUnit, линтер, типы, тесты и актуальность собранного JS, workflow и shell-скрипты, согласованность версий. Затем собирает пакет на MODX 2.8.6, ставит его на MODX 2.8.6 и 3.2.4, в том числе поверх 1.1.3 и 3.1.4, и отправляет формы через HTTP (с анонимными сессиями и без) и из браузера (Playwright): с защитой, proof-of-work, Turnstile и встроенными уведомлениями.
 
 Релиз:
 
@@ -262,3 +365,11 @@ CI проверяет каждый PR: синтаксис PHP 7.4–8.4, PHPUnit
 3. Слить это в `master` и запушить тег: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 
 Workflow проверит версию, соберёт пакет, прогонит его на MODX 2 и 3 и только потом создаст GitHub-релиз с пакетом. Заметки к релизу собираются из коммитов `feat`, `fix`, `perf` и `refactor` ([conventional commits](https://www.conventionalcommits.org/ru/)); если таких нет, берётся раздел из changelog.
+
+### Ветки
+
+FetchIt 4 разрабатывается в ветке `4.x`; с выходом 4.0 она станет `master`. Прежние линии больше не развиваются: 1.x для MODX 2 осталась в истории `master`, 3.x для MODX 3 в ветке `next`.
+
+## Лицензия
+
+[GPL-2.0](core/components/fetchit/docs/license.txt).
