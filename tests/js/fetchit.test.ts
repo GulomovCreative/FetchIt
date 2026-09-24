@@ -251,6 +251,19 @@ describe('success', () => {
     expect(field(form, 'email').value).toBe('')
   })
 
+  it('keeps the fields when a fetchit:success handler cancels it', async () => {
+    const form = mountForm()
+    FetchIt.create(config())
+    respond(success)
+    on('fetchit:success', event => event.preventDefault())
+    field(form, 'email').value = 'ann@example.com'
+
+    await submit(form)
+
+    expect(element(form, '[data-success]').textContent).toBe('Thank you')
+    expect(field(form, 'email').value).toBe('ann@example.com')
+  })
+
   it('keeps the fields when clearFieldsOnSuccess is off', async () => {
     const form = mountForm()
     FetchIt.create(config({ clearFieldsOnSuccess: false }))

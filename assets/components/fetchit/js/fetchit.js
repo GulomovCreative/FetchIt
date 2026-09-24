@@ -96,12 +96,15 @@
 					this.setFormMessage("success", response.message);
 					shown = true;
 					FetchIt.notify("success", response.message);
-					const successEvent = new CustomEvent(FetchIt.events.success, { detail: {
-						form: this.form,
-						formData: this.formData,
-						response,
-						fetchit: this
-					} });
+					const successEvent = new CustomEvent(FetchIt.events.success, {
+						cancelable: true,
+						detail: {
+							form: this.form,
+							formData: this.formData,
+							response,
+							fetchit: this
+						}
+					});
 					if (!document.dispatchEvent(successEvent)) return;
 					if (typeof window.grecaptcha !== "undefined") window.grecaptcha.reset();
 					if (this.config.clearFieldsOnSuccess) {
