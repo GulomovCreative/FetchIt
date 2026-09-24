@@ -58,6 +58,14 @@ test.describe('form with its own handler', () => {
     await expect(page.locator('input[name="email"]')).toHaveValue('')
     expect(reloaded).toBe(false)
   })
+
+  test('shows no toasts without the setting', async ({ page }) => {
+    await page.locator('input[name="email"]').fill('ann@example.com')
+    await page.getByRole('button', { name: 'Send' }).click()
+
+    await expect(page.locator('[data-success]')).toHaveText('Thanks, ann@example.com')
+    await expect(page.locator('.fetchit-toast')).toHaveCount(0)
+  })
 })
 
 test.describe('spam protection', () => {
@@ -218,15 +226,19 @@ test.describe('default notifier @notifier', () => {
 
   test('shows the answers as toasts, with no other files', async ({ page }) => {
     await expect(page.locator('link[rel="stylesheet"][href*="components/fetchit"]')).toHaveCount(0)
+    const toasts = page.locator('.fetchit-toasts')
 
     await page.getByRole('button', { name: 'Send' }).click()
-    const error = page.getByRole('alert').filter({ hasText: 'Check the form' })
+    const error = toasts.locator('.fetchit-toast', { hasText: 'Check the form' })
     await expect(error).toBeVisible()
+    // Screen readers hear it through the live region, not the toast.
+    await expect(page.locator('.fetchit-toasts-live[role="alert"]')).toHaveText('Check the form')
     await error.getByRole('button', { name: 'Close' }).click()
     await expect(error).toHaveCount(0)
 
     await page.locator('input[name="email"]').fill('ann@example.com')
     await page.getByRole('button', { name: 'Send' }).click()
-    await expect(page.getByRole('status').filter({ hasText: 'Thanks, ann@example.com' })).toBeVisible()
+    await expect(toasts.locator('.fetchit-toast', { hasText: 'Thanks, ann@example.com' })).toBeVisible()
+    await expect(page.locator('.fetchit-toasts-live[role="status"]')).toHaveText('Thanks, ann@example.com')
   })
 })
