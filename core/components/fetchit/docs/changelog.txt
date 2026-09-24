@@ -18,6 +18,8 @@ FetchIt 4 is one package for MODX 2.8 and MODX 3. It replaces the 1.x and 3.x li
   - a limit per form and client address (`fetchit.protection.rate_limit`, `fetchit.protection.rate_window`), also behind trusted proxies (`fetchit.protection.proxies`, `fetchit.protection.ip_header`);
   - used tokens are marked atomically under `core/cache/fetchit/tokens/`, which "Clear cache" leaves alone; when the mark cannot be written, forms are refused and it is logged;
   - `fetchit.protection.log` controls what is logged; the signing key `fetchit.protection.secret` is generated at install.
+  - an optional proof of work (`fetchit.protection.pow`, in bits, off by default): the script finds `n` for which SHA-256 of `token:n` starts with that many zero bits and sends it as `fetchit_pow`, starting as soon as the visitor enters the form;
+  - optional external captchas (`fetchit.captcha`: `turnstile`, `recaptcha` for reCAPTCHA v3, `smartcaptcha`, with `fetchit.captcha.site_key` and `fetchit.captcha.secret_key`). FetchIt links the script of the provider, gets its answer before each submission and verifies it on the server last, after all other checks; reCAPTCHA answers below `fetchit.captcha.min_score` are refused. When the provider cannot be reached, the form is refused and it is logged.
   `fetchit.protection` turns it all off.
 - The `OnFetchItBeforeProcess` event: plugins get `$action`, `$fields`, `$properties` and `$FetchIt`, and refuse a submission with `$modx->event->output('message')`. It also runs with the protection off.
 - MODX 3 support in the same package, built on MODX 2.8. It installs fresh on MODX 2.8 and MODX 3, and upgrades FetchIt 1.x on MODX 2 and FetchIt 3.x on MODX 3.
@@ -47,6 +49,7 @@ FetchIt 4 is one package for MODX 2.8 and MODX 3. It replaces the 1.x and 3.x li
 
 ### Fixed
 
+- FormIt 5.2 and later has an AJAX mode of its own. For every page view with a FetchIt form it stored the FormIt properties in the session and in a cache file kept for a week, for its `action.php`, which processes the form without the protection of FetchIt, and linked `formit.js`. FetchIt now removes the stored properties, the `fi.ajaxToken` placeholder and the scripts FormIt added for its forms. The reCAPTCHA of FormIt 5.2 needs `formit.js`, so use `fetchit.captcha` instead.
 - A form sent without JavaScript never showed its success or error message when the chunk used output filters on the FormIt placeholders, like the example chunk: the chunk rendered before FormIt ran. The snippet now processes first.
 - A form that already had a `data-fetchit` attribute came out broken: `<form\data-fetchit="$action" ...>`, with the attributes before it lost. The snippet also changed look-alike tags such as `<form-field>` and the `formmethod` or `data-fetchit` of elements inside the form. Form tags are now parsed one by one, values in quotes included (so `@submit="step > 1"` stays intact), and only their own `method` and `data-fetchit` are replaced.
 - No scripts were added on sites without anonymous sessions. Whether a page has a form is now remembered for the current request, not in the session.
