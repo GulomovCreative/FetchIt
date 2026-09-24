@@ -3,6 +3,28 @@ import { createNotifier } from './notifier'
 import { solve } from './pow'
 import { stripTags } from './text'
 
+/**
+ * Dispatch an event of FetchIt on document, its detail checked against the
+ * public types (FetchItEventMap). False when a listener cancelled it.
+ */
+function dispatch<K extends keyof FetchItEventMap> (type: K, detail: FetchItEventMap[K]['detail'], cancelable = true): boolean {
+  return document.dispatchEvent(new CustomEvent(type, { cancelable, detail }));
+}
+
+/**
+ * A FetchIt answer as the hooks and events get it: a processing snippet may
+ * leave out the message or the data, or send a message that is not a string.
+ */
+function toResponse (answer: FetchItAnswer): FetchItResponse {
+  const message = answer.message;
+  const data = answer.data;
+  return {
+    success: answer.success,
+    message: typeof message === 'string' ? message : (message == null ? '' : String(message)),
+    data: data !== null && typeof data === 'object' ? data as FetchItResponse['data'] : {},
+  };
+}
+
 class FetchIt implements FetchItInstance {
   declare static Message?: FetchItMessage;
   static forms: HTMLFormElement[] = [];
@@ -24,7 +46,8 @@ class FetchIt implements FetchItInstance {
   declare form: HTMLFormElement;
   declare config: FetchItConfig;
   declare request: Request;
-  declare formData: FormData;
+  // The data of the submission in progress or of the last one.
+  formData: FormData | undefined = undefined;
   declare preserveFormMessagesOnReset: boolean;
   declare disabledBefore: Element[];
   declare pending: boolean;
@@ -65,24 +88,16 @@ class FetchIt implements FetchItInstance {
         return;
       }
 
-      this.formData = new FormData(this.form);
-      this.formData.set('pageId', String(this.config.pageId));
+      const formData = new FormData(this.form);
+      formData.set('pageId', String(this.config.pageId));
+      this.formData = formData;
 
       this.clearErrors();
       this.clearFormMessages();
 
-      const beforeEvent = new CustomEvent(FetchIt.events.before, {
-        cancelable: true,
-        detail: {
-          form: this.form,
-          formData: this.formData,
-          fetchit: this,
-        },
-      });
-
       FetchIt.notify('before');
 
-      if (!document.dispatchEvent(beforeEvent)) {
+      if (!dispatch('fetchit:before', { form: this.form, formData, fetchit: this })) {
         return;
       }
 
@@ -95,8 +110,8 @@ class FetchIt implements FetchItInstance {
 
       try {
         try {
-          await this.protectSubmission();
-          let query = await fetch(this.request, { method: 'post', body: this.formData });
+          await this.protectSubmission(formData);
+          let query = await fetch(this.request, { method: 'post', body: formData });
           let next = query.headers?.get('X-FetchIt-Token');
           this.updateToken(next);
           const refused = query.headers?.get('X-FetchIt-Refused');
@@ -109,11 +124,11 @@ class FetchIt implements FetchItInstance {
             if (refused === 'pow') {
               this.config.pow = bits;
             }
-            this.formData.set(FetchIt.tokenField, next);
+            formData.set(FetchIt.tokenField, next);
             if (this.config.pow) {
-              this.formData.set(FetchIt.powField, await this.solution(next));
+              formData.set(FetchIt.powField, await this.solution(next));
             }
-            query = await fetch(this.request, { method: 'post', body: this.formData });
+            query = await fetch(this.request, { method: 'post', body: formData });
             next = query.headers?.get('X-FetchIt-Token');
             this.updateToken(next);
           }
@@ -124,46 +139,26 @@ class FetchIt implements FetchItInstance {
           if (!FetchIt.isResponse(body)) {
             throw new Error(`FetchIt: unexpected answer from ${query.url || this.config.actionUrl} (HTTP ${query.status})`);
           }
-          response = body;
+          response = toResponse(body);
         } catch (error) {
-          this.failRequest(error);
+          this.failRequest(error, formData);
           return;
         }
 
-        const afterEvent = new CustomEvent(FetchIt.events.after, {
-          cancelable: true,
-          detail: {
-            form: this.form,
-            formData: this.formData,
-            response,
-            fetchit: this,
-          },
-        });
-
         FetchIt.notify('after', response.message);
 
-        if (!document.dispatchEvent(afterEvent)) {
+        if (!dispatch('fetchit:after', { form: this.form, formData, response, fetchit: this })) {
           return;
         }
 
         if (!response.success) {
           FetchIt.notify('error', response.message);
 
-          const errorEvent = new CustomEvent(FetchIt.events.error, {
-            cancelable: true,
-            detail: {
-              form: this.form,
-              formData: this.formData,
-              response,
-              fetchit: this,
-            },
-          });
-
-          if (!document.dispatchEvent(errorEvent)) {
+          if (!dispatch('fetchit:error', { form: this.form, formData, response, fetchit: this })) {
             return;
           }
 
-          for (const [ name, message ] of Object.entries(response.data ?? {})) {
+          for (const [ name, message ] of Object.entries(response.data)) {
             if (!FetchIt.hasErrorMessage(message)) {
               continue;
             }
@@ -183,17 +178,7 @@ class FetchIt implements FetchItInstance {
         FetchIt.notify('success', response.message);
 
         // Cancelling it keeps the fields and skips the reCAPTCHA reset.
-        const successEvent = new CustomEvent(FetchIt.events.success, {
-          cancelable: true,
-          detail: {
-            form: this.form,
-            formData: this.formData,
-            response,
-            fetchit: this,
-          },
-        });
-
-        if (!document.dispatchEvent(successEvent)) {
+        if (!dispatch('fetchit:success', { form: this.form, formData, response, fetchit: this })) {
           return;
         }
 
@@ -218,7 +203,7 @@ class FetchIt implements FetchItInstance {
         if (shown || response?.success) {
           console.error(error);
         } else {
-          this.failRequest(error);
+          this.failRequest(error, formData);
         }
       } finally {
         this.enableFields();
@@ -229,14 +214,7 @@ class FetchIt implements FetchItInstance {
     });
 
     this.form.addEventListener('reset', () => {
-      const resetEvent = new CustomEvent(FetchIt.events.reset, {
-        detail: {
-          form: this.form,
-          fetchit: this,
-        },
-      });
-
-      document.dispatchEvent(resetEvent);
+      dispatch('fetchit:reset', { form: this.form, fetchit: this }, false);
       this.clearErrors();
       if (!this.preserveFormMessagesOnReset) {
         this.clearFormMessages();
@@ -261,7 +239,7 @@ class FetchIt implements FetchItInstance {
    * the visitor instead of failing silently. An HTTP error status with a
    * FetchIt answer goes the normal way.
    */
-  failRequest (error: unknown) {
+  failRequest (error: unknown, formData: FormData) {
     console.error(error);
 
     const message = (error instanceof CaptchaError && this.config.captchaErrorMessage)
@@ -269,18 +247,7 @@ class FetchIt implements FetchItInstance {
       || FetchIt.defaultRequestErrorMessage;
     FetchIt.notify('error', message);
 
-    const errorEvent = new CustomEvent(FetchIt.events.error, {
-      cancelable: true,
-      detail: {
-        form: this.form,
-        formData: this.formData,
-        response: null,
-        error,
-        fetchit: this,
-      },
-    });
-
-    if (!document.dispatchEvent(errorEvent)) {
+    if (!dispatch('fetchit:error', { form: this.form, formData, response: null, error, fetchit: this })) {
       return;
     }
 
@@ -290,12 +257,12 @@ class FetchIt implements FetchItInstance {
   /**
    * Add the solution of the proof of work and the captcha's answer.
    */
-  async protectSubmission () {
+  async protectSubmission (formData: FormData) {
     if (this.config.pow) {
-      const token = String(this.formData.get(FetchIt.tokenField) ?? '');
-      this.formData.set(FetchIt.powField, await this.solution(token));
+      const token = String(formData.get(FetchIt.tokenField) ?? '');
+      formData.set(FetchIt.powField, await this.solution(token));
     }
-    await this.captcha?.answer(this.formData);
+    await this.captcha?.answer(formData);
   }
 
   /**
@@ -505,12 +472,16 @@ class FetchIt implements FetchItInstance {
     try {
       (FetchIt.Message?.[hook] as ((message?: string) => void) | undefined)?.(message);
     } catch (error) {
-      console.error(error);
+      console.error(`FetchIt: FetchIt.Message.${hook}() threw; the visitor did not get this notification`, error);
     }
   }
 
-  static isResponse (value: unknown): value is FetchItResponse {
-    return typeof value === 'object' && value !== null && typeof (value as FetchItResponse).success === 'boolean';
+  /**
+   * Whether a value looks like a FetchIt answer: an object with a boolean
+   * success. The message and the data are not checked.
+   */
+  static isResponse (value: unknown): value is FetchItAnswer {
+    return typeof value === 'object' && value !== null && typeof (value as FetchItAnswer).success === 'boolean';
   }
 
   static sanitizeHTML (str: string = ''): string {
@@ -526,9 +497,16 @@ class FetchIt implements FetchItInstance {
   }
 
   static create(config: FetchItConfig) {
-    // A FetchIt.Message of the site wins over the built-in notifier.
-    if (config.defaultNotifier && FetchIt.Message === undefined) {
-      FetchIt.Message = createNotifier({ closeLabel: config.notifierCloseLabel });
+    // A FetchIt.Message of the site wins over the built-in notifier; one
+    // with neither success nor error (a spinner in before and after) gets
+    // the built-in ones.
+    if (config.defaultNotifier) {
+      const message = FetchIt.Message;
+      if (message === undefined) {
+        FetchIt.Message = createNotifier({ closeLabel: config.notifierCloseLabel });
+      } else if (!message.success && !message.error) {
+        Object.assign(message, createNotifier({ closeLabel: config.notifierCloseLabel }));
+      }
     }
 
     if (!config.action) {

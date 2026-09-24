@@ -1,10 +1,15 @@
 {
-  // The public types as a site gets them: only the shipped fetchit.d.ts, the
-  // DOM, and every check on, the declaration file included.
+  // The public types as a site gets them: only the shipped fetchit.d.ts and
+  // the DOM, strict, with the stricter flags sites turn on, and the
+  // declaration file itself checked. It checks the built copy: run
+  // npm run build after changing src/fetchit.d.ts.
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
     "noEmit": true,
     "skipLibCheck": false,
     "types": []

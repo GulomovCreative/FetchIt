@@ -126,6 +126,51 @@ describe('FetchIt.create', () => {
     expect(document.querySelector('.fetchit-toast[data-type="error"]')?.textContent).toContain('Failed')
   })
 
+  it('shows no toasts without the setting', async () => {
+    const form = mountForm()
+    FetchIt.create(config())
+    vi.stubGlobal('fetch', answerWith({ success: true, message: 'Thanks', data: [] }))
+
+    await submit(form)
+
+    expect(FetchIt.Message).toBeUndefined()
+    expect(document.querySelector('.fetchit-toast')).toBeNull()
+  })
+
+  it('adds the built-in toasts to a FetchIt.Message with neither success nor error', async () => {
+    // E.g. a spinner in before and after.
+    const before = vi.fn()
+    FetchIt.Message = { before }
+    const form = mountForm()
+    FetchIt.create(config({ defaultNotifier: true }))
+    vi.stubGlobal('fetch', answerWith({ success: true, message: 'Thanks', data: [] }))
+
+    await submit(form)
+
+    expect(before).toHaveBeenCalled()
+    expect(document.querySelector('.fetchit-toast[data-type="success"]')?.textContent).toContain('Thanks')
+  })
+
+  it('names the hook that threw', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    FetchIt.Message = { success: () => { throw new Error('broken') } }
+    const form = mountForm()
+    FetchIt.create(config())
+    vi.stubGlobal('fetch', answerWith({ success: true, message: 'Thanks', data: [] }))
+
+    await submit(form)
+
+    expect(String(vi.mocked(console.error).mock.calls[0]![0])).toContain('FetchIt.Message.success() threw')
+    expect(element(form, '[data-success]').textContent).toBe('Thanks')
+  })
+
+  it('has no form data before the first submission', () => {
+    const form = mountForm()
+    FetchIt.create(config())
+
+    expect(FetchIt.instances.get(form)!.formData).toBeUndefined()
+  })
+
   it('rejects anything but a form', () => {
     // For scripts without types: the types allow only a form.
     expect(() => new FetchIt(document.createElement('div') as unknown as HTMLFormElement, config())).toThrow()
@@ -261,6 +306,79 @@ describe('validation errors', () => {
 
     expect(FetchIt.Message.error).toHaveBeenCalledWith('The form has errors')
     expect(FetchIt.Message.success).not.toHaveBeenCalled()
+  })
+})
+
+function listen() {
+  const details: Record<string, unknown> = {}
+  for (const name of Object.values(FetchIt.events)) {
+    on(name, event => { details[name] = (event as CustomEvent).detail })
+  }
+  return details
+}
+
+describe('the detail of the events', () => {
+  it('has what the public types promise on a success', async () => {
+    const form = mountForm()
+    FetchIt.create(config())
+    const response = { success: true, message: 'Thank you', data: [] }
+    respond(response)
+    const details = listen()
+
+    await submit(form)
+
+    const fetchit = FetchIt.instances.get(form)
+    const formData = fetchit!.formData
+    expect(formData).toBeInstanceOf(FormData)
+    expect(details['fetchit:before']).toEqual({ form, formData, fetchit })
+    expect(details['fetchit:after']).toEqual({ form, formData, response, fetchit })
+    expect(details['fetchit:success']).toEqual({ form, formData, response, fetchit })
+    expect(details['fetchit:reset']).toEqual({ form, fetchit })
+    expect(details['fetchit:error']).toBeUndefined()
+  })
+
+  it('has the response on a refusal and the error on a failure', async () => {
+    const form = mountForm()
+    FetchIt.create(config())
+    const details = listen()
+    const response = { success: false, message: 'Check the form', data: { email: 'Required' } }
+    respond(response)
+
+    await submit(form)
+    const fetchit = FetchIt.instances.get(form)
+    expect(details['fetchit:error']).toEqual({ form, formData: fetchit!.formData, response, fetchit })
+
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const failure = new TypeError('Failed to fetch')
+    vi.stubGlobal('fetch', vi.fn(async () => { throw failure }))
+    await submit(form)
+    expect(details['fetchit:error']).toEqual({ form, formData: fetchit!.formData, response: null, error: failure, fetchit })
+  })
+
+  it('gets a message and data even when the snippet sent none', async () => {
+    const form = mountForm()
+    const success = vi.fn()
+    FetchIt.Message = { success }
+    FetchIt.create(config())
+    respond({ success: true })
+    const details = listen()
+
+    await submit(form)
+
+    expect(success).toHaveBeenCalledWith('')
+    expect((details['fetchit:success'] as { response: FetchItResponse }).response).toEqual({ success: true, message: '', data: {} })
+  })
+
+  it('gets a message that is text even when the snippet sent a number', async () => {
+    const form = mountForm()
+    const error = vi.fn()
+    FetchIt.Message = { error }
+    FetchIt.create(config())
+    respond({ success: false, message: 404, data: null })
+
+    await submit(form)
+
+    expect(error).toHaveBeenCalledWith('404')
   })
 })
 
