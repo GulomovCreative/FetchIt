@@ -12,14 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Lexicon entry `fetchit_err_request`, passed to the script as `requestErrorMessage`: the text a visitor sees when a submission fails (see Fixed).
 - `detail.error` in `fetchit:error` for failed requests.
 - `FetchIt::prepareForm()`, which gives the form tags of a chunk the POST method and the action key.
-- Errors in the MODX log when the plugin cannot add the script to a page with a form: no `<head>`, or `fetchit.frontend.js` not pointing at a `.js`/`.mjs` file.
+- Errors in the MODX log when the plugin cannot add the script to a page with a form: no `<head>`, or a `fetchit.frontend.js` that is not a `.js` file.
 
 ### Changed
 
 - `fetchit:error` also fires for failed requests, with `detail.response` set to `null`. Handlers that read `detail.response` must allow for it.
 - The processing snippet gets only posted values in `fields`: `$_POST` (and `$_FILES` from `action.php`). Before it got `$_REQUEST`, which also holds GET values and, depending on `request_order`, cookies.
 - `method` and `data-fetchit` now come last among the attributes of the form tag.
-- The inline `create()` call checks that the script is loaded, so a page without it falls back to a normal submit instead of a `ReferenceError`.
+- The inline `create()` call checks that the class from `fetchit.frontend.js.classname` is loaded, so a page without the script falls back to a normal submit instead of throwing. The class may be a window property, a top-level `class` declaration or a dotted name.
+- An exception in a `FetchIt.Message` hook is logged to the console and no longer stops the form from showing the answer.
+- The `?v=` added to the script URL keeps an existing query string and fragment.
 - `FetchIt.create()` warns in the console when no form matches the action; it used to do nothing.
 - A second submit while a request is running is ignored.
 
