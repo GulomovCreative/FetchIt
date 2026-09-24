@@ -58,6 +58,7 @@ check "the field error comes back" json '.data.email == "Email is required"' "$r
 
 response="$(submit "$action" -F name=Ann -F email=ann@example.com -F "pageId=$custom")"
 check "a valid submission succeeds" json '.success == true and .message == "Thanks, ann@example.com"' "$response"
+check "cookies do not reach the form fields" json '.data.cookies == []' "$response"
 
 response="$(submit 0123456789abcdef0123456789abcdef -F email=ann@example.com)"
 check "an unknown action is refused" json '.success == false' "$response"

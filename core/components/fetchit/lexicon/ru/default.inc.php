@@ -16,5 +16,6 @@ $_lang['fetchit_err_chunk_ns'] = 'Не указан чанк для обрабо
 $_lang['fetchit_err_chunk_nf'] = 'Не могу найти указанный чанк "[[+name]]" с формой.';
 $_lang['fetchit_err_snippet_ns'] = 'Не указан сниппет для обработки формы.';
 $_lang['fetchit_err_snippet_nf'] = 'Не могу найти указанный сниппет "[[+name]]" для обработки формы.';
+$_lang['fetchit_err_request'] = 'Не удалось отправить форму. Попробуйте ещё раз.';
 $_lang['fetchit_err_has_errors'] = 'Форма содержит ошибки';
 $_lang['fetchit_success_submit'] = 'Форма успешно отправлена';

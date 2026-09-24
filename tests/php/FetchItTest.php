@@ -11,6 +11,10 @@ class FetchItTest extends TestCase
     {
         $this->modx = new modX();
         $_SESSION = [];
+        // The "scripts requested" flag lives for one request, i.e. one test.
+        $flag = new ReflectionProperty(FetchIt::class, 'scriptRequested');
+        $flag->setAccessible(true);
+        $flag->setValue(null, false);
     }
 
     protected function tearDown(): void
@@ -60,11 +64,68 @@ class FetchItTest extends TestCase
         $this->assertSame('/srv/core/components/fetchit/', $fetchit->config['corePath']);
     }
 
+    public function testFrontendScriptDefaultsToTheShippedFile()
+    {
+        $fetchit = $this->fetchit();
+
+        $this->assertSame('[[+assetsUrl]]js/fetchit.js', $fetchit->config['frontend_js']);
+    }
+
     public function testSnippetPropertiesOverrideTheDefaults()
     {
         $fetchit = $this->fetchit(['actionUrl' => '/custom.php']);
 
         $this->assertSame('/custom.php', $fetchit->config['actionUrl']);
+    }
+
+    // ------------------------------------------------------------ form markup
+
+    public function testFormGetsPostMethodAndActionKey()
+    {
+        $html = $this->fetchit()->prepareForm('<form class="f"><input name="a"></form>', 'abc');
+
+        $this->assertSame('<form class="f" method="post" data-fetchit="abc"><input name="a"></form>', $html);
+    }
+
+    public function testExistingMethodIsReplaced()
+    {
+        $html = $this->fetchit()->prepareForm("<form method='get' class=\"f\">", 'abc');
+
+        $this->assertSame('<form class="f" method="post" data-fetchit="abc">', $html);
+    }
+
+    public function testExistingActionKeyIsReplacedKeepingOtherAttributes()
+    {
+        $html = $this->fetchit()->prepareForm('<form id="x" data-fetchit="old" class="f">', 'abc');
+
+        $this->assertSame('<form id="x" class="f" method="post" data-fetchit="abc">', $html);
+    }
+
+    public function testAttributesOfNestedElementsAreLeftAlone()
+    {
+        $html = $this->fetchit()->prepareForm(
+            '<form class="f"><button formmethod="get" data-fetchit="keep">Go</button></form>',
+            'abc'
+        );
+
+        $this->assertSame(
+            '<form class="f" method="post" data-fetchit="abc"><button formmethod="get" data-fetchit="keep">Go</button></form>',
+            $html
+        );
+    }
+
+    public function testFormTagIsFoundInAnyCaseButNotInLookalikes()
+    {
+        $html = $this->fetchit()->prepareForm("<FORM\n  action=\"/x\"><form-field></form-field></FORM>", 'abc');
+
+        $this->assertSame("<FORM\n  action=\"/x\" method=\"post\" data-fetchit=\"abc\"><form-field></form-field></FORM>", $html);
+    }
+
+    public function testEveryFormInTheChunkIsPrepared()
+    {
+        $html = $this->fetchit()->prepareForm('<form></form><form></form>', 'abc');
+
+        $this->assertSame(2, substr_count($html, 'data-fetchit="abc"'));
     }
 
     // ------------------------------------------------------ action properties
@@ -199,6 +260,15 @@ class FetchItTest extends TestCase
         $this->assertTrue($response['success']);
     }
 
+    public function testNonBreakingSpaceIsBlankToo()
+    {
+        $this->modx->placeholders['fi.error.email'] = '<span class="error">&nbsp;</span>';
+
+        $response = $this->processFormIt([], ['email' => 'a@b.c']);
+
+        $this->assertTrue($response['success']);
+    }
+
     public function testBlankValidationMessageFallsBackToTheLexicon()
     {
         $this->modx->placeholders['fi.error.email'] = 'Required';
@@ -266,15 +336,8 @@ class FetchItTest extends TestCase
 
     // ------------------------------------------------------------------ scripts
 
-    /**
-     * session_id() cannot change once PHPUnit has printed anything.
-     *
-     * @runInSeparateProcess
-     * @preserveGlobalState disabled
-     */
     public function testLoadScriptRegistersTheInitialisation()
     {
-        $this->withSession();
         $this->modx->resource = new FakeResource(7);
         $this->modx->options['fetchit.frontend.input.invalid.class'] = "  is-invalid \n  error ";
         $this->modx->options['fetchit.frontend.custom.invalid.class'] = '';
@@ -282,7 +345,6 @@ class FetchItTest extends TestCase
 
         $fetchit->loadScript('abc');
 
-        $this->assertTrue($_SESSION['fetchit_called']);
         $this->assertCount(1, $this->modx->htmlBlocks);
         $this->assertMatchesRegularExpression('/FetchIt\.create\((\{.*\})\)/', $this->modx->htmlBlocks[0]);
         preg_match('/FetchIt\.create\((\{.*\})\)/', $this->modx->htmlBlocks[0], $match);
@@ -292,6 +354,7 @@ class FetchItTest extends TestCase
         $this->assertSame('is-invalid error', $config['inputInvalidClass']);
         $this->assertSame(7, $config['pageId']);
         $this->assertTrue($config['clearFieldsOnSuccess']);
+        $this->assertSame('fetchit_err_request', $config['requestErrorMessage']);
     }
 
     public function testLoadScriptUsesTheConfiguredClassName()
@@ -303,8 +366,11 @@ class FetchItTest extends TestCase
         $this->assertStringContainsString('MyForms.create(', $this->modx->htmlBlocks[0]);
     }
 
-    private function render($html, array $options = [])
+    private function render($html, array $options = [], $requested = true)
     {
+        if ($requested) {
+            $this->fetchit()->loadScript('abc');
+        }
         $this->modx->options = array_merge($this->modx->options, [
             'fetchit.frontend.js' => '[[+assetsUrl]]js/fetchit.js',
             'fetchit.frontend.default.notifier' => false,
@@ -318,21 +384,16 @@ class FetchItTest extends TestCase
 
     public function testScriptGoesBeforeTheFirstScriptInHead()
     {
-        $_SESSION['fetchit_called'] = true;
-
         $html = $this->render("<html><head>\n<title>T</title>\n<script src=\"/app.js\"></script>\n</head><body></body></html>");
 
         $this->assertMatchesRegularExpression(
             '#<script src="/assets/components/fetchit/js/fetchit\.js\?v=[^"]+" defer></script>\s*<script src="/app\.js">#',
             $html
         );
-        $this->assertArrayNotHasKey('fetchit_called', $_SESSION);
     }
 
     public function testScriptGoesBeforeTheEndOfHeadWithoutOtherScripts()
     {
-        $_SESSION['fetchit_called'] = true;
-
         $html = $this->render('<html><head><title>T</title></head><body></body></html>');
 
         $this->assertMatchesRegularExpression('#fetchit\.js\?v=[^"]+" defer></script>\n</head>#', $html);
@@ -340,8 +401,6 @@ class FetchItTest extends TestCase
 
     public function testNotifierAssetsAreAddedWhenEnabled()
     {
-        $_SESSION['fetchit_called'] = true;
-
         $html = $this->render('<html><head></head><body></body></html>', [
             'fetchit.frontend.default.notifier' => true,
         ]);
@@ -353,6 +412,45 @@ class FetchItTest extends TestCase
     public function testNothingIsInjectedWhenTheSnippetDidNotRun()
     {
         $page = '<html><head></head><body></body></html>';
+
+        $this->assertSame($page, $this->render($page, [], false));
+    }
+
+    public function testScriptsAreAddedWithoutASession()
+    {
+        // Sites with anonymous sessions off got no script at all.
+        $this->assertSame('', session_id());
+
+        $html = $this->render('<html><head></head><body></body></html>');
+
+        $this->assertStringContainsString('js/fetchit.js', $html);
+    }
+
+    public function testScriptsAreAddedOncePerRequest()
+    {
+        $this->render('<html><head></head><body></body></html>');
+
+        $page = '<html><head></head><body></body></html>';
+        $this->assertSame($page, $this->render($page, [], false));
+    }
+
+    public function testHeadWithAttributesOrInUpperCase()
+    {
+        $html = $this->render('<HTML><HEAD prefix="og: x"><SCRIPT src="/a.js"></SCRIPT></HEAD></HTML>');
+
+        $this->assertMatchesRegularExpression('#<HEAD prefix="og: x"><script src="[^"]+fetchit\.js[^"]*" defer></script>\s*<SCRIPT src="/a\.js">#', $html);
+    }
+
+    public function testScriptsInTheBodyDoNotCount()
+    {
+        $html = $this->render('<html><head><title>T</title></head><body><script src="/b.js"></script></body></html>');
+
+        $this->assertMatchesRegularExpression('#fetchit\.js[^"]*" defer></script>\s*</head>#', $html);
+    }
+
+    public function testPageWithoutHeadIsLeftAlone()
+    {
+        $page = '{"json":"response"}';
 
         $this->assertSame($page, $this->render($page));
     }

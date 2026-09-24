@@ -2,11 +2,20 @@
 
 class FetchIt
 {
-    public $version = '1.1.3';
+    public $version = '1.1.4';
     /** @var modX $modx */
     public $modx;
     /** @var array $config */
     public $config;
+
+    /**
+     * Set by loadScript() when a form is on the page, so the plugin adds the
+     * scripts at OnWebPagePrerender of the same request. Not in the session:
+     * sites without anonymous sessions got no scripts at all.
+     *
+     * @var bool
+     */
+    protected static $scriptRequested = false;
 
 
     /**
@@ -24,7 +33,7 @@ class FetchIt
         $assetsUrl = $this->modx->getOption('fetchit.assets_url', $config,
             $this->modx->getOption('assets_url') . 'components/fetchit/');
         $frontend_js = $this->modx->getOption('fetchit.frontend.js', null,
-            '[[+assetsUrl]]js/default.js');
+            '[[+assetsUrl]]js/fetchit.js');
         $default_notifier = (bool)$this->modx->getOption('fetchit.frontend.default.notifier', null,
             true, false);
 
@@ -47,13 +56,34 @@ class FetchIt
 
 
     /**
+     * Give every form in the chunk the POST method and the action key.
+     *
+     * @param string $html
+     * @param string $action
+     *
+     * @return string
+     */
+    public function prepareForm($html, $action)
+    {
+        return preg_replace_callback('#<form(?=[\s>])([^>]*)>#i', function ($match) use ($action) {
+            $attributes = preg_replace(
+                '#\s+(?:method|data-fetchit)\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]*)#i',
+                '',
+                $match[1]
+            );
+
+            return substr($match[0], 0, 5) . rtrim($attributes)
+                . ' method="post" data-fetchit="' . htmlspecialchars($action, ENT_QUOTES) . '">';
+        }, $html);
+    }
+
+
+    /**
      * Independent registration of JavaScripts
      */
     public function loadScript($action)
     {
-        if (!empty(session_id())) {
-            $_SESSION['fetchit_called'] = true;
-        }
+        self::$scriptRequested = true;
 
         $config = $this->modx->toJSON([
             'action' => $action,
@@ -63,6 +93,7 @@ class FetchIt
             'customInvalidClass' => trim(preg_replace('/\s+/', ' ', $this->modx->getOption('fetchit.frontend.custom.invalid.class'))),
             'clearFieldsOnSuccess' => (bool)$this->modx->getOption('clearFieldsOnSuccess', $this->config, 1, false),
             'defaultNotifier' => $this->config['default_notifier'],
+            'requestErrorMessage' => $this->modx->lexicon('fetchit_err_request'),
             'pageId' => !empty($this->modx->resource)
                 ? $this->modx->resource->get('id')
                 : 0,
@@ -78,9 +109,10 @@ class FetchIt
 
     public function registerScript()
     {
-        if (empty($_SESSION['fetchit_called'])) {
+        if (!self::$scriptRequested) {
             return;
         }
+        self::$scriptRequested = false;
 
         $js = trim($this->config['frontend_js']);
         if (!preg_match('/\.js/i', $js)) {
@@ -96,22 +128,19 @@ class FetchIt
             );
         }
 
-        $assets = join(PHP_EOL, $assets);
         $output = &$this->modx->resource->_output;
-
-        if (strpos($output, '</head>') === false) {
+        if (!preg_match('#<head\b[^>]*>(.*?)</head>#is', $output, $head, PREG_OFFSET_CAPTURE)) {
             return;
         }
 
-        if (preg_match('#(?:<head>[\s\S]*?)(\s*?<script[\s\S]*?((</script>)|(/>)))(?:[\s\S]*?</head>)#i', $output, $matches)) {
-            $script = $matches[1];
-            $script = preg_replace('/<script[\s\S]*<\/script>/', $assets, $script);
-            $output = preg_replace('#(<head>[\s\S]*?)(\s*?<script[\s\S]*?</script>)([\s\S]*?</head>)#', "$1$assets$2$3", $output, 1);
-        } else {
-            $output = preg_replace("/(<\/head>)/i", $assets . "\n\\1", $output, 1);
+        // Before the first script of <head>, so page scripts can use FetchIt;
+        // otherwise at the end of <head>.
+        $position = $head[1][1] + strlen($head[1][0]);
+        if (preg_match('#<script\b#i', $head[1][0], $script, PREG_OFFSET_CAPTURE)) {
+            $position = $head[1][1] + $script[0][1];
         }
 
-        unset($_SESSION['fetchit_called']);
+        $output = substr_replace($output, join(PHP_EOL, $assets) . PHP_EOL, $position, 0);
     }
 
 
@@ -240,9 +269,12 @@ class FetchIt
             return '';
         }
 
-        $value = html_entity_decode((string)$this->modx->placeholders[$key], ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        $value = strip_tags(html_entity_decode((string)$this->modx->placeholders[$key], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
 
-        return trim(strip_tags($value));
+        // &nbsp; decodes to U+00A0, which trim() keeps.
+        $trimmed = preg_replace('/^[\s\x{00A0}]+|[\s\x{00A0}]+$/u', '', $value);
+
+        return $trimmed === null ? trim($value) : $trimmed;
     }
 
 
