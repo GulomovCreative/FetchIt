@@ -14,6 +14,9 @@ $tpl = $modx->getOption('form', $scriptProperties, 'tpl.FetchIt.example', true);
 if ($pdo = FetchIt::pdoTools($modx)) {
     $content = $pdo->getChunk($tpl, $scriptProperties);
 } else {
+    if (strpos($tpl, '@') === 0) {
+        $modx->log(modX::LOG_LEVEL_ERROR, "[FetchIt] The form \"{$tpl}\" needs pdoTools, which is not installed or not loaded");
+    }
     $content = $modx->getChunk($tpl, $scriptProperties);
 }
 if (empty($content)) {
