@@ -21,6 +21,11 @@ $downloadPackage = function ($src, $dst) {
     $file = false;
     if (ini_get('allow_url_fopen')) {
         $file = @file_get_contents($src);
+        if ($file === false) {
+            $error = error_get_last();
+
+            return 'the download failed' . ($error ? ': ' . $error['message'] : '');
+        }
     } elseif (function_exists('curl_init')) {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $src);
@@ -32,7 +37,11 @@ $downloadPackage = function ($src, $dst) {
         }
         $file = curl_exec($ch);
         $status = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlError = curl_error($ch);
         curl_close($ch);
+        if ($file === false) {
+            return "cURL failed: {$curlError}";
+        }
         if ($status !== 200) {
             return "the server answered HTTP {$status}";
         }
@@ -71,6 +80,7 @@ $readAnswer = function ($response) {
     }
 
     $internal = libxml_use_internal_errors(true);
+    libxml_clear_errors();
     $xml = $body !== '' ? simplexml_load_string($body) : false;
     $errors = libxml_get_errors();
     libxml_clear_errors();
@@ -173,12 +183,15 @@ $installPackage = function ($packageName, $options = []) use ($modx, $downloadPa
         }
         if (!$package->install()) {
             // Leave nothing behind that would skip the install next time.
-            $package->remove();
+            $message = "Could not install <b>{$signature}</b>, see the error log.";
+            if (!$package->remove()) {
+                $message .= ' Its record stays in the Package Manager: remove it there, or FetchIt will not try again.';
+            }
             @unlink($zip);
 
             return [
                 'success' => 0,
-                'message' => "Could not install <b>{$signature}</b>, see the error log.",
+                'message' => $message,
             ];
         }
 
