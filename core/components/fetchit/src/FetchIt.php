@@ -1,13 +1,9 @@
 <?php
 /**
  * FetchIt 3.x had a namespaced FetchIt\FetchIt class. FetchIt 4 has one
- * class for MODX 2 and MODX 3; this name is an alias of it.
+ * class for MODX 2 and MODX 3, and its file defines this name as an alias
+ * (see the end of model/fetchit.class.php). This file lets the autoloader
+ * and "require src/FetchIt.php" from 3.x code find it.
  */
 
-namespace FetchIt;
-
 require_once dirname(__DIR__) . '/model/fetchit.class.php';
-
-if (!class_exists('FetchIt\FetchIt', false)) {
-    class_alias('FetchIt', 'FetchIt\FetchIt');
-}

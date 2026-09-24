@@ -54,6 +54,19 @@ class ModxApiTest extends TestCase
         $this->assertSame(MODX_CORE_PATH . 'components/fetchit/src/', modX::getLoader()->psr4['FetchIt\\']);
     }
 
+    /**
+     * instanceof does not autoload: code written for 3.x checks
+     * "instanceof \FetchIt\FetchIt" before anything loaded src/FetchIt.php.
+     *
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function testTheModelAloneDefinesThe3xName()
+    {
+        $this->assertTrue(class_exists('FetchIt\FetchIt', false));
+        $this->assertInstanceOf('FetchIt\FetchIt', new FetchIt($this->modx));
+    }
+
     public function testNamespacedClassOf3xIsTheSameClass()
     {
         require_once MODX_CORE_PATH . 'components/fetchit/src/FetchIt.php';

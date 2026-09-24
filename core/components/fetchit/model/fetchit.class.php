@@ -536,3 +536,9 @@ class FetchIt
             : $response;
     }
 }
+
+// FetchIt 3.x called this class FetchIt\FetchIt. The alias is set here, not
+// only in src/FetchIt.php, because instanceof does not autoload.
+if (!class_exists('FetchIt\FetchIt', false)) {
+    class_alias('FetchIt', 'FetchIt\FetchIt');
+}
