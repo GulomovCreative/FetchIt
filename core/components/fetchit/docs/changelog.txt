@@ -7,8 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [4.0.0] - Unreleased
 
+FetchIt 4 is one package for MODX 2.8 and MODX 3. It replaces the 1.x and 3.x lines and installs over either of them.
+
 ### Added
 
+- MODX 3 support in the same package: it is built on MODX 2.8 and installs, and upgrades FetchIt 1.x and 3.x, on MODX 2.8 and MODX 3.
+- The FetchIt 3.x API on MODX 3: `$modx->services->get('FetchIt')` (registered by `bootstrap.php`), the `FetchIt\FetchIt` class, `saveActionProperties()` and `getActionProperties()`.
+- `FetchIt::service()`, the shared instance on MODX 2 and MODX 3, and `FetchIt::pdoTools()`, which finds pdoTools 2 on MODX 2 and pdoTools 3 on MODX 3 (Fenom and `@FILE` chunks).
 - Lexicon entry `fetchit_err_request`, passed to the script as `requestErrorMessage`: the text a visitor sees when a submission fails (see Fixed).
 - `detail.error` in `fetchit:error` for failed requests.
 - `FetchIt::prepareForm()`, which gives the form tags of a chunk the POST method and the action key.
@@ -16,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- On MODX 3 the plugin and `action.php` take FetchIt from the service container instead of the deprecated `getService()`.
 - `fetchit:error` also fires for failed requests, with `detail.response` set to `null`. Handlers that read `detail.response` must allow for it.
 - The processing snippet gets only posted values in `fields`: `$_POST` (and `$_FILES` from `action.php`). Before it got `$_REQUEST`, which also holds GET values and, depending on `request_order`, cookies.
 - `method` and `data-fetchit` now come last among the attributes of the form tag.

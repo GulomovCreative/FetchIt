@@ -58,6 +58,25 @@ FetchIt 4 будет одним пакетом для MODX 2 и MODX 3 и зам
 
 На [extras.modx.com](https://extras.modx.com/package/fetchit): **3.1.2-pl** (MODX 3) и **1.1.2-pl** (MODX 2).
 
+## Переход на FetchIt 4
+
+FetchIt 4 это один пакет для MODX 2.8 и MODX 3 вместо линий 1.x и 3.x. Он ставится поверх установленной версии через Менеджер пакетов: системные настройки, чанки и вызовы сниппета остаются как есть.
+
+Прежний API работает на обеих версиях MODX:
+
+- `$modx->getService('fetchit', 'FetchIt', MODX_CORE_PATH . 'components/fetchit/model/')` из 1.x и `$modx->services->get('FetchIt')` из 3.x (на MODX 3) возвращают один и тот же объект, а класс `FetchIt\FetchIt` из 3.x это тот же класс;
+- `storeActionProperties()`/`loadActionProperties()` и их имена из 3.x `saveActionProperties()`/`getActionProperties()`;
+- чанки через pdoTools (Fenom, `@FILE`) на MODX 2 и MODX 3.
+
+Что может задеть ваш код:
+
+- `fetchit:error` срабатывает и при сбое запроса; тогда `detail.response` равен `null`, а ошибка лежит в `detail.error`;
+- обрабатывающий сниппет получает в `fields` только отправленную форму (`$_POST` и файлы), без GET-параметров и cookies;
+- `fetchit:success` можно отменить: `event.preventDefault()` оставит поля заполненными;
+- `method` и `data-fetchit` ставятся последними атрибутами тега формы.
+
+Полный список изменений в [changelog](core/components/fetchit/docs/changelog.txt).
+
 ## Документация
 
 Подробная [документация](https://docs.modx.pro/components/fetchit/) с примерами: разметка, уведомления, модалки, клиентская валидация, JS API.
