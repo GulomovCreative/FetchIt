@@ -1,7 +1,48 @@
 (function() {
+	//#region \0@oxc-project+runtime@0.151.0/helpers/esm/typeof.js
+	function _typeof(o) {
+		"@babel/helpers - typeof";
+		return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function(o) {
+			return typeof o;
+		} : function(o) {
+			return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o;
+		}, _typeof(o);
+	}
+	//#endregion
+	//#region \0@oxc-project+runtime@0.151.0/helpers/esm/toPrimitive.js
+	function toPrimitive(t, r) {
+		if ("object" != _typeof(t) || !t) return t;
+		var e = t[Symbol.toPrimitive];
+		if (void 0 !== e) {
+			var i = e.call(t, r || "default");
+			if ("object" != _typeof(i)) return i;
+			throw new TypeError("@@toPrimitive must return a primitive value.");
+		}
+		return ("string" === r ? String : Number)(t);
+	}
+	//#endregion
+	//#region \0@oxc-project+runtime@0.151.0/helpers/esm/toPropertyKey.js
+	function toPropertyKey(t) {
+		var i = toPrimitive(t, "string");
+		return "symbol" == _typeof(i) ? i : i + "";
+	}
+	//#endregion
+	//#region \0@oxc-project+runtime@0.151.0/helpers/esm/defineProperty.js
+	function _defineProperty(e, r, t) {
+		return (r = toPropertyKey(r)) in e ? Object.defineProperty(e, r, {
+			value: t,
+			enumerable: !0,
+			configurable: !0,
+			writable: !0
+		}) : e[r] = t, e;
+	}
+	//#endregion
 	//#region src/captcha.ts
 	var CaptchaError = class extends Error {
-		name = "CaptchaError";
+		constructor(..._args) {
+			super(..._args);
+			_defineProperty(this, "name", "CaptchaError");
+		}
 	};
 	const RECAPTCHA_ACTION = "fetchit";
 	const SCRIPT_WAIT = 1e4;
@@ -56,7 +97,8 @@
 		let widget;
 		let failure;
 		const render = (api) => {
-			widget ??= api.render(container(form), {
+			var _widget;
+			(_widget = widget) !== null && _widget !== void 0 || (widget = api.render(container(form), {
 				sitekey: siteKey,
 				callback: () => {
 					failure = void 0;
@@ -65,7 +107,7 @@
 					failure = String(code);
 					console.error(`FetchIt: Turnstile error ${code}`);
 				}
-			});
+			}));
 			return widget;
 		};
 		waitFor(() => window.turnstile).then((api) => api && render(api)).catch((error) => console.error(error));
@@ -85,7 +127,10 @@
 			reset() {
 				if (widget !== void 0) {
 					const id = widget;
-					safely(() => window.turnstile?.reset(id));
+					safely(() => {
+						var _window$turnstile;
+						return (_window$turnstile = window.turnstile) === null || _window$turnstile === void 0 ? void 0 : _window$turnstile.reset(id);
+					});
 				}
 			}
 		};
@@ -97,8 +142,11 @@
 	function recaptcha(siteKey) {
 		return {
 			async answer(formData) {
-				const api = await waitFor(() => window.grecaptcha?.execute ? window.grecaptcha : void 0);
-				const execute = api?.execute;
+				const api = await waitFor(() => {
+					var _window$grecaptcha;
+					return ((_window$grecaptcha = window.grecaptcha) === null || _window$grecaptcha === void 0 ? void 0 : _window$grecaptcha.execute) ? window.grecaptcha : void 0;
+				});
+				const execute = api === null || api === void 0 ? void 0 : api.execute;
 				if (!api || !execute) throw notLoaded("reCAPTCHA", "www.google.com");
 				await withTimeout(new Promise((resolve) => api.ready ? api.ready(resolve) : resolve()), SCRIPT_WAIT, "reCAPTCHA");
 				const token = await withTimeout(execute(siteKey, { action: RECAPTCHA_ACTION }), ANSWER_WAIT, "reCAPTCHA").catch((error) => {
@@ -119,22 +167,23 @@
 		const settle = (token, error) => {
 			const waiting = pending;
 			pending = void 0;
-			if (error) waiting?.reject(error);
-			else if (token) waiting?.resolve(token);
+			if (error) waiting === null || waiting === void 0 || waiting.reject(error);
+			else if (token) waiting === null || waiting === void 0 || waiting.resolve(token);
 		};
 		const render = (api) => {
 			if (widget === void 0) {
+				var _api$subscribe, _api$subscribe2, _api$subscribe3;
 				const id = api.render(container(form), {
 					sitekey: siteKey,
 					invisible: true,
 					callback: (token) => settle(token)
 				});
 				widget = id;
-				api.subscribe?.(id, "challenge-hidden", () => setTimeout(() => {
+				(_api$subscribe = api.subscribe) === null || _api$subscribe === void 0 || _api$subscribe.call(api, id, "challenge-hidden", () => setTimeout(() => {
 					if (!api.getResponse(id)) settle(void 0, new CaptchaError("FetchIt: the check of SmartCaptcha was closed"));
 				}, 1e3));
-				api.subscribe?.(id, "network-error", () => settle(void 0, new CaptchaError("FetchIt: SmartCaptcha could not reach its server")));
-				api.subscribe?.(id, "javascript-error", (error) => settle(void 0, new CaptchaError(`FetchIt: SmartCaptcha failed: ${JSON.stringify(error)}`)));
+				(_api$subscribe2 = api.subscribe) === null || _api$subscribe2 === void 0 || _api$subscribe2.call(api, id, "network-error", () => settle(void 0, new CaptchaError("FetchIt: SmartCaptcha could not reach its server")));
+				(_api$subscribe3 = api.subscribe) === null || _api$subscribe3 === void 0 || _api$subscribe3.call(api, id, "javascript-error", (error) => settle(void 0, new CaptchaError(`FetchIt: SmartCaptcha failed: ${JSON.stringify(error)}`)));
 			}
 			return widget;
 		};
@@ -157,13 +206,16 @@
 				pending = void 0;
 				if (widget !== void 0) {
 					const id = widget;
-					safely(() => window.smartCaptcha?.reset(id));
+					safely(() => {
+						var _window$smartCaptcha;
+						return (_window$smartCaptcha = window.smartCaptcha) === null || _window$smartCaptcha === void 0 ? void 0 : _window$smartCaptcha.reset(id);
+					});
 				}
 			}
 		};
 	}
 	function createCaptcha(form, config) {
-		switch (config?.provider) {
+		switch (config === null || config === void 0 ? void 0 : config.provider) {
 			case "turnstile": return turnstile(form, config.siteKey);
 			case "recaptcha": return recaptcha(config.siteKey);
 			case "smartcaptcha": return smartcaptcha(form, config.siteKey);
@@ -181,11 +233,12 @@
 	}
 	//#endregion
 	//#region src/notifier.ts
+	var _document$currentScri;
 	const STYLE_ID = "fetchit-toasts-style";
 	const MAX_TOASTS = 3;
 	const DEFAULT_DURATION = 6e3;
 	const MAX_DELAY = 2 ** 31 - 1;
-	const nonce = document.currentScript?.nonce || void 0;
+	const nonce = ((_document$currentScri = document.currentScript) === null || _document$currentScri === void 0 ? void 0 : _document$currentScri.nonce) || void 0;
 	const CSS = `
 .fetchit-toasts {
   position: fixed; z-index: 2147483000; inset-block-end: 1rem; inset-inline-end: 1rem;
@@ -228,12 +281,13 @@
 	let warned = false;
 	let origin = null;
 	function addStyles() {
+		var _document$head;
 		if (document.getElementById(STYLE_ID)) return;
 		const style = document.createElement("style");
 		style.id = STYLE_ID;
 		if (nonce) style.nonce = nonce;
 		style.textContent = CSS;
-		(document.head ?? document.documentElement).prepend(style);
+		((_document$head = document.head) !== null && _document$head !== void 0 ? _document$head : document.documentElement).prepend(style);
 		if (!style.sheet && !warned) {
 			warned = true;
 			console.warn("FetchIt: the styles of the notifier were blocked, probably by a Content-Security-Policy (style-src). Give the FetchIt script a nonce, or style .fetchit-toast yourself.");
@@ -257,7 +311,8 @@
 		});
 	}
 	function regions() {
-		const parent = document.body ?? document.documentElement;
+		var _document$body;
+		const parent = (_document$body = document.body) !== null && _document$body !== void 0 ? _document$body : document.documentElement;
 		let toasts = document.querySelector(".fetchit-toasts");
 		if (!toasts) {
 			toasts = document.createElement("div");
@@ -330,11 +385,15 @@
 		const remove = () => {
 			clearTimeout(timer);
 			if (toast.contains(document.activeElement)) {
+				var _others$find;
 				const others = Array.from(toasts.querySelectorAll(".fetchit-toast__close")).filter((button) => !toast.contains(button));
-				const next = others.find((button) => toast.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING) ?? others.at(-1);
+				const next = (_others$find = others.find((button) => toast.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING)) !== null && _others$find !== void 0 ? _others$find : others.at(-1);
 				if (next) next.focus();
 				else if (focusable(origin)) origin.focus();
-				else document.activeElement?.blur();
+				else {
+					var _document$activeEleme;
+					(_document$activeEleme = document.activeElement) === null || _document$activeEleme === void 0 || _document$activeEleme.blur();
+				}
 			}
 			toast.remove();
 		};
@@ -535,7 +594,7 @@
 			if (zeroBits(sha256(`${token}:${n}`)) >= bits) return String(n);
 			if (n % batch === batch - 1) {
 				await new Promise((resolve) => setTimeout(resolve, 0));
-				if (signal?.aborted) throw new Error("FetchIt: the proof of work was stopped");
+				if (signal === null || signal === void 0 ? void 0 : signal.aborted) throw new Error("FetchIt: the proof of work was stopped");
 			}
 		}
 	}
@@ -564,21 +623,9 @@
 			data: data !== null && typeof data === "object" ? data : {}
 		};
 	}
-	window.FetchIt = class FetchIt {
-		static forms = [];
-		static instances = /* @__PURE__ */ new Map();
-		static defaultRequestErrorMessage = "Could not send the form. Please try again.";
-		static tokenField = "fetchit_token";
-		static powField = "fetchit_pow";
-		static events = {
-			before: "fetchit:before",
-			success: "fetchit:success",
-			error: "fetchit:error",
-			after: "fetchit:after",
-			reset: "fetchit:reset"
-		};
-		formData = void 0;
+	var FetchIt = class FetchIt {
 		constructor(form, config) {
+			_defineProperty(this, "formData", void 0);
 			if (!(form instanceof HTMLFormElement)) throw new Error("FetchIt: the element is not a form");
 			this.form = form;
 			this.config = config;
@@ -615,17 +662,20 @@
 				let shown = false;
 				let response;
 				try {
+					var _this$config$captcha;
 					try {
+						var _query$headers, _query$headers2, _query$headers$get, _query$headers3, _this$config$pow;
 						await this.protectSubmission(formData);
 						let query = await fetch(this.request, {
 							method: "post",
 							body: formData
 						});
-						let next = query.headers?.get("X-FetchIt-Token");
+						let next = (_query$headers = query.headers) === null || _query$headers === void 0 ? void 0 : _query$headers.get("X-FetchIt-Token");
 						this.updateToken(next);
-						const refused = query.headers?.get("X-FetchIt-Refused");
-						const bits = Number(query.headers?.get("X-FetchIt-Pow") ?? 0);
-						if (next && (refused === "token" || refused === "pow" && bits > (this.config.pow ?? 0))) {
+						const refused = (_query$headers2 = query.headers) === null || _query$headers2 === void 0 ? void 0 : _query$headers2.get("X-FetchIt-Refused");
+						const bits = Number((_query$headers$get = (_query$headers3 = query.headers) === null || _query$headers3 === void 0 ? void 0 : _query$headers3.get("X-FetchIt-Pow")) !== null && _query$headers$get !== void 0 ? _query$headers$get : 0);
+						if (next && (refused === "token" || refused === "pow" && bits > ((_this$config$pow = this.config.pow) !== null && _this$config$pow !== void 0 ? _this$config$pow : 0))) {
+							var _query$headers4;
 							if (refused === "pow") this.config.pow = bits;
 							formData.set(FetchIt.tokenField, next);
 							if (this.config.pow) formData.set(FetchIt.powField, await this.solution(next));
@@ -633,7 +683,7 @@
 								method: "post",
 								body: formData
 							});
-							next = query.headers?.get("X-FetchIt-Token");
+							next = (_query$headers4 = query.headers) === null || _query$headers4 === void 0 ? void 0 : _query$headers4.get("X-FetchIt-Token");
 							this.updateToken(next);
 						}
 						if (refused === "captcha" && !this.config.captcha) console.warn("FetchIt: the server asks for a captcha this page does not have; the page may come from a cache made before the captcha was turned on");
@@ -677,8 +727,9 @@
 						response,
 						fetchit: this
 					})) return;
-					if (this.config.captcha?.provider !== "recaptcha") try {
-						window.grecaptcha?.reset?.();
+					if (((_this$config$captcha = this.config.captcha) === null || _this$config$captcha === void 0 ? void 0 : _this$config$captcha.provider) !== "recaptcha") try {
+						var _window$grecaptcha, _window$grecaptcha$re;
+						(_window$grecaptcha = window.grecaptcha) === null || _window$grecaptcha === void 0 || (_window$grecaptcha$re = _window$grecaptcha.reset) === null || _window$grecaptcha$re === void 0 || _window$grecaptcha$re.call(_window$grecaptcha);
 					} catch (error) {
 						console.error(error);
 					}
@@ -688,12 +739,13 @@
 						this.preserveFormMessagesOnReset = false;
 					}
 				} catch (error) {
-					if (shown || response?.success) console.error(error);
+					if (shown || (response === null || response === void 0 ? void 0 : response.success)) console.error(error);
 					else this.failRequest(error, formData);
 				} finally {
+					var _this$captcha;
 					this.enableFields();
 					this.pending = false;
-					this.captcha?.reset();
+					(_this$captcha = this.captcha) === null || _this$captcha === void 0 || _this$captcha.reset();
 				}
 			});
 			this.form.addEventListener("reset", () => {
@@ -736,21 +788,25 @@
 		* Add the solution of the proof of work and the captcha's answer.
 		*/
 		async protectSubmission(formData) {
+			var _this$captcha2;
 			if (this.config.pow) {
-				const token = String(formData.get(FetchIt.tokenField) ?? "");
+				var _formData$get;
+				const token = String((_formData$get = formData.get(FetchIt.tokenField)) !== null && _formData$get !== void 0 ? _formData$get : "");
 				formData.set(FetchIt.powField, await this.solution(token));
 			}
-			await this.captcha?.answer(formData);
+			await ((_this$captcha2 = this.captcha) === null || _this$captcha2 === void 0 ? void 0 : _this$captcha2.answer(formData));
 		}
 		/**
 		* The solution of the proof of work for a token, started once; solving
 		* for another token stops it.
 		*/
 		solution(token) {
-			if (this.work?.token !== token) {
-				this.work?.stop.abort();
+			var _this$work;
+			if (((_this$work = this.work) === null || _this$work === void 0 ? void 0 : _this$work.token) !== token) {
+				var _this$work2, _this$config$pow2;
+				(_this$work2 = this.work) === null || _this$work2 === void 0 || _this$work2.stop.abort();
 				const stop = new AbortController();
-				const solution = solve(token, this.config.pow ?? 0, stop.signal);
+				const solution = solve(token, (_this$config$pow2 = this.config.pow) !== null && _this$config$pow2 !== void 0 ? _this$config$pow2 : 0, stop.signal);
 				const work = {
 					token,
 					solution,
@@ -768,9 +824,11 @@
 		* time the visitor sends it.
 		*/
 		solveAhead() {
-			const token = this.form.querySelector(`input[name="${FetchIt.tokenField}"]`)?.value;
+			var _this$form$querySelec;
+			const token = (_this$form$querySelec = this.form.querySelector(`input[name="${FetchIt.tokenField}"]`)) === null || _this$form$querySelec === void 0 ? void 0 : _this$form$querySelec.value;
 			if (this.config.pow && token) this.solution(token).catch((error) => {
-				if (this.work?.token === token) console.error(error);
+				var _this$work3;
+				if (((_this$work3 = this.work) === null || _this$work3 === void 0 ? void 0 : _this$work3.token) === token) console.error(error);
 			});
 		}
 		/**
@@ -841,7 +899,10 @@
 			});
 		}
 		enableFields() {
-			this.elements.filter((field) => !this.disabledBefore?.includes(field)).forEach((field) => field.removeAttribute("disabled"));
+			this.elements.filter((field) => {
+				var _this$disabledBefore;
+				return !((_this$disabledBefore = this.disabledBefore) === null || _this$disabledBefore === void 0 ? void 0 : _this$disabledBefore.includes(field));
+			}).forEach((field) => field.removeAttribute("disabled"));
 		}
 		disableFields() {
 			this.disabledBefore = this.elements.filter((field) => field.hasAttribute("disabled"));
@@ -890,7 +951,8 @@
 		*/
 		static notify(hook, message) {
 			try {
-				(FetchIt.Message?.[hook])?.(message);
+				var _FetchIt$Message, _FetchIt$Message$hook;
+				(_FetchIt$Message = FetchIt.Message) === null || _FetchIt$Message === void 0 || (_FetchIt$Message$hook = _FetchIt$Message[hook]) === null || _FetchIt$Message$hook === void 0 || _FetchIt$Message$hook.call(_FetchIt$Message, message);
 			} catch (error) {
 				console.error(`FetchIt: FetchIt.Message.${hook}() threw; the visitor did not get this notification`, error);
 			}
@@ -924,8 +986,24 @@
 				console.warn(`FetchIt: no form matches ${selector}`);
 				return;
 			}
-			forms.forEach((form) => FetchIt.instances.get(form) ?? new this(form, config));
+			forms.forEach((form) => {
+				var _FetchIt$instances$ge;
+				return (_FetchIt$instances$ge = FetchIt.instances.get(form)) !== null && _FetchIt$instances$ge !== void 0 ? _FetchIt$instances$ge : new this(form, config);
+			});
 		}
 	};
+	_defineProperty(FetchIt, "forms", []);
+	_defineProperty(FetchIt, "instances", /* @__PURE__ */ new Map());
+	_defineProperty(FetchIt, "defaultRequestErrorMessage", "Could not send the form. Please try again.");
+	_defineProperty(FetchIt, "tokenField", "fetchit_token");
+	_defineProperty(FetchIt, "powField", "fetchit_pow");
+	_defineProperty(FetchIt, "events", {
+		before: "fetchit:before",
+		success: "fetchit:success",
+		error: "fetchit:error",
+		after: "fetchit:after",
+		reset: "fetchit:reset"
+	});
+	window.FetchIt = FetchIt;
 	//#endregion
 })();

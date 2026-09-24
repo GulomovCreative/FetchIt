@@ -9,6 +9,7 @@
   "scripts": {
     "build": "rolldown -c",
     "build:check": "npm run build && git diff --exit-code -- assets/components/fetchit/js",
+    "check:syntax": "acorn --ecma2019 --silent assets/components/fetchit/js/fetchit.js && acorn --ecma2019 --silent assets/components/fetchit/js/fetchit.min.js",
     "lint": "oxlint",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -32,6 +33,7 @@
   "devDependencies": {
     "@playwright/test": "^1.63.0",
     "@types/node": "^26.6.2",
+    "acorn": "^8.18.0",
     "jsdom": "^30.1.1",
     "oxlint": "^1.85.0",
     "rolldown": "^1.2.10",
