@@ -1,7 +1,9 @@
 import { CaptchaError, createCaptcha, type Captcha } from './captcha'
+import { createNotifier } from './notifier'
 import { solve } from './pow'
+import { stripTags } from './text'
 
-class FetchIt {
+class FetchIt implements FetchItInstance {
   declare static Message?: FetchItMessage;
   static forms: HTMLFormElement[] = [];
   static instances = new Map<HTMLFormElement, FetchIt>();
@@ -17,7 +19,7 @@ class FetchIt {
     error: 'fetchit:error',
     after: 'fetchit:after',
     reset: 'fetchit:reset',
-  }
+  } as const
 
   declare form: HTMLFormElement;
   declare config: FetchItConfig;
@@ -512,29 +514,21 @@ class FetchIt {
   }
 
   static sanitizeHTML (str: string = ''): string {
-    return str.replace(/(<([^>]+)>)/gi, '');
+    return stripTags(str);
   }
 
   static hasErrorMessage (message: unknown = ''): boolean {
     return FetchIt.sanitizeHTML(String(message)).trim() !== '';
   }
 
-  static create(config: FetchItConfig) {
-    if (
-      config.defaultNotifier
-      && typeof window.Notyf === 'function'
-      && typeof FetchIt.Message === 'undefined'
-    ) {
-      const notyf = new Notyf();
+  static createNotifier (options?: FetchItNotifierOptions) {
+    return createNotifier(options);
+  }
 
-      FetchIt.Message = {
-        success(message) {
-          notyf.success(message);
-        },
-        error(message) {
-          notyf.error(message);
-        },
-      }
+  static create(config: FetchItConfig) {
+    // A FetchIt.Message of the site wins over the built-in notifier.
+    if (config.defaultNotifier && FetchIt.Message === undefined) {
+      FetchIt.Message = createNotifier({ closeLabel: config.notifierCloseLabel });
     }
 
     if (!config.action) {

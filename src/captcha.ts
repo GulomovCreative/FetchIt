@@ -5,12 +5,7 @@
 // closed the check, the widget failed) answer() rejects with a CaptchaError
 // instead of sending a form the server would refuse.
 
-export type CaptchaProvider = 'turnstile' | 'recaptcha' | 'smartcaptcha'
-
-export interface CaptchaConfig {
-  provider: CaptchaProvider;
-  siteKey: string;
-}
+export type CaptchaConfig = FetchItCaptchaConfig
 
 export interface Captcha {
   // Put the answer into the form data, or reject with a CaptchaError.
