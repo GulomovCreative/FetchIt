@@ -71,33 +71,61 @@ FetchIt не тянет внешних JS-библиотек. У AjaxForm их �
 
 # Разработка
 
-Нужны Node.js 22.12+ (версия для CI — в `.node-version`), PHP 7.4+ с Composer и Docker.
+Нужны Node.js 22.22+ или 24.15+ (версия для CI в `.node-version`), PHP 7.4+ с Composer и Docker.
 
 ```sh
 npm ci && composer install
 
-npm run build       # src/index.ts → assets/components/fetchit/js/ (rolldown)
+npm run build       # src/index.ts → assets/components/fetchit/js/, Notyf → assets/components/fetchit/lib/
 npm run lint        # oxlint
 npm run typecheck   # tsc
 npm test            # Vitest
 vendor/bin/phpunit  # PHPUnit
 ```
 
-Локально поднимаются два сайта — MODX 2.8.6 на PHP 7.4 и MODX 3.2.4 на PHP 8.3; папки компонента из репозитория подключены в оба:
+`npm run build` нужен и перед сборкой пакета: папки `lib/` нет в git, без неё `build.php` остановится с ошибкой.
+
+## Локальные сайты
+
+Два сайта, MODX 2.8.6 на PHP 7.4 и MODX 3.2.4 на PHP 8.3. Папки компонента из репозитория подключены в оба, поэтому правки PHP и собранного JS видны сразу. Правки в `src/` видны после `npm run build`.
 
 ```sh
+# если ваши uid/gid не 1000: export HOST_UID=$(id -u) HOST_GID=$(id -g)
 docker compose up -d --build
+docker compose logs -f modx2 modx3   # дождаться строк «[fetchit] Manager: …»
 # MODX 2: http://localhost:8052/, MODX 3: http://localhost:8053/ (admin / FetchItDev2026)
-
-# пакет собирается на MODX 2 и ставится на оба сайта
-docker compose exec -u www-data -e PKG_DIST=1 modx2 php /extra/_build/build.php
-docker compose exec -u www-data modx2 php /extra/_build/ci/install.php /extra/_packages/fetchit-<версия>.transport.zip
-docker compose exec -u www-data modx3 php /extra/_build/ci/install.php /extra/_packages/fetchit-<версия>.transport.zip
 ```
 
-CI проверяет каждый PR: синтаксис PHP 7.4–8.4, PHPUnit, линтер, типы, тесты и актуальность собранного JS, workflow и shell-скрипты, согласованность версий. Затем собирает пакет на MODX 2.8.6, ставит его на MODX 2.8.6 и 3.2.4 и отправляет формы через HTTP и из браузера (Playwright).
+Пакет собирается на MODX 2 и ставится на оба сайта так же, как в CI:
 
-Релиз: поднять версию в `_build/config.inc.php`, `core/components/fetchit/model/fetchit.class.php` и `package.json`, добавить раздел в `core/components/fetchit/docs/changelog.txt` и опубликовать GitHub-релиз с тегом `vX.Y.Z`. Пакет и заметки из истории коммитов ([conventional commits](https://www.conventionalcommits.org/ru/)) прикрепятся к релизу автоматически.
+```sh
+docker compose exec -u www-data -e PKG_DIST=1 modx2 php /extra/_build/build.php
+docker compose exec -u www-data modx2 php /extra/_build/ci/install.php /extra/_packages/fetchit-<версия>-pl.transport.zip
+docker compose exec -u www-data modx3 php /extra/_build/ci/install.php /extra/_packages/fetchit-<версия>-pl.transport.zip
+```
+
+Без `PKG_DIST=1` `build.php` сразу ставит пакет на тот сайт, где его собирают.
+
+Проверки через HTTP и браузерные тесты на локальном сайте:
+
+```sh
+fixtures=$(docker compose exec -T -u www-data modx2 php /extra/_build/ci/fixtures.php)
+_build/ci/smoke.sh http://localhost:8052 "$fixtures"
+npx playwright install chromium
+BASE_URL=http://localhost:8052 FIXTURES="$fixtures" npm run e2e
+```
+
+## CI и релизы
+
+CI проверяет каждый PR: синтаксис PHP 7.4–8.4, PHPUnit, линтер, типы, тесты и актуальность собранного JS, workflow и shell-скрипты, согласованность версий. Затем собирает пакет на MODX 2.8.6, ставит его на MODX 2.8.6 и 3.2.4 и отправляет формы через HTTP (с анонимными сессиями и без) и из браузера (Playwright), в том числе со встроенным уведомителем.
+
+Релиз:
+
+1. Поднять версию в `_build/config.inc.php` и `core/components/fetchit/model/fetchit.class.php`, в `package.json` и `package-lock.json` через `npm version X.Y.Z --no-git-tag-version`.
+2. Добавить в `core/components/fetchit/docs/changelog.txt` раздел `## [X.Y.Z] - ГГГГ-ММ-ДД`.
+3. Слить это в `master` и запушить тег: `git tag vX.Y.Z && git push origin vX.Y.Z`.
+
+Workflow проверит версию, соберёт пакет, прогонит его на MODX 2 и 3 и только потом создаст GitHub-релиз с пакетом. Заметки к релизу собираются из коммитов `feat`, `fix`, `perf` и `refactor` ([conventional commits](https://www.conventionalcommits.org/ru/)); если таких нет, берётся раздел из changelog.
 
 ---
 
