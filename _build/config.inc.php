@@ -15,7 +15,7 @@ if (!defined('MODX_CORE_PATH')) {
 return [
     'name' => 'FetchIt',
     'name_lower' => 'fetchit',
-    'version' => '1.1.3',
+    'version' => '1.1.4',
     'release' => 'pl',
     // Install package to site right after build; PKG_DIST=1 only builds it
     'install' => !getenv('PKG_DIST'),
