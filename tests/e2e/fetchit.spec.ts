@@ -39,6 +39,23 @@ test.describe('form with its own handler', () => {
   })
 })
 
+test.describe('broken server', () => {
+  test('tells the visitor when the answer is not JSON', async ({ page }) => {
+    await page.route('**/action.php', route => route.fulfill({
+      status: 500,
+      contentType: 'text/html',
+      body: '<b>Fatal error</b>',
+    }))
+    await page.goto(`/index.php?id=${fixtures.custom}`)
+
+    await page.locator('input[name="email"]').fill('ann@example.com')
+    await page.getByRole('button', { name: 'Send' }).click()
+
+    await expect(page.locator('[data-validation-error]')).toHaveText('Could not send the form. Please try again.')
+    await expect(page.locator('input[name="email"]')).toBeEnabled()
+  })
+})
+
 test.describe('form processed by FormIt', () => {
   test.skip(!fixtures.formit, 'FormIt is not installed')
 

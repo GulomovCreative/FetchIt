@@ -15,10 +15,11 @@ class FetchIt {
   declare request: Request;
   declare formData: FormData;
   declare preserveFormMessagesOnReset: boolean;
+  declare disabledBefore: Element[];
 
   constructor (form: unknown, config: FetchItConfig) {
     if (!(form instanceof HTMLFormElement)) {
-      throw new Error('Не форма');
+      throw new Error('FetchIt: the element is not a form');
     }
 
     this.form = form;
@@ -40,8 +41,8 @@ class FetchIt {
   }
 
   prepareEvents() {
-    this.form.addEventListener('submit', async e => {
-      e.preventDefault();
+    this.form.addEventListener('submit', async event => {
+      event.preventDefault();
 
       this.formData = new FormData(this.form);
       this.formData.set('pageId', String(this.config.pageId));
@@ -67,8 +68,14 @@ class FetchIt {
       this.disableFields();
 
       try {
-        const query = await fetch(this.request, { method: 'post', body: this.formData });
-        const response: FetchItResponse = await query.json();
+        let response: FetchItResponse;
+        try {
+          const query = await fetch(this.request, { method: 'post', body: this.formData });
+          response = await query.json();
+        } catch (error) {
+          this.failRequest(error);
+          return;
+        }
 
         const afterEvent = new CustomEvent(FetchIt.events.after, {
           cancelable: true,
@@ -142,8 +149,8 @@ class FetchIt {
           this.form.reset();
           this.preserveFormMessagesOnReset = false;
         }
-      } catch (e) {
-        console.error(e);
+      } catch (error) {
+        console.error(error);
       } finally {
         this.enableFields();
       }
@@ -170,6 +177,36 @@ class FetchIt {
         this.clearError((target as Element).getAttribute('name'));
       });
     });
+  }
+
+  /**
+   * The request failed or the answer was not JSON (a PHP error page,
+   * a redirect): tell the visitor instead of failing silently.
+   */
+  failRequest (error: unknown) {
+    console.error(error);
+
+    const message = this.config.requestErrorMessage ?? '';
+    if (message) {
+      FetchIt?.Message?.error?.(message);
+    }
+
+    const errorEvent = new CustomEvent(FetchIt.events.error, {
+      cancelable: true,
+      detail: {
+        form: this.form,
+        formData: this.formData,
+        response: null,
+        error,
+        fetchit: this,
+      },
+    });
+
+    if (!document.dispatchEvent(errorEvent)) {
+      return;
+    }
+
+    this.setFormMessage('validation', message);
   }
 
   clearErrors () {
@@ -259,10 +296,13 @@ class FetchIt {
   }
 
   enableFields () {
-    this.elements.forEach(field => field.removeAttribute('disabled'));
+    this.elements
+      .filter(field => !this.disabledBefore?.includes(field))
+      .forEach(field => field.removeAttribute('disabled'));
   }
 
   disableFields () {
+    this.disabledBefore = this.elements.filter(field => field.hasAttribute('disabled'));
     this.elements.forEach(field => field.setAttribute('disabled', ''));
   }
 
@@ -271,7 +311,8 @@ class FetchIt {
       return [];
     }
 
-    return Array.from(this.form.querySelectorAll(`[name="${name}"], [name="${name}[]"]`));
+    const value = FetchIt.escapeAttribute(name);
+    return Array.from(this.form.querySelectorAll(`[name="${value}"], [name="${value}[]"]`));
   }
 
   getErrors (name: string | null): HTMLElement[] {
@@ -279,7 +320,8 @@ class FetchIt {
       return [];
     }
 
-    return Array.from(this.form.querySelectorAll<HTMLElement>(`[data-error="${name}"], [data-error="${name}[]"]`));
+    const value = FetchIt.escapeAttribute(name);
+    return Array.from(this.form.querySelectorAll<HTMLElement>(`[data-error="${value}"], [data-error="${value}[]"]`));
   }
 
   getCustomErrors (name: string | null): Element[] {
@@ -287,7 +329,7 @@ class FetchIt {
       return [];
     }
 
-    return Array.from(this.form.querySelectorAll(`[data-custom="${name}"]`));
+    return Array.from(this.form.querySelectorAll(`[data-custom="${FetchIt.escapeAttribute(name)}"]`));
   }
 
   get elements (): Element[] {
@@ -304,6 +346,13 @@ class FetchIt {
 
   get customInvalidClasses(): string[] {
     return this.config.customInvalidClass ? this.config.customInvalidClass.split(' ') : [];
+  }
+
+  /**
+   * Escape a value for a double-quoted attribute selector.
+   */
+  static escapeAttribute (value: string): string {
+    return value.replace(/["\\]/g, '\\$&');
   }
 
   static sanitizeHTML (str: string = ''): string {
@@ -333,17 +382,18 @@ class FetchIt {
     }
 
     if (!config.action) {
-      throw new Error('Нет идентификатора формы FetchIt');
+      throw new Error('FetchIt: the config has no action');
     }
 
-    const forms = document.querySelectorAll<HTMLFormElement>(`form[data-fetchit="${config.action}"]`);
-    if (!forms) {
-      throw new Error(`В документе не найдено форм по селектору: form[data-fetchit="${config.action}"]`);
+    const selector = `form[data-fetchit="${FetchIt.escapeAttribute(config.action)}"]`;
+    const forms = document.querySelectorAll<HTMLFormElement>(selector);
+    if (!forms.length) {
+      console.warn(`FetchIt: no form matches ${selector}`);
+      return;
     }
 
-    forms.forEach(form => {
-      new this(form, config);
-    });
+    // Identical snippet calls share an action and call create() twice.
+    forms.forEach(form => FetchIt.instances.get(form) ?? new this(form, config));
   }
 }
 

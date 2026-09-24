@@ -73,6 +73,7 @@ afterEach(() => {
   listeners.forEach(([name, handler]) => document.removeEventListener(name, handler))
   listeners = []
   vi.unstubAllGlobals()
+  vi.restoreAllMocks()
   document.body.innerHTML = ''
 })
 
@@ -284,4 +285,90 @@ describe('reset', () => {
     expect(field(form, 'email').classList.contains('is-invalid')).toBe(false)
     expect(element(form, '[data-validation-error]').style.display).toBe('none')
   })
+})
+
+describe('known bugs', () => {
+  it('binds a form once when create() runs twice for the same action', async () => {
+    // Two identical snippet calls give the same action and two create() calls.
+    const form = mountForm()
+    FetchIt.create(config())
+    FetchIt.create(config())
+    const fetch = respond({ success: true, message: '', data: [] })
+
+    await submit(form)
+
+    expect(fetch).toHaveBeenCalledOnce()
+  })
+
+  it('keeps fields disabled that were disabled before the request', async () => {
+    const form = mountForm()
+    field(form, 'name').disabled = true
+    FetchIt.create(config())
+    respond({ success: true, message: '', data: [] })
+
+    await submit(form)
+
+    expect(field(form, 'name').disabled).toBe(true)
+    expect(field(form, 'email').disabled).toBe(false)
+  })
+
+  it('does not throw when no form matches', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    expect(() => FetchIt.create(config())).not.toThrow()
+    expect(warn).toHaveBeenCalled()
+  })
+
+  it('handles field names with quotes', async () => {
+    document.body.innerHTML = `
+      <form data-fetchit="${action}">
+        <input name='say"hi' value="">
+        <span data-error='say"hi'></span>
+      </form>`
+    const form = document.querySelector('form') as HTMLFormElement
+    FetchIt.create(config())
+    respond({ success: false, message: 'Errors', data: { 'say"hi': 'Required' } })
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await submit(form)
+
+    expect(error).not.toHaveBeenCalled()
+    expect(element(form, '[data-error]').textContent).toBe('Required')
+  })
+})
+
+describe('failed requests', () => {
+  const requestErrorMessage = 'Could not send the form'
+
+  async function failWith(fetch: ReturnType<typeof vi.fn>) {
+    const form = mountForm()
+    FetchIt.create(config({ requestErrorMessage }))
+    vi.stubGlobal('fetch', fetch)
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    FetchIt.Message = { error: vi.fn(), success: vi.fn() }
+    const onError = vi.fn<Handler>()
+    on('fetchit:error', onError)
+
+    await submit(form)
+
+    return { form, onError }
+  }
+
+  const cases = {
+    'a response that is not JSON': vi.fn(async () => ({ json: async () => { throw new SyntaxError('Unexpected token <') } })),
+    'a network failure': vi.fn(async () => { throw new TypeError('Failed to fetch') }),
+  }
+
+  for (const [name, fetch] of Object.entries(cases)) {
+    it(`tells the visitor about ${name}`, async () => {
+      const { form, onError } = await failWith(fetch)
+
+      expect(FetchIt.Message?.error).toHaveBeenCalledWith(requestErrorMessage)
+      expect(element(form, '[data-validation-error]').textContent).toBe(requestErrorMessage)
+      expect(onError).toHaveBeenCalledOnce()
+      expect(onError.mock.calls[0]![0].detail.response).toBeNull()
+      expect(onError.mock.calls[0]![0].detail.error).toBeInstanceOf(Error)
+      expect(field(form, 'email').disabled).toBe(false)
+    })
+  }
 })
