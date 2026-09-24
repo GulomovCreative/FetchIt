@@ -84,8 +84,17 @@ class FetchIt {
 
       try {
         try {
-          const query = await fetch(this.request, { method: 'post', body: this.formData });
-          this.updateToken(query.headers?.get('X-FetchIt-Token'));
+          let query = await fetch(this.request, { method: 'post', body: this.formData });
+          let next = query.headers?.get('X-FetchIt-Token');
+          this.updateToken(next);
+          // A page from a cache, or open for long, holds a used or expired
+          // token: send once more with the new one instead of showing it.
+          if (next && query.headers?.get('X-FetchIt-Refused') === 'token') {
+            this.formData.set(FetchIt.tokenField, next);
+            query = await fetch(this.request, { method: 'post', body: this.formData });
+            next = query.headers?.get('X-FetchIt-Token');
+            this.updateToken(next);
+          }
           const body: unknown = await query.json();
           if (!FetchIt.isResponse(body)) {
             throw new Error(`FetchIt: unexpected answer from ${query.url || this.config.actionUrl} (HTTP ${query.status})`);

@@ -51,11 +51,21 @@
 				let response;
 				try {
 					try {
-						const query = await fetch(this.request, {
+						let query = await fetch(this.request, {
 							method: "post",
 							body: this.formData
 						});
-						this.updateToken(query.headers?.get("X-FetchIt-Token"));
+						let next = query.headers?.get("X-FetchIt-Token");
+						this.updateToken(next);
+						if (next && query.headers?.get("X-FetchIt-Refused") === "token") {
+							this.formData.set(FetchIt.tokenField, next);
+							query = await fetch(this.request, {
+								method: "post",
+								body: this.formData
+							});
+							next = query.headers?.get("X-FetchIt-Token");
+							this.updateToken(next);
+						}
 						const body = await query.json();
 						if (!FetchIt.isResponse(body)) throw new Error(`FetchIt: unexpected answer from ${query.url || this.config.actionUrl} (HTTP ${query.status})`);
 						response = body;

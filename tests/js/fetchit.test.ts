@@ -535,6 +535,15 @@ function mountProtectedForm() {
   return document.querySelector('form') as HTMLFormElement
 }
 
+function answerSequence(...answers: { body: unknown, headers: Record<string, string> }[]) {
+  const fetch = vi.fn(async (_request: Request, _init?: RequestInit) => {
+    const answer = answers.shift()!
+    return { headers: new Headers(answer.headers), json: async () => answer.body }
+  })
+  vi.stubGlobal('fetch', fetch)
+  return fetch
+}
+
 function answerWithToken(body: unknown, token: string | null) {
   return vi.fn(async (_request: Request, _init?: RequestInit) => ({
     headers: new Headers(token ? { 'X-FetchIt-Token': token } : {}),
@@ -573,6 +582,49 @@ describe('spam protection', () => {
     await submit(form)
 
     expect(field(form, 'fetchit_token').value).toBe('retry-token')
+  })
+
+  it('sends once more by itself when the page had a stale token', async () => {
+    // A page from a full-page cache, or open for a day, holds a used or
+    // expired token: the visitor must not see "expired" for it.
+    const form = mountProtectedForm()
+    FetchIt.create(config())
+    const fetch = answerSequence(
+      { body: { success: false, message: 'Expired', data: [] }, headers: { 'X-FetchIt-Token': 'fresh', 'X-FetchIt-Refused': 'token' } },
+      { body: { success: true, message: 'Sent', data: [] }, headers: { 'X-FetchIt-Token': 'after' } },
+    )
+
+    await submit(form)
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect((fetch.mock.calls[1]![1]!.body as FormData).get('fetchit_token')).toBe('fresh')
+    expect(element(form, '[data-success]').textContent).toBe('Sent')
+    expect(field(form, 'fetchit_token').value).toBe('after')
+  })
+
+  it('sends again only once', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config())
+    const refused = { body: { success: false, message: 'Expired', data: [] }, headers: { 'X-FetchIt-Token': 'fresh', 'X-FetchIt-Refused': 'token' } }
+    const fetch = answerSequence(refused, { ...refused })
+
+    await submit(form)
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not send again for other refusals or without a new token', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config())
+    const fetch = answerSequence(
+      { body: { success: false, message: 'Too fast', data: [] }, headers: { 'X-FetchIt-Token': 'retry', 'X-FetchIt-Refused': 'too_fast' } },
+    )
+    await submit(form)
+    expect(fetch).toHaveBeenCalledOnce()
+
+    const again = answerSequence({ body: { success: false, message: 'Expired', data: [] }, headers: { 'X-FetchIt-Refused': 'token' } })
+    await submit(form)
+    expect(again).toHaveBeenCalledOnce()
   })
 
   it('keeps the token when the answer has none', async () => {
