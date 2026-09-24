@@ -306,11 +306,27 @@ class FetchItPackage
                     $package->set('release', $sig[2]);
                 }
             }
-            $package->save();
+            if (!$package->save()) {
+                $this->fail("Could not register the package {$signature} for installing.");
+            }
         }
-        if ($package->install()) {
-            $this->modx->runProcessor('system/clearcache');
+        if (!$package->install()) {
+            $this->fail("Could not install {$signature}, see the messages above.");
         }
+        $this->modx->runProcessor('system/clearcache');
+        $this->modx->log(modX::LOG_LEVEL_INFO, "Installed {$signature}");
+    }
+
+
+    /**
+     * Log an error and stop the build with a non-zero exit code.
+     *
+     * @param string $message
+     */
+    protected function fail($message)
+    {
+        $this->modx->log(modX::LOG_LEVEL_ERROR, $message);
+        exit(1);
     }
 
 
@@ -321,14 +337,13 @@ class FetchItPackage
     {
         $name = $this->builder->getSignature() . '.transport.zip';
         $target = $this->config['root'] . '_packages/';
-        if (!is_dir($target)) {
-            mkdir($target, 0755, true);
+        if (!is_dir($target) && !mkdir($target, 0755, true)) {
+            $this->fail("Could not create {$target}.");
         }
-        if (copy(MODX_CORE_PATH . 'packages/' . $name, $target . $name)) {
-            $this->modx->log(modX::LOG_LEVEL_INFO, 'Package saved to _packages/' . $name);
-        } else {
-            $this->modx->log(modX::LOG_LEVEL_ERROR, 'Could not copy the package to _packages/');
+        if (!copy(MODX_CORE_PATH . 'packages/' . $name, $target . $name)) {
+            $this->fail("Could not copy the package to {$target}.");
         }
+        $this->modx->log(modX::LOG_LEVEL_INFO, 'Package saved to _packages/' . $name);
     }
 
 
@@ -337,6 +352,13 @@ class FetchItPackage
      */
     public function process()
     {
+        // The notifier comes from npm run build and is not in git.
+        foreach (['lib/notyf.min.js', 'lib/notyf.min.css', 'js/fetchit.js', 'js/fetchit.min.js'] as $file) {
+            if (!is_file($this->config['assets'] . $file)) {
+                $this->fail("assets/components/fetchit/{$file} is missing: run npm ci && npm run build first.");
+            }
+        }
+
         // Add elements
         $elements = scandir($this->config['elements']);
         foreach ($elements as $element) {
@@ -383,7 +405,14 @@ class FetchItPackage
         $this->modx->log(modX::LOG_LEVEL_INFO, 'Added package attributes and setup options.');
 
         $this->modx->log(modX::LOG_LEVEL_INFO, 'Packing up transport package zip...');
-        $this->builder->pack();
+        // Never ship a zip left over from an earlier build.
+        $zip = MODX_CORE_PATH . 'packages/' . $this->builder->getSignature() . '.transport.zip';
+        if (is_file($zip) && !unlink($zip)) {
+            $this->fail("Could not remove the old {$zip}.");
+        }
+        if (!$this->builder->pack() || !is_file($zip)) {
+            $this->fail('Could not pack the transport package.');
+        }
 
         $this->export();
 
