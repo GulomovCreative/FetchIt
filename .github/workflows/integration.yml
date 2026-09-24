@@ -1,0 +1,111 @@
+name: Integration
+
+# Installs the package from the "package" artifact on MODX 2 and MODX 3, then
+# submits forms over HTTP and from a real browser.
+
+on:
+  workflow_call:
+
+jobs:
+  modx:
+    name: MODX ${{ matrix.modx }} / PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - modx: 2.8.6-pl
+            php: '7.4'
+            formit: 1
+          # The setup resolver cannot download FormIt on MODX 3 yet: the
+          # provider there answers with a PSR-7 response. Until that is fixed,
+          # the FormIt checks are skipped on MODX 3.
+          - modx: 3.2.4-pl
+            php: '8.3'
+            formit: 0
+
+    env:
+      MODX_ROOT: /tmp/modx
+      MODX_CORE_PATH: /tmp/modx/core/
+      BASE_URL: http://127.0.0.1:8080
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: modx
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: curl, gd, mbstring, pdo_mysql, simplexml, zip
+          coverage: none
+          tools: none
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/modx-${{ matrix.modx }}.zip
+          key: modx-${{ matrix.modx }}
+
+      - name: Install MODX
+        env:
+          MODX_HTTP_HOST: 127.0.0.1:8080
+        run: |
+          _build/ci/modx-download.sh "${{ matrix.modx }}" "$MODX_ROOT" ~/modx-"${{ matrix.modx }}".zip
+          _build/ci/modx-setup.sh
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: package
+          path: _packages
+
+      - name: Install the package
+        run: php _build/ci/install.php _packages/*.transport.zip
+
+      - name: Create the test pages
+        run: |
+          php _build/ci/fixtures.php | tail -n1 > fixtures.json
+          cat fixtures.json
+
+      - name: Start the web server
+        run: |
+          php -S 127.0.0.1:8080 -t "$MODX_ROOT" > server.log 2>&1 &
+          for _ in $(seq 1 30); do curl -s -o /dev/null "$BASE_URL/" && break; sleep 1; done
+
+      - name: HTTP checks
+        env:
+          REQUIRE_FORMIT: ${{ matrix.formit }}
+        run: _build/ci/smoke.sh "$BASE_URL" "$(cat fixtures.json)"
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Browser checks
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          FIXTURES="$(cat fixtures.json)" npm run e2e
+
+      - name: Keep the logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: integration-modx-${{ matrix.modx }}
+          path: |
+            server.log
+            playwright-report/
+            ${{ env.MODX_ROOT }}/core/cache/logs/
+          if-no-files-found: ignore

@@ -2,48 +2,112 @@ name: CI
 
 on:
   push:
-    branches: [master, main, next]
+    branches: [master, next]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-  syntax:
-    name: PHP syntax (PHP ${{ matrix.php }})
+  php-lint:
+    name: PHP ${{ matrix.php }} syntax
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         php: ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4']
-
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - name: Setup PHP
-        uses: shivammathur/setup-php@v2
+      - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
           coverage: none
+          tools: none
 
-      - name: Syntax check (php -l)
+      - name: php -l
         run: |
           set -e
-          while IFS= read -r -d '' file; do
-            php -l "$file"
-          done < <(find . -name '*.php' -not -path './.git/*' -not -path './vendor/*' -not -path './node_modules/*' -not -path './modx/*' -print0)
+          find . -name '*.php' -not -path './.git/*' -not -path './vendor/*' -not -path './node_modules/*' -print0 \
+            | xargs -0 -n1 php -l > /dev/null
 
-  assets:
-    name: Frontend build
+  php-tests:
+    name: PHPUnit on PHP ${{ matrix.php }}
     runs-on: ubuntu-latest
-
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.4']
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: shivammathur/setup-php@v2
         with:
-          node-version: "20"
+          php-version: ${{ matrix.php }}
+          coverage: none
+          tools: composer
+
+      - run: composer install --no-interaction --no-progress
+
+      - run: vendor/bin/phpunit
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
           cache: npm
 
-      - name: Build assets
-        run: |
-          npm ci
-          npm run build
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      - name: Committed build matches src/
+        run: npm run build:check
+
+  scripts:
+    name: Workflows and shell scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: actionlint
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest -color
+
+      - name: shellcheck
+        run: shellcheck _build/ci/*.sh docker/php/entrypoint.sh
+
+  version:
+    name: Version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+          tools: none
+
+      - run: php _build/ci/version.php
+
+  package:
+    needs: [php-lint, php-tests, frontend, scripts, version]
+    uses: ./.github/workflows/package.yml
+
+  integration:
+    needs: package
+    uses: ./.github/workflows/integration.yml
