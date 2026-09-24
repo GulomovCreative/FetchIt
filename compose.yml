@@ -10,6 +10,10 @@ name: fetchit
 #   MODX 2: http://localhost:8052/   MODX 3: http://localhost:8053/
 #   Manager: /manager/, admin / FetchItDev2026
 #
+# Only install packages built from this working copy here: the component
+# directories are mounted, so an older FetchIt package would overwrite the
+# repository files. Use compose.clean.yml for upgrade tests.
+#
 # Build the package on MODX 2 and install it on both sites, as CI does
 # (see README.md, "Разработка"):
 #

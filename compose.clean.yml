@@ -1,0 +1,34 @@
+# Sites that install FetchIt only from packages, e.g. to try an upgrade from
+# 1.x or 3.x. The dev sites of compose.yml mount the component directories
+# of this repository, so any FetchIt package installed there writes its
+# files into the working copy. Here the repository is mounted read-only
+# and the sites get their own project name, volumes and ports:
+#
+#   docker compose -p fetchit-clean -f compose.yml -f compose.clean.yml up -d --build
+#   MODX 2: http://localhost:8062/   MODX 3: http://localhost:8063/
+#
+#   docker compose -p fetchit-clean -f compose.yml -f compose.clean.yml exec -u www-data modx3 \
+#       php /extra/_build/ci/install.php /extra/_packages/fetchit-<version>-pl.transport.zip
+
+services:
+  db:
+    ports: !override
+      - "13362:3306"
+
+  modx2:
+    environment:
+      MODX_HTTP_HOST: "localhost:8062"
+    ports: !override
+      - "8062:80"
+    volumes: !override
+      - modx2:/var/www/html
+      - ./:/extra:ro
+
+  modx3:
+    environment:
+      MODX_HTTP_HOST: "localhost:8063"
+    ports: !override
+      - "8063:80"
+    volumes: !override
+      - modx3:/var/www/html
+      - ./:/extra:ro
