@@ -54,6 +54,9 @@ submit() {
 # Succeeds when a file does not match a pattern.
 lacks() { ! grep -q "$1" "$2"; }
 
+# Succeeds when the page last opened loaded and does not match a pattern.
+page_lacks() { test -s "$jar.html" && lacks "$1" "$jar.html"; }
+
 # The value of a header of the last answer of submit(), or nothing.
 header() { { grep -i "^$1:" "$jar.headers" || true; } | head -n1 | cut -d' ' -f2 | tr -d '\r'; }
 

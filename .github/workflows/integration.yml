@@ -181,6 +181,12 @@ jobs:
           _build/ci/captcha.sh on
           _build/ci/protection.sh "$BASE_URL" "$(cat fixtures.json)" captcha
 
+      - name: Protection honours a refusal of Turnstile
+        # The test secret of Cloudflare that refuses every answer.
+        run: |
+          _build/ci/captcha.sh fail
+          _build/ci/protection.sh "$BASE_URL" "$(cat fixtures.json)" captcha-refused
+
       - name: Turn the captcha back off
         if: always()
         run: _build/ci/captcha.sh off

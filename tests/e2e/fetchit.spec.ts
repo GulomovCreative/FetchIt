@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-const fixtures: { custom: number, formit: number | null } = JSON.parse(process.env.FIXTURES ?? '{}')
+const fixtures: { custom: number, formit: number | null, mixed?: number | null } = JSON.parse(process.env.FIXTURES ?? '{}')
 
 test.describe('form with its own handler', () => {
   test.beforeEach(async ({ page }) => {
@@ -189,6 +189,25 @@ test.describe('form processed by FormIt', () => {
     await page.getByRole('button', { name: 'Send' }).click()
 
     await expect(page.locator('[data-success]')).toHaveText('Sent')
+  })
+})
+
+test.describe('a form of FormIt in its AJAX mode next to a FetchIt form', () => {
+  // FormIt 5.2 and later; FetchIt turns the AJAX mode off for its own forms only.
+  test.skip(!fixtures.mixed, 'FormIt has no AJAX mode')
+
+  test('both are sent, each its own way', async ({ page }) => {
+    await page.goto(`/index.php?id=${fixtures.mixed}`)
+    const own = page.locator('#own')
+
+    await own.getByRole('textbox', { name: 'Own' }).fill('hello')
+    await own.getByRole('button', { name: 'Own' }).click()
+    await expect(own.locator('[data-formit-success-message]')).toHaveText('Own sent')
+
+    const fetchit = page.locator('form[data-fetchit]')
+    await fetchit.locator('input[name="email"]').fill('ann@example.com')
+    await fetchit.getByRole('button', { name: 'Send' }).click()
+    await expect(fetchit.locator('[data-success]')).toHaveText('Sent')
   })
 })
 
