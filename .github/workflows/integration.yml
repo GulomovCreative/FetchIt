@@ -84,8 +84,11 @@ jobs:
       - name: Start the web server
         # request_order=GPC puts cookies into $_REQUEST, as on servers without
         # a php.ini. The cookie check in smoke.sh only bites with it.
+        # The checks change system settings between requests; MODX keeps them
+        # in PHP cache files, which OPcache would serve stale for up to
+        # revalidate_freq seconds.
         run: |
-          php -d request_order=GPC -S 127.0.0.1:8080 -t "$MODX_ROOT" > server.log 2>&1 &
+          php -d request_order=GPC -d opcache.revalidate_freq=0 -S 127.0.0.1:8080 -t "$MODX_ROOT" > server.log 2>&1 &
           for _ in $(seq 1 30); do curl -s -o /dev/null "$BASE_URL/" && exit 0; sleep 1; done
           echo "::error::The web server did not start"
           cat server.log
