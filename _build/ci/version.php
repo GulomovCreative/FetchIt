@@ -1,12 +1,14 @@
 <?php
 /**
- * Check that every place holding the version agrees, and print the package
- * signature for $GITHUB_OUTPUT.
+ * Check that _build/config.inc.php, the FetchIt class, package.json and
+ * package-lock.json name the same version, and print the package signature
+ * for $GITHUB_OUTPUT.
  *
  * Usage: php _build/ci/version.php [tag]
  *
- * With a tag (a release), the tag must name the version too, and the
- * changelog must have a section for it.
+ * With a tag (a release), the tag must be vX.Y.Z or vX.Y.Z-<release> for
+ * that version (cliff.toml only sees tags starting with "v"), and the
+ * changelog must have a "## [X.Y.Z]" section.
  */
 
 $root = dirname(__DIR__, 2) . '/';
@@ -28,11 +30,20 @@ if (!isset($package['version']) || $package['version'] !== $version) {
     $errors[] = "package.json says {$found}, _build/config.inc.php says {$version}.";
 }
 
+$lock = json_decode((string)file_get_contents($root . 'package-lock.json'), true);
+foreach (['version' => 'package-lock.json', 'root package' => 'package-lock.json packages[""]'] as $where => $label) {
+    $found = $where === 'version'
+        ? (isset($lock['version']) ? $lock['version'] : 'nothing')
+        : (isset($lock['packages']['']['version']) ? $lock['packages']['']['version'] : 'nothing');
+    if ($found !== $version) {
+        $errors[] = "{$label} says {$found}, _build/config.inc.php says {$version} (run npm version {$version} --no-git-tag-version).";
+    }
+}
+
 $tag = isset($argv[1]) ? trim($argv[1]) : '';
 if ($tag !== '') {
-    $tagged = preg_replace('/^v/', '', $tag);
-    if ($tagged !== $version && $tagged !== $version . '-' . $config['release']) {
-        $errors[] = "The tag {$tag} does not name version {$version}.";
+    if ($tag !== 'v' . $version && $tag !== 'v' . $version . '-' . $config['release']) {
+        $errors[] = "The tag {$tag} does not name version {$version}: use v{$version}.";
     }
 
     $changelog = (string)file_get_contents($root . 'core/components/fetchit/docs/changelog.txt');

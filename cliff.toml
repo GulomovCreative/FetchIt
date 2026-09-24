@@ -1,4 +1,4 @@
-# Release notes from the commit history (https://git-cliff.org), added to the
+# Release notes from the commit history (https://git-cliff.org), used for the
 # GitHub release by .github/workflows/release.yml.
 
 [changelog]
@@ -15,12 +15,15 @@ footer = ""
 trim = true
 
 [git]
+# Only tags in the history of the released commit: the next branch (3.x)
+# has newer tags that are not part of master and must not become "previous".
+use_branch_tags = true
 conventional_commits = true
 filter_unconventional = true
 split_commits = false
 tag_pattern = "v[0-9].*"
 sort_commits = "oldest"
-# chore, build, ci, docs and test stay out of the notes.
+# Only feat, fix, perf and refactor make it into the notes.
 commit_parsers = [
   { message = "^feat", group = "<!-- 0 -->Added" },
   { message = "^fix", group = "<!-- 1 -->Fixed" },
