@@ -13,7 +13,9 @@ class FetchItTest extends TestCase
         $_SESSION = [];
         // The "scripts requested" flag lives for one request, i.e. one test.
         $flag = new ReflectionProperty(FetchIt::class, 'scriptRequested');
-        $flag->setAccessible(true);
+        if (PHP_VERSION_ID < 80100) {
+            $flag->setAccessible(true);
+        }
         $flag->setValue(null, false);
     }
 
@@ -269,6 +271,21 @@ class FetchItTest extends TestCase
         $this->assertSame(['email' => 'a@b.c'], $snippet->received['fields']);
         $this->assertFalse($snippet->_cacheable);
         $this->assertFalse($snippet->_processed);
+    }
+
+    public function testUnknownPropertySetIsLoggedAndIgnored()
+    {
+        // A typo in &snippet=`Handler@set` threw a TypeError on PHP 8.
+        $snippet = $this->addSnippet('Handler', function () {
+            return '{"success":true}';
+        });
+        $snippet->properties = ['a' => 'default'];
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'Handler@typo']);
+
+        $this->assertSame('{"success":true}', $fetchit->process('abc', []));
+        $this->assertSame('default', $snippet->received['a']);
+        $this->assertLogged('typo');
     }
 
     // ----------------------------------------------------------------- FormIt

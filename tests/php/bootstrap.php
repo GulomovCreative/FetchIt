@@ -1,9 +1,11 @@
 <?php
 
 /*
- * Unit tests run FetchIt against this in-memory stand-in for MODX: it covers
- * only what the class touches. Behaviour that needs a real MODX (the parser,
- * FormIt, transport packages) is checked by the integration tests in CI.
+ * Unit tests run FetchIt and the setup resolver against this in-memory
+ * stand-in for MODX: it covers only what they touch, and follows real MODX
+ * where that matters (getOption(), getPropertySet()). Behaviour that needs a
+ * real MODX (the parser, FormIt, transport packages) is checked by the
+ * integration tests in CI.
  */
 
 define('MODX_CORE_PATH', dirname(__DIR__, 2) . '/core/');
@@ -51,17 +53,20 @@ class modX
         $this->cacheManager = new FakeCacheManager();
     }
 
+    /**
+     * As xPDO::getOption(): with $skipEmpty, an empty value in $options
+     * falls through to the settings before the default.
+     */
     public function getOption($key, $options = null, $default = null, $skipEmpty = false)
     {
-        if (is_array($options) && array_key_exists($key, $options)) {
-            $value = $options[$key];
-        } elseif (array_key_exists($key, $this->options)) {
-            $value = $this->options[$key];
-        } else {
-            return $default;
+        if (is_array($options) && array_key_exists($key, $options) && (!$skipEmpty || $options[$key] !== '')) {
+            return $options[$key];
+        }
+        if (array_key_exists($key, $this->options) && (!$skipEmpty || $this->options[$key] !== '')) {
+            return $this->options[$key];
         }
 
-        return $skipEmpty && $value === '' ? $default : $value;
+        return $default;
     }
 
     public function lexicon($key, $params = [])
@@ -186,9 +191,12 @@ class FakeSnippet
         return $this->properties;
     }
 
+    /**
+     * As modElement::getPropertySet(): null for a set that does not exist.
+     */
     public function getPropertySet($set)
     {
-        return isset($this->propertySets[$set]) ? $this->propertySets[$set] : [];
+        return isset($this->propertySets[$set]) ? $this->propertySets[$set] : null;
     }
 
     public function process($properties)
