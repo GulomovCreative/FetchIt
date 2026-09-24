@@ -77,10 +77,12 @@ class FetchIt
         $attribute = '#(\s+)([^\s"\'>/=]+)(\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s"\'=<>`]+))?#';
 
         $result = preg_replace_callback($tag, function ($match) use ($action, $attribute) {
+            /** @var array $match */
             $attributes = preg_replace_callback($attribute, function ($pair) {
                 return in_array(strtolower($pair[2]), ['method', 'data-fetchit'], true) ? '' : $pair[0];
             }, $match[1]);
             if ($attributes === null) {
+                $this->modx->log(modX::LOG_LEVEL_ERROR, '[FetchIt] Could not read the attributes of a form: ' . $this->pcreError());
                 $attributes = $match[1];
             }
 
@@ -95,6 +97,25 @@ class FetchIt
         }
 
         return $result;
+    }
+
+
+    /**
+     * Add ?v=<version> to a URL, keeping its query string and fragment.
+     *
+     * @param string $url
+     *
+     * @return string
+     */
+    protected function withVersion($url)
+    {
+        $fragment = '';
+        if (($hash = strpos($url, '#')) !== false) {
+            $fragment = substr($url, $hash);
+            $url = substr($url, 0, $hash);
+        }
+
+        return $url . (strpos($url, '?') === false ? '?' : '&') . 'v=' . $this->version . $fragment;
     }
 
 
@@ -131,9 +152,11 @@ class FetchIt
                 : 0,
         ]);
         $js_classname = trim($this->modx->getOption('fetchit.frontend.js.classname', null, 'FetchIt', true));
-        // Without the script (a cached snippet call, a page without <head>)
-        // the form falls back to a normal submit instead of a ReferenceError.
-        $this->modx->regClientHTMLBlock("<script>window.addEventListener('DOMContentLoaded', () => window.{$js_classname} ? {$js_classname}.create($config) : console.error('FetchIt: {$js_classname} is not loaded'));</script>");
+        // The class may be a window property, a top-level "class" declaration
+        // (no window property) or a dotted name. Without the script (a cached
+        // snippet call, a page without <head>) the form falls back to a
+        // normal submit instead of throwing.
+        $this->modx->regClientHTMLBlock("<script>window.addEventListener('DOMContentLoaded', () => { let FetchItClass; try { FetchItClass = {$js_classname}; } catch (e) {} if (FetchItClass && typeof FetchItClass.create === 'function') { FetchItClass.create($config); } else { console.error('FetchIt: {$js_classname} is not loaded'); } });</script>");
     }
 
 
@@ -149,13 +172,13 @@ class FetchIt
         self::$scriptRequested = false;
 
         $js = trim($this->config['frontend_js']);
-        if (!preg_match('/\.m?js(?:[?#]|$)/i', $js)) {
+        if (!preg_match('/\.js/i', $js)) {
             $this->modx->log(modX::LOG_LEVEL_ERROR, "[FetchIt] fetchit.frontend.js is not a JavaScript file: \"{$js}\"; no script added");
 
             return;
         }
 
-        $assets = ['<script src="' . str_replace('[[+assetsUrl]]', $this->config['assetsUrl'], $js) . '?v=' . $this->version . '" defer></script>'];
+        $assets = ['<script src="' . $this->withVersion(str_replace('[[+assetsUrl]]', $this->config['assetsUrl'], $js)) . '" defer></script>'];
 
         if ($this->config['default_notifier']) {
             array_unshift($assets,
