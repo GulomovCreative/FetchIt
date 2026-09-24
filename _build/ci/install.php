@@ -5,9 +5,13 @@
  * Usage: MODX_CORE_PATH=/path/to/core/ php _build/ci/install.php <package.transport.zip>
  */
 
-$file = isset($argv[1]) ? $argv[1] : '';
+if ($argc !== 2) {
+    fwrite(STDERR, "Usage: php install.php <package.transport.zip> (exactly one package)\n");
+    exit(1);
+}
+$file = $argv[1];
 if (!is_file($file)) {
-    fwrite(STDERR, "Usage: php install.php <package.transport.zip>\n");
+    fwrite(STDERR, "No such package: {$file}\n");
     exit(1);
 }
 

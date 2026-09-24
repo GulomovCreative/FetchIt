@@ -13,8 +13,7 @@ if ($argc < 3) {
 /** @var modX $modx */
 $modx = require __DIR__ . '/bootstrap.inc.php';
 
-$class = class_exists('MODX\Revolution\modX') ? 'MODX\Revolution\modSystemSetting' : 'modSystemSetting';
-$setting = $modx->getObject($class, ['key' => $argv[1]]);
+$setting = $modx->getObject(modx_class('modSystemSetting'), ['key' => $argv[1]]);
 if (!$setting) {
     fwrite(STDERR, "No system setting {$argv[1]}.\n");
     exit(1);

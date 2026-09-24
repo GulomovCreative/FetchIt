@@ -6,6 +6,11 @@ name: Integration
 on:
   workflow_call:
 
+defaults:
+  run:
+    # bash -eo pipefail: a failing command in a pipe fails the step.
+    shell: bash
+
 jobs:
   modx:
     name: MODX ${{ matrix.modx }} / PHP ${{ matrix.php }}
@@ -40,6 +45,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -56,8 +63,9 @@ jobs:
       - name: Install MODX
         env:
           MODX_HTTP_HOST: 127.0.0.1:8080
+          MODX_VERSION: ${{ matrix.modx }}
         run: |
-          _build/ci/modx-download.sh "${{ matrix.modx }}" "$MODX_ROOT" ~/modx-"${{ matrix.modx }}".zip
+          _build/ci/modx-download.sh "$MODX_VERSION" "$MODX_ROOT" ~/modx-"$MODX_VERSION".zip
           _build/ci/modx-setup.sh
 
       - uses: actions/download-artifact@v8
@@ -70,7 +78,7 @@ jobs:
 
       - name: Create the test pages
         run: |
-          php _build/ci/fixtures.php | tail -n1 > fixtures.json
+          php _build/ci/fixtures.php fixtures.json
           cat fixtures.json
 
       - name: Start the web server
@@ -78,7 +86,10 @@ jobs:
         # a php.ini. The cookie check in smoke.sh only bites with it.
         run: |
           php -d request_order=GPC -S 127.0.0.1:8080 -t "$MODX_ROOT" > server.log 2>&1 &
-          for _ in $(seq 1 30); do curl -s -o /dev/null "$BASE_URL/" && break; sleep 1; done
+          for _ in $(seq 1 30); do curl -s -o /dev/null "$BASE_URL/" && exit 0; sleep 1; done
+          echo "::error::The web server did not start"
+          cat server.log
+          exit 1
 
       - name: HTTP checks
         env:
@@ -90,9 +101,12 @@ jobs:
         env:
           REQUIRE_FORMIT: 1
         run: |
-          trap 'php _build/ci/setting.php anonymous_sessions 1' EXIT
           php _build/ci/setting.php anonymous_sessions 0
           _build/ci/smoke.sh "$BASE_URL" "$(cat fixtures.json)"
+
+      - name: Turn anonymous sessions back on
+        if: always()
+        run: php _build/ci/setting.php anonymous_sessions 1
 
       - uses: actions/setup-node@v7
         with:
@@ -104,6 +118,15 @@ jobs:
           npm ci
           npx playwright install --with-deps chromium
           FIXTURES="$(cat fixtures.json)" npm run e2e
+
+      - name: Browser checks with the default notifier
+        run: |
+          php _build/ci/setting.php fetchit.frontend.default.notifier 1
+          FIXTURES="$(cat fixtures.json)" NOTIFIER=1 npm run e2e
+
+      - name: Turn the default notifier back off
+        if: always()
+        run: php _build/ci/setting.php fetchit.frontend.default.notifier 0
 
       - name: Keep the logs
         if: failure()

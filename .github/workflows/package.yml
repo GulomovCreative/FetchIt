@@ -7,12 +7,17 @@ on:
   workflow_call:
     outputs:
       signature:
-        description: Package signature, e.g. fetchit-1.1.3-pl
+        description: Package signature, fetchit-X.Y.Z-pl
         value: ${{ jobs.build.outputs.signature }}
 
 env:
   MODX_VERSION: 2.8.6-pl
   MODX_ROOT: /tmp/modx
+
+defaults:
+  run:
+    # bash -eo pipefail: a failing command in a pipe fails the step.
+    shell: bash
 
 jobs:
   build:
@@ -37,6 +42,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: shivammathur/setup-php@v2
         with:

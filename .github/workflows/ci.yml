@@ -13,6 +13,11 @@ concurrency:
 permissions:
   contents: read
 
+defaults:
+  run:
+    # bash -eo pipefail: a failing command in a pipe fails the step.
+    shell: bash
+
 jobs:
   php-lint:
     name: PHP ${{ matrix.php }} syntax
@@ -23,6 +28,8 @@ jobs:
         php: ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4']
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -32,9 +39,9 @@ jobs:
 
       - name: php -l
         run: |
-          set -e
+          # php -l names the broken file on stdout; show only those lines.
           find . -name '*.php' -not -path './.git/*' -not -path './vendor/*' -not -path './node_modules/*' -print0 \
-            | xargs -0 -n1 php -l > /dev/null
+            | xargs -0 -n1 php -l | { grep -v '^No syntax errors' || true; }
 
   php-tests:
     name: PHPUnit on PHP ${{ matrix.php }}
@@ -45,6 +52,8 @@ jobs:
         php: ['7.4', '8.4']
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -61,6 +70,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v7
         with:
@@ -83,6 +94,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: actionlint
         run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest -color
@@ -95,6 +108,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: shivammathur/setup-php@v2
         with:

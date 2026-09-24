@@ -16,7 +16,7 @@ set -euo pipefail
 base="${1:?base URL is required}"
 fixtures="${2:?fixtures JSON is required}"
 jar="$(mktemp)"
-trap 'rm -f "$jar" "$jar.html"' EXIT
+trap 'rm -f "$jar" "$jar.html" "$jar.upload"' EXIT
 failures=0
 
 pass() { echo "ok   - $*"; }
@@ -27,8 +27,9 @@ check() {
     if "$@"; then pass "$description"; else fail "$description"; fi
 }
 
-# Prints the action key of the form on a page, keeping the session cookie.
-# Prints nothing when the page does not load or has no form.
+# Saves a page to $jar.html and prints the action key of its form, keeping
+# the session cookie. Prints nothing when the page does not load or has no
+# form.
 open_page() {
     if ! curl -fsS -c "$jar" -b "$jar" -o "$jar.html" "$base/index.php?id=$1"; then
         : > "$jar.html"
@@ -46,7 +47,14 @@ submit() {
         "$@" "$base/assets/components/fetchit/action.php" || true
 }
 
-json() { jq -e "$1" > /dev/null 2>&1 <<< "$2"; }
+# Checks an answer with jq; shows the start of the answer when it fails.
+json() {
+    if jq -e "$1" > /dev/null 2>&1 <<< "$2"; then
+        return 0
+    fi
+    echo "       answer: $(printf '%s' "${2:-<empty>}" | head -c 300)"
+    return 1
+}
 
 custom="$(jq -r '.custom' <<< "$fixtures")"
 formit="$(jq -r '.formit // empty' <<< "$fixtures")"
@@ -63,10 +71,22 @@ check "GET action.php redirects" test "$status" = 302
 response="$(submit "$action" -F name=Ann -F email= -F "pageId=$custom")"
 check "an invalid submission fails" json '.success == false' "$response"
 check "the field error comes back" json '.data.email == "Email is required"' "$response"
+check "the error of an array field comes back" json '.data.topics == "Pick a topic"' "$response"
 
 response="$(submit "$action" -F name=Ann -F email=ann@example.com -F "pageId=$custom")"
 check "a valid submission succeeds" json '.success == true and .message == "Thanks, ann@example.com"' "$response"
 check "cookies do not reach the form fields" json '.data.cookies == []' "$response"
+
+printf 'hello' > "$jar.upload"
+response="$(submit "$action" -F email=ann@example.com -F "topics[]=news" -F "topics[]=events" \
+    -F "attachment=@$jar.upload;filename=hello.txt" -F "pageId=$custom")"
+check "array fields arrive as arrays" json '.data.topics == ["news", "events"]' "$response"
+check "an uploaded file reaches the snippet" json '.data.file == "hello.txt:5"' "$response"
+
+for asset in lib/notyf.min.js lib/notyf.min.css js/fetchit.min.js; do
+    status="$(curl -s -o /dev/null -w '%{http_code}' "$base/assets/components/fetchit/$asset" || true)"
+    check "the package ships $asset" test "$status" = 200
+done
 
 response="$(submit 0123456789abcdef0123456789abcdef -F email=ann@example.com)"
 check "an unknown action is refused" json '.success == false' "$response"
