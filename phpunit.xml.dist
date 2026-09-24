@@ -5,7 +5,12 @@
          colors="true"
          failOnWarning="true"
          failOnRisky="true"
-         beStrictAboutOutputDuringTests="true">
+         beStrictAboutOutputDuringTests="true"
+         convertDeprecationsToExceptions="true">
+    <php>
+        <!-- Report deprecations whatever php.ini says, so they fail the run. -->
+        <ini name="error_reporting" value="-1"/>
+    </php>
     <testsuites>
         <testsuite name="FetchIt">
             <directory>tests/php</directory>

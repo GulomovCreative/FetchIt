@@ -142,8 +142,8 @@ class FetchIt
             'action' => $action,
             'assetsUrl' => $this->config['assetsUrl'],
             'actionUrl' => str_replace('[[+assetsUrl]]', $this->config['assetsUrl'], $this->config['actionUrl']),
-            'inputInvalidClass' => trim(preg_replace('/\s+/', ' ', $this->modx->getOption('fetchit.frontend.input.invalid.class'))),
-            'customInvalidClass' => trim(preg_replace('/\s+/', ' ', $this->modx->getOption('fetchit.frontend.custom.invalid.class'))),
+            'inputInvalidClass' => trim(preg_replace('/\s+/', ' ', (string)$this->modx->getOption('fetchit.frontend.input.invalid.class'))),
+            'customInvalidClass' => trim(preg_replace('/\s+/', ' ', (string)$this->modx->getOption('fetchit.frontend.custom.invalid.class'))),
             'clearFieldsOnSuccess' => (bool)$this->modx->getOption('clearFieldsOnSuccess', $this->config, 1, false),
             'defaultNotifier' => $this->config['default_notifier'],
             'requestErrorMessage' => $this->modx->lexicon('fetchit_err_request'),
@@ -301,9 +301,15 @@ class FetchIt
         /** @var modSnippet $snippet */
         if ($snippet = $this->modx->getObject('modSnippet', array('name' => $name))) {
             $properties = $snippet->getProperties();
-            $property_set = !empty($set)
-                ? $snippet->getPropertySet($set)
-                : array();
+            $property_set = array();
+            if (!empty($set)) {
+                // null for a set that does not exist, e.g. a typo in the call.
+                $property_set = $snippet->getPropertySet($set);
+                if (!is_array($property_set)) {
+                    $this->modx->log(modX::LOG_LEVEL_ERROR, "[FetchIt] Snippet {$name} has no property set \"{$set}\"; running it without one");
+                    $property_set = array();
+                }
+            }
 
             $scriptProperties = array_merge($properties, $property_set, $scriptProperties);
             $snippet->_cacheable = false;
