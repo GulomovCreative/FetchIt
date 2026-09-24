@@ -20,21 +20,9 @@ if (empty($content)) {
     return $modx->lexicon('fetchit_err_chunk_nf', array('name' => $tpl));
 }
 
-// Add method = post
-if (preg_match('#<form.*?method=(?:"|\')(.*?)(?:"|\')#i', $content)) {
-    $content = preg_replace('#<form(.*?)method=(?:"|\')(.*?)(?:"|\')#i', '<form\\1method="post"', $content);
-} else {
-    $content = str_ireplace('<form', '<form method="post"', $content);
-}
-
-// Add action for form processing
+// Every form gets method="post" and the action key the script looks for
 $action = md5(http_build_query($scriptProperties));
-// Add selector to tag form
-if (preg_match('#<form.*?data-fetchit=(?:"|\')(.*?)(?:"|\')#i', $content, $matches)) {
-    $content = preg_replace('#<form(.*?)data-fetchit=(?:"|\')(.*?)(?:"|\')#i', '<form\\data-fetchit="$action"', $content);
-} else {
-    $content = str_ireplace('<form', '<form data-fetchit="' . $action . '"', $content);
-}
+$content = $FetchIt->prepareForm($content, $action);
 
 $FetchIt->loadScript($action);
 
@@ -46,7 +34,7 @@ $action = !empty($_SERVER['HTTP_X_FETCHIT_ACTION'])
     ? $_SERVER['HTTP_X_FETCHIT_ACTION']
     : $action;
 
-$FetchIt->process($action, $_REQUEST);
+$FetchIt->process($action, $_POST);
 
 // Return chunk
 return $content;

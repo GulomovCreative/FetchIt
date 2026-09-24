@@ -16,5 +16,6 @@ $_lang['fetchit_err_chunk_ns'] = 'Chunk not found.';
 $_lang['fetchit_err_chunk_nf'] = 'Chunk not found with name "[[+name]]".';
 $_lang['fetchit_err_snippet_ns'] = 'Snippet not specified.';
 $_lang['fetchit_err_snippet_nf'] = 'Snippet not found with name "[[+name]]".';
+$_lang['fetchit_err_request'] = 'Could not send the form. Please try again.';
 $_lang['fetchit_err_has_errors'] = 'The form has errors';
 $_lang['fetchit_success_submit'] = 'The form has been successfully submitted';

@@ -68,7 +68,10 @@ if ($email === '') {
     ]);
 }
 
-return json_encode(['success' => true, 'message' => 'Thanks, ' . $email, 'data' => []]);
+// Cookies must not reach the fields of the form.
+$leaked = array_values(array_intersect(array_keys($fields), array_keys($_COOKIE)));
+
+return json_encode(['success' => true, 'message' => 'Thanks, ' . $email, 'data' => ['cookies' => $leaked]]);
 PHP
 );
 

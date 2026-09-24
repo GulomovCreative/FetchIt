@@ -26,7 +26,8 @@ if (empty($_POST)) {
 } elseif (empty($_SERVER['HTTP_X_FETCHIT_ACTION'])) {
     echo $FetchIt->error('fetchit_err_action_ns');
 } else {
-    echo $FetchIt->process($_SERVER['HTTP_X_FETCHIT_ACTION'], array_merge($_FILES, $_REQUEST));
+    // $_REQUEST would also carry cookies into the fields of the form.
+    echo $FetchIt->process($_SERVER['HTTP_X_FETCHIT_ACTION'], array_merge($_FILES, $_POST));
 }
 
 @session_write_close();
