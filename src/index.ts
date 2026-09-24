@@ -1,4 +1,4 @@
-import { createCaptcha, type Captcha } from './captcha'
+import { CaptchaError, createCaptcha, type Captcha } from './captcha'
 import { solve } from './pow'
 
 class FetchIt {
@@ -27,8 +27,8 @@ class FetchIt {
   declare disabledBefore: Element[];
   declare pending: boolean;
   declare captcha: Captcha | null;
-  // Solutions of the proof of work, by token: one is started ahead.
-  solutions = new Map<string, Promise<string>>();
+  // The proof of work for the current token, started ahead; a new token stops it.
+  declare work?: { token: string; solution: Promise<string>; stop: AbortController };
 
   constructor (form: unknown, config: FetchItConfig) {
     if (!(form instanceof HTMLFormElement)) {
@@ -97,9 +97,16 @@ class FetchIt {
           let query = await fetch(this.request, { method: 'post', body: this.formData });
           let next = query.headers?.get('X-FetchIt-Token');
           this.updateToken(next);
+          const refused = query.headers?.get('X-FetchIt-Refused');
+          const bits = Number(query.headers?.get('X-FetchIt-Pow') ?? 0);
           // A page from a cache, or open for long, holds a used or expired
-          // token: send once more with the new one instead of showing it.
-          if (next && query.headers?.get('X-FetchIt-Refused') === 'token') {
+          // token, or asks for less proof of work than the server now does:
+          // send once more with the new token instead of showing it. The
+          // captcha answer was not checked yet (FetchItGuard checks it last).
+          if (next && (refused === 'token' || (refused === 'pow' && bits > (this.config.pow ?? 0)))) {
+            if (refused === 'pow') {
+              this.config.pow = bits;
+            }
             this.formData.set(FetchIt.tokenField, next);
             if (this.config.pow) {
               this.formData.set(FetchIt.powField, await this.solution(next));
@@ -107,6 +114,9 @@ class FetchIt {
             query = await fetch(this.request, { method: 'post', body: this.formData });
             next = query.headers?.get('X-FetchIt-Token');
             this.updateToken(next);
+          }
+          if (refused === 'captcha' && !this.config.captcha) {
+            console.warn('FetchIt: the server asks for a captcha this page does not have; the page may come from a cache made before the captcha was turned on');
           }
           const body: unknown = await query.json();
           if (!FetchIt.isResponse(body)) {
@@ -185,7 +195,8 @@ class FetchIt {
           return;
         }
 
-        // A reCAPTCHA v2 widget of FormIt; FetchIt's own captcha resets below.
+        // A reCAPTCHA v2 widget the site added itself; FetchIt's own captcha
+        // resets below.
         if (this.config.captcha?.provider !== 'recaptcha') {
           try {
             window.grecaptcha?.reset?.();
@@ -208,10 +219,10 @@ class FetchIt {
           this.failRequest(error);
         }
       } finally {
-        // A captcha answer is good for one check.
-        this.captcha?.reset();
         this.enableFields();
         this.pending = false;
+        // A captcha answer is good for one check.
+        this.captcha?.reset();
       }
     });
 
@@ -243,14 +254,17 @@ class FetchIt {
 
   /**
    * fetch() rejected (network error), the body was not a FetchIt answer
-   * (a PHP error page, HTML after a redirect, JSON from a firewall), or
-   * handling the answer threw: tell the visitor instead of failing silently.
-   * An HTTP error status with a FetchIt answer goes the normal way.
+   * (a PHP error page, HTML after a redirect, JSON from a firewall),
+   * handling the answer threw, or the captcha gave no answer to send: tell
+   * the visitor instead of failing silently. An HTTP error status with a
+   * FetchIt answer goes the normal way.
    */
   failRequest (error: unknown) {
     console.error(error);
 
-    const message = this.config.requestErrorMessage || FetchIt.defaultRequestErrorMessage;
+    const message = (error instanceof CaptchaError && this.config.captchaErrorMessage)
+      || this.config.requestErrorMessage
+      || FetchIt.defaultRequestErrorMessage;
     FetchIt.notify('error', message);
 
     const errorEvent = new CustomEvent(FetchIt.events.error, {
@@ -283,15 +297,24 @@ class FetchIt {
   }
 
   /**
-   * The solution of the proof of work for a token, started once.
+   * The solution of the proof of work for a token, started once; solving
+   * for another token stops it.
    */
   solution (token: string): Promise<string> {
-    let solution = this.solutions.get(token);
-    if (!solution) {
-      solution = solve(token, this.config.pow ?? 0);
-      this.solutions.set(token, solution);
+    if (this.work?.token !== token) {
+      this.work?.stop.abort();
+      const stop = new AbortController();
+      const solution = solve(token, this.config.pow ?? 0, stop.signal);
+      const work = { token, solution, stop };
+      this.work = work;
+      // A failed solution is not kept: the next submission tries again.
+      solution.catch(() => {
+        if (this.work === work) {
+          this.work = undefined;
+        }
+      });
     }
-    return solution;
+    return this.work.solution;
   }
 
   /**
@@ -301,7 +324,12 @@ class FetchIt {
   solveAhead () {
     const token = this.form.querySelector<HTMLInputElement>(`input[name="${FetchIt.tokenField}"]`)?.value;
     if (this.config.pow && token) {
-      this.solution(token).catch(error => console.error(error));
+      this.solution(token).catch(error => {
+        // Stopped for a newer token: nothing went wrong.
+        if (this.work?.token === token) {
+          console.error(error);
+        }
+      });
     }
   }
 
