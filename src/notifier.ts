@@ -52,6 +52,9 @@ const CSS = `
 `
 
 let warned = false
+// Where the focus came from into the toasts, to give it back when the last
+// toast with the focus goes.
+let origin: Element | null = null
 
 function addStyles () {
   if (document.getElementById(STYLE_ID)) {
@@ -169,8 +172,6 @@ function show (type: 'success' | 'error', message: unknown, closeLabel: string, 
   let timer: ReturnType<typeof setTimeout> | undefined
   let hovered = false
   let focused = false
-  // Where the focus came from, to give it back.
-  let before: Element | null = null
 
   const remove = () => {
     clearTimeout(timer)
@@ -180,8 +181,8 @@ function show (type: 'success' | 'error', message: unknown, closeLabel: string, 
       const next = others.find(button => toast.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING) ?? others.at(-1)
       if (next) {
         next.focus()
-      } else if (focusable(before)) {
-        before.focus()
+      } else if (focusable(origin)) {
+        origin.focus()
       } else {
         (document.activeElement as HTMLElement | null)?.blur()
       }
@@ -200,8 +201,9 @@ function show (type: 'success' | 'error', message: unknown, closeLabel: string, 
   toast.addEventListener('mouseenter', () => { hovered = true; stop() })
   toast.addEventListener('mouseleave', () => { hovered = false; start() })
   toast.addEventListener('focusin', event => {
-    if (!focused && !toast.contains(event.relatedTarget as Node | null)) {
-      before = event.relatedTarget as Element | null
+    const from = event.relatedTarget as Element | null
+    if (!from || !toasts.contains(from)) {
+      origin = from
     }
     focused = true
     stop()
