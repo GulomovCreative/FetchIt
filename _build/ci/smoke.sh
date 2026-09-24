@@ -16,6 +16,7 @@ set -euo pipefail
 base="${1:?base URL is required}"
 fixtures="${2:?fixtures JSON is required}"
 jar="$(mktemp)"
+trap 'rm -f "$jar" "$jar.html"' EXIT
 failures=0
 
 pass() { echo "ok   - $*"; }
@@ -54,9 +55,9 @@ echo "# Page with its own handler (id $custom)"
 action="$(open_page "$custom")"
 check "the form gets a data-fetchit key" test -n "$action"
 check "the script is linked in <head>" grep -q 'components/fetchit/js/fetchit\.js?v=' "$jar.html"
-check "the form is initialised" grep -q "FetchIt.create({\"action\":\"$action\"" "$jar.html"
+check "the form is initialised" grep -q "FetchItClass = FetchIt; .*FetchItClass.create({\"action\":\"$action\"" "$jar.html"
 
-status="$(curl -s -o /dev/null -w '%{http_code}' "$base/assets/components/fetchit/action.php")"
+status="$(curl -s -o /dev/null -w '%{http_code}' "$base/assets/components/fetchit/action.php" || true)"
 check "GET action.php redirects" test "$status" = 302
 
 response="$(submit "$action" -F name=Ann -F email= -F "pageId=$custom")"
@@ -88,8 +89,6 @@ elif [ "${REQUIRE_FORMIT:-}" = 1 ]; then
 else
     echo "# FormIt is not installed, its checks are skipped"
 fi
-
-rm -f "$jar" "$jar.html"
 
 if [ "$failures" -gt 0 ]; then
     echo "$failures check(s) failed"
