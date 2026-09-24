@@ -1,10 +1,13 @@
 <?php
 /**
  * Create the pages the integration tests submit, and write their ids as JSON
- * to <output> (or print them): {"custom": <id>, "formit": <id or null>}
+ * to <output> (or print them):
+ * {"modx": 2|3, "custom": <id>, "api": <id>, "formit": <id|null>, "pdotools": <id|null>}
  *
- * "custom" is processed by a snippet of its own, "formit" by FormIt, when
- * FormIt is installed. Exits non-zero when anything cannot be saved.
+ * "custom" is processed by a snippet of its own; "api" by a snippet that
+ * gets FetchIt the way custom snippets did in 1.x (MODX 2) or 3.x (MODX 3);
+ * "formit" by FormIt and "pdotools" with a Fenom @FILE chunk, when FormIt
+ * and pdoTools are installed. Exits non-zero when anything cannot be saved.
  *
  * Usage: MODX_CORE_PATH=/path/to/core/ php _build/ci/fixtures.php [output]
  */
@@ -101,14 +104,61 @@ return json_encode([
 PHP
 );
 
+fixture_element($modx, 'modSnippet', 'FetchItTestApi', 'snippet', <<<'PHP'
+// Custom snippets got FetchIt this way in 1.x (MODX 2) and 3.x (MODX 3).
+if (is_object($modx->services) && $modx->services->has('FetchIt')) {
+    $FetchIt = $modx->services->get('FetchIt');
+    $api = '3.x';
+    $class = $FetchIt instanceof \FetchIt\FetchIt;
+} else {
+    $FetchIt = $modx->getService('fetchit', 'FetchIt', MODX_CORE_PATH . 'components/fetchit/model/', []);
+    $api = '1.x';
+    $class = $FetchIt instanceof FetchIt;
+}
+
+return $FetchIt->success('API ' . $api, ['class' => $class]);
+PHP
+);
+
 $pages = [
+    'modx' => class_exists('MODX\Revolution\modX') ? 3 : 2,
     'custom' => fixture_page(
         $modx,
         'fetchit-custom',
         '[[!FetchIt? &snippet=`FetchItTestHandler` &form=`tpl.FetchIt.test`]]'
     ),
+    'api' => fixture_page(
+        $modx,
+        'fetchit-api',
+        '[[!FetchIt? &snippet=`FetchItTestApi` &form=`tpl.FetchIt.test`]]'
+    ),
     'formit' => null,
+    'pdotools' => null,
 ];
+
+if ($modx->getObject(modx_class('modSnippet'), ['name' => 'pdoResources'])) {
+    // pdoTools reads @FILE chunks from pdotools_elements_path, core/elements/ by default.
+    $file = MODX_CORE_PATH . 'elements/fetchit-test.tpl';
+    if (!is_dir(dirname($file)) && !mkdir(dirname($file), 0755, true)) {
+        fixture_fail('Could not create ' . dirname($file) . '.');
+    }
+    $chunk = <<<'HTML'
+<form method="post">
+  <h2 class="fenom">{$title}</h2>
+  <input type="text" name="email">
+  <span data-error="email"></span>
+  <button type="submit">Send</button>
+</form>
+HTML;
+    if (file_put_contents($file, $chunk) === false) {
+        fixture_fail("Could not write {$file}.");
+    }
+    $pages['pdotools'] = fixture_page(
+        $modx,
+        'fetchit-pdotools',
+        '[[!FetchIt? &snippet=`FetchItTestHandler` &form=`@FILE fetchit-test.tpl` &title=`Fenom works`]]'
+    );
+}
 
 if ($modx->getObject(modx_class('modSnippet'), ['name' => 'FormIt'])) {
     $pages['formit'] = fixture_page(
