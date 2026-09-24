@@ -1,6 +1,7 @@
 class FetchIt {
-  static forms = [];
-  static instances = new Map();
+  declare static Message?: FetchItMessage;
+  static forms: HTMLFormElement[] = [];
+  static instances = new Map<HTMLFormElement, FetchIt>();
   static events = {
     before: 'fetchit:before',
     success: 'fetchit:success',
@@ -9,7 +10,13 @@ class FetchIt {
     reset: 'fetchit:reset',
   }
 
-  constructor (form, config) {
+  declare form: HTMLFormElement;
+  declare config: FetchItConfig;
+  declare request: Request;
+  declare formData: FormData;
+  declare preserveFormMessagesOnReset: boolean;
+
+  constructor (form: unknown, config: FetchItConfig) {
     if (!(form instanceof HTMLFormElement)) {
       throw new Error('Не форма');
     }
@@ -37,7 +44,7 @@ class FetchIt {
       e.preventDefault();
 
       this.formData = new FormData(this.form);
-      this.formData.set('pageId', this.config.pageId);
+      this.formData.set('pageId', String(this.config.pageId));
 
       this.clearErrors();
       this.clearFormMessages();
@@ -60,8 +67,8 @@ class FetchIt {
       this.disableFields();
 
       try {
-        const query = await fetch(this.request, { body: this.formData });
-        const response = await query.json();
+        const query = await fetch(this.request, { method: 'post', body: this.formData });
+        const response: FetchItResponse = await query.json();
 
         const afterEvent = new CustomEvent(FetchIt.events.after, {
           cancelable: true,
@@ -160,7 +167,7 @@ class FetchIt {
 
     ['change', 'input'].forEach(eventName => {
       this.form.addEventListener(eventName, ({ target }) => {
-        this.clearError(target.getAttribute('name'));
+        this.clearError((target as Element).getAttribute('name'));
       });
     });
   }
@@ -169,7 +176,7 @@ class FetchIt {
     this.fields.forEach(field => this.clearError(field.getAttribute('name')));
   }
 
-  clearError (name) {
+  clearError (name: string | null) {
     const fields = this.getFields(name);
     fields.forEach(field => {
       if (this.inputInvalidClasses) {
@@ -197,7 +204,7 @@ class FetchIt {
     };
   }
 
-  setError (name, message = '') {
+  setError (name: string, message: unknown = '') {
     if (!FetchIt.hasErrorMessage(message)) {
       return;
     }
@@ -206,7 +213,7 @@ class FetchIt {
       if (this.inputInvalidClasses) {
         field.classList.add(...this.inputInvalidClasses);
       }
-      field.setAttribute('aria-invalid', true);
+      field.setAttribute('aria-invalid', 'true');
       // if (!this.form.noValidate) {
       //   field.setCustomValidity(FetchIt.sanitizeHTML(message));
       //   field.reportValidity();
@@ -225,13 +232,13 @@ class FetchIt {
   }
 
   clearFormMessages () {
-    this.form.querySelectorAll('[data-success], [data-validation-error]').forEach(element => {
+    this.form.querySelectorAll<HTMLElement>('[data-success], [data-validation-error]').forEach(element => {
       element.style.display = 'none';
       element.textContent = '';
     });
   }
 
-  setFormMessage (type, message = '') {
+  setFormMessage (type: 'success' | 'validation', message: unknown = '') {
     const safeMessage = FetchIt.sanitizeHTML(String(message)).trim();
     if (safeMessage === '') {
       return;
@@ -240,12 +247,12 @@ class FetchIt {
     const showSelector = type === 'success' ? '[data-success]' : '[data-validation-error]';
     const hideSelector = type === 'success' ? '[data-validation-error]' : '[data-success]';
 
-    this.form.querySelectorAll(hideSelector).forEach(element => {
+    this.form.querySelectorAll<HTMLElement>(hideSelector).forEach(element => {
       element.style.display = 'none';
       element.textContent = '';
     });
 
-    this.form.querySelectorAll(showSelector).forEach(element => {
+    this.form.querySelectorAll<HTMLElement>(showSelector).forEach(element => {
       element.style.display = '';
       element.textContent = safeMessage;
     });
@@ -259,7 +266,7 @@ class FetchIt {
     this.elements.forEach(field => field.setAttribute('disabled', ''));
   }
 
-  getFields (name) {
+  getFields (name: string | null): Element[] {
     if (!name) {
       return [];
     }
@@ -267,15 +274,15 @@ class FetchIt {
     return Array.from(this.form.querySelectorAll(`[name="${name}"], [name="${name}[]"]`));
   }
 
-  getErrors (name) {
+  getErrors (name: string | null): HTMLElement[] {
     if (!name) {
       return [];
     }
 
-    return Array.from(this.form.querySelectorAll(`[data-error="${name}"], [data-error="${name}[]"]`));
+    return Array.from(this.form.querySelectorAll<HTMLElement>(`[data-error="${name}"], [data-error="${name}[]"]`));
   }
 
-  getCustomErrors (name) {
+  getCustomErrors (name: string | null): Element[] {
     if (!name) {
       return [];
     }
@@ -283,31 +290,31 @@ class FetchIt {
     return Array.from(this.form.querySelectorAll(`[data-custom="${name}"]`));
   }
 
-  get elements () {
+  get elements (): Element[] {
     return Array.from(this.form.elements);
   }
 
-  get fields () {
+  get fields (): Element[] {
     return this.elements.filter(({ tagName }) => ['select', 'input', 'textarea'].includes(tagName.toLowerCase()));
   }
 
-  get inputInvalidClasses() {
+  get inputInvalidClasses(): string[] {
     return this.config.inputInvalidClass ? this.config.inputInvalidClass.split(' ') : [];
   }
 
-  get customInvalidClasses() {
+  get customInvalidClasses(): string[] {
     return this.config.customInvalidClass ? this.config.customInvalidClass.split(' ') : [];
   }
 
-  static sanitizeHTML (str = '') {
+  static sanitizeHTML (str: string = ''): string {
     return str.replace(/(<([^>]+)>)/gi, '');
   }
 
-  static hasErrorMessage (message = '') {
+  static hasErrorMessage (message: unknown = ''): boolean {
     return FetchIt.sanitizeHTML(String(message)).trim() !== '';
   }
 
-  static create(config) {
+  static create(config: FetchItConfig) {
     if (
       config.defaultNotifier
       && typeof window.Notyf === 'function'
@@ -329,7 +336,7 @@ class FetchIt {
       throw new Error('Нет идентификатора формы FetchIt');
     }
 
-    const forms = document.querySelectorAll(`form[data-fetchit="${config.action}"]`);
+    const forms = document.querySelectorAll<HTMLFormElement>(`form[data-fetchit="${config.action}"]`);
     if (!forms) {
       throw new Error(`В документе не найдено форм по селектору: form[data-fetchit="${config.action}"]`);
     }
