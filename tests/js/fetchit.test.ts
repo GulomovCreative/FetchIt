@@ -262,6 +262,21 @@ describe('success', () => {
     expect(field(form, 'email').value).toBe('ann@example.com')
   })
 
+  it('calls notifier hooks as methods of FetchIt.Message', async () => {
+    const form = mountForm()
+    FetchIt.create(config())
+    respond(success)
+    const shown: string[] = []
+    FetchIt.Message = {
+      prefix: '>',
+      success(this: { prefix: string }, message: string) { shown.push(this.prefix + message) },
+    } as never
+
+    await submit(form)
+
+    expect(shown).toEqual(['>Thank you'])
+  })
+
   it('passes the message to FetchIt.Message.success', async () => {
     const form = mountForm()
     FetchIt.create(config())
@@ -436,16 +451,63 @@ describe('failed requests', () => {
     expect(element(form, '[data-validation-error]').textContent).toBe('')
   })
 
-  it('tells the visitor when handling the answer throws', async () => {
+  it('does not report a failure after the server accepted the form', async () => {
     const form = mountForm()
     FetchIt.create(config({ requestErrorMessage }))
-    respond({ success: false, message: 'Errors', data: { email: 'Required' } })
+    respond({ success: true, message: 'Thank you', data: [] })
     vi.spyOn(console, 'error').mockImplementation(() => {})
     FetchIt.Message = { error: vi.fn(), after: () => { throw new Error('broken notifier') } }
 
     await submit(form)
 
-    expect(FetchIt.Message.error).toHaveBeenCalledWith(requestErrorMessage)
+    // Telling the visitor it failed would make them send it again.
+    expect(FetchIt.Message.error).not.toHaveBeenCalled()
+    expect(element(form, '[data-success]').textContent).toBe('Thank you')
+  })
+
+  it('shows the answer even when the notifier throws', async () => {
+    const form = mountForm()
+    FetchIt.create(config({ requestErrorMessage }))
+    respond({ success: false, message: 'Errors', data: { email: 'Required' } })
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const onError = vi.fn<Handler>()
+    on('fetchit:error', onError)
+    FetchIt.Message = { error: () => { throw new Error('broken notifier') } }
+
+    await submit(form)
+
+    expect(element(form, '[data-error="email"]').textContent).toBe('Required')
+    expect(element(form, '[data-validation-error]').textContent).toBe('Errors')
+    expect(onError).toHaveBeenCalledOnce()
+    expect(logged).toHaveBeenCalled()
     expect(field(form, 'email').disabled).toBe(false)
+  })
+
+  it('shows a failed request even when the notifier throws', async () => {
+    const form = mountForm()
+    FetchIt.create(config({ requestErrorMessage }))
+    vi.stubGlobal('fetch', cases['a network failure'])
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const onError = vi.fn<Handler>()
+    on('fetchit:error', onError)
+    FetchIt.Message = { error: () => { throw new Error('broken notifier') } }
+
+    await submit(form)
+
+    expect(element(form, '[data-validation-error]').textContent).toBe(requestErrorMessage)
+    expect(onError).toHaveBeenCalledOnce()
+  })
+
+  it('accepts an answer without data', async () => {
+    const form = mountForm()
+    FetchIt.create(config({ requestErrorMessage }))
+    respond({ success: false, message: 'Try later' })
+    FetchIt.Message = { error: vi.fn() }
+
+    await submit(form)
+
+    expect(FetchIt.Message.error).toHaveBeenCalledWith('Try later')
+    expect(FetchIt.Message.error).not.toHaveBeenCalledWith(requestErrorMessage)
+    expect(element(form, '[data-validation-error]').textContent).toBe('Try later')
   })
 })

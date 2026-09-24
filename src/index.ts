@@ -67,7 +67,7 @@ class FetchIt {
         },
       });
 
-      FetchIt?.Message?.before?.();
+      FetchIt.notify('before');
 
       if (!document.dispatchEvent(beforeEvent)) {
         return;
@@ -78,9 +78,9 @@ class FetchIt {
 
       // Set once the visitor has seen the outcome; a later error is only logged.
       let shown = false;
+      let response: FetchItResponse | undefined;
 
       try {
-        let response: FetchItResponse;
         try {
           const query = await fetch(this.request, { method: 'post', body: this.formData });
           const body: unknown = await query.json();
@@ -103,14 +103,14 @@ class FetchIt {
           },
         });
 
-        FetchIt?.Message?.after?.(response.message);
+        FetchIt.notify('after', response.message);
 
         if (!document.dispatchEvent(afterEvent)) {
           return;
         }
 
         if (!response.success) {
-          FetchIt?.Message?.error?.(response.message);
+          FetchIt.notify('error', response.message);
 
           const errorEvent = new CustomEvent(FetchIt.events.error, {
             cancelable: true,
@@ -143,7 +143,7 @@ class FetchIt {
         this.clearErrors();
         this.setFormMessage('success', response.message);
         shown = true;
-        FetchIt?.Message?.success?.(response.message);
+        FetchIt.notify('success', response.message);
 
         const successEvent = new CustomEvent(FetchIt.events.success, {
           detail: {
@@ -168,7 +168,9 @@ class FetchIt {
           this.preserveFormMessagesOnReset = false;
         }
       } catch (error) {
-        if (shown) {
+        // After the server accepted the form, "could not send" would make
+        // the visitor send it again.
+        if (shown || response?.success) {
           console.error(error);
         } else {
           this.failRequest(error);
@@ -192,7 +194,7 @@ class FetchIt {
       if (!this.preserveFormMessagesOnReset) {
         this.clearFormMessages();
       }
-      FetchIt?.Message?.reset?.();
+      FetchIt.notify('reset');
     });
 
     ['change', 'input'].forEach(eventName => {
@@ -212,7 +214,7 @@ class FetchIt {
     console.error(error);
 
     const message = this.config.requestErrorMessage || FetchIt.defaultRequestErrorMessage;
-    FetchIt?.Message?.error?.(message);
+    FetchIt.notify('error', message);
 
     const errorEvent = new CustomEvent(FetchIt.events.error, {
       cancelable: true,
@@ -377,6 +379,18 @@ class FetchIt {
    */
   static escapeAttribute (value: string): string {
     return value.replace(/["\\]/g, '\\$&');
+  }
+
+  /**
+   * Call a FetchIt.Message hook. A broken notifier is logged; it must not
+   * keep the answer from the form.
+   */
+  static notify (hook: keyof FetchItMessage, message?: string) {
+    try {
+      (FetchIt.Message?.[hook] as ((message?: string) => void) | undefined)?.(message);
+    } catch (error) {
+      console.error(error);
+    }
   }
 
   static isResponse (value: unknown): value is FetchItResponse {

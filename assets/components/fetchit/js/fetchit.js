@@ -42,13 +42,13 @@
 						fetchit: this
 					}
 				});
-				FetchIt?.Message?.before?.();
+				FetchIt.notify("before");
 				if (!document.dispatchEvent(beforeEvent)) return;
 				this.pending = true;
 				this.disableFields();
 				let shown = false;
+				let response;
 				try {
-					let response;
 					try {
 						const query = await fetch(this.request, {
 							method: "post",
@@ -70,10 +70,10 @@
 							fetchit: this
 						}
 					});
-					FetchIt?.Message?.after?.(response.message);
+					FetchIt.notify("after", response.message);
 					if (!document.dispatchEvent(afterEvent)) return;
 					if (!response.success) {
-						FetchIt?.Message?.error?.(response.message);
+						FetchIt.notify("error", response.message);
 						const errorEvent = new CustomEvent(FetchIt.events.error, {
 							cancelable: true,
 							detail: {
@@ -95,7 +95,7 @@
 					this.clearErrors();
 					this.setFormMessage("success", response.message);
 					shown = true;
-					FetchIt?.Message?.success?.(response.message);
+					FetchIt.notify("success", response.message);
 					const successEvent = new CustomEvent(FetchIt.events.success, { detail: {
 						form: this.form,
 						formData: this.formData,
@@ -110,7 +110,7 @@
 						this.preserveFormMessagesOnReset = false;
 					}
 				} catch (error) {
-					if (shown) console.error(error);
+					if (shown || response?.success) console.error(error);
 					else this.failRequest(error);
 				} finally {
 					this.enableFields();
@@ -125,7 +125,7 @@
 				document.dispatchEvent(resetEvent);
 				this.clearErrors();
 				if (!this.preserveFormMessagesOnReset) this.clearFormMessages();
-				FetchIt?.Message?.reset?.();
+				FetchIt.notify("reset");
 			});
 			["change", "input"].forEach((eventName) => {
 				this.form.addEventListener(eventName, ({ target }) => {
@@ -142,7 +142,7 @@
 		failRequest(error) {
 			console.error(error);
 			const message = this.config.requestErrorMessage || FetchIt.defaultRequestErrorMessage;
-			FetchIt?.Message?.error?.(message);
+			FetchIt.notify("error", message);
 			const errorEvent = new CustomEvent(FetchIt.events.error, {
 				cancelable: true,
 				detail: {
@@ -254,6 +254,17 @@
 		*/
 		static escapeAttribute(value) {
 			return value.replace(/["\\]/g, "\\$&");
+		}
+		/**
+		* Call a FetchIt.Message hook. A broken notifier is logged; it must not
+		* keep the answer from the form.
+		*/
+		static notify(hook, message) {
+			try {
+				(FetchIt.Message?.[hook])?.(message);
+			} catch (error) {
+				console.error(error);
+			}
 		}
 		static isResponse(value) {
 			return typeof value === "object" && value !== null && typeof value.success === "boolean";
