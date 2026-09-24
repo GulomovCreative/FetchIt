@@ -89,6 +89,9 @@ jobs:
       - name: Committed build matches src/
         run: npm run build:check
 
+      - name: The build runs in every browser of browserslist (ES2019)
+        run: npm run check:syntax
+
   scripts:
     name: Workflows and shell scripts
     runs-on: ubuntu-latest

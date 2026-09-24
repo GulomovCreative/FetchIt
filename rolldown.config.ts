@@ -17,6 +17,10 @@ const copyTypes = {
 
 export default defineConfig({
   input: 'src/index.ts',
+  // The browsers of browserslist in package.json include Chromium 78 (UC
+  // Browser, Opera Mobile), which has no ?., ?? or ??=: lower the syntax to
+  // ES2019, which every browser there runs.
+  transform: { target: 'es2019' },
   plugins: [copyTypes],
   output: [
     {
