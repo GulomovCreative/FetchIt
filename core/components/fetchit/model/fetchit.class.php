@@ -566,8 +566,11 @@ class FetchIt
             $snippet->_cacheable = false;
             $snippet->_processed = false;
 
+            $formit = strtolower($snippet->name) == 'formit';
+            $scripts = $formit ? $this->scripts() : null;
             $response = $snippet->process($scriptProperties);
-            if (strtolower($snippet->name) == 'formit') {
+            if ($formit) {
+                $this->disableFormItAjax($scriptProperties, $scripts);
                 $response = $this->handleFormIt($scriptProperties);
             }
 
@@ -608,6 +611,71 @@ class FetchIt
     protected function getFieldError($plPrefix, $field)
     {
         return $this->getSanitizedPlaceholder($plPrefix . 'error.' . $field);
+    }
+
+
+    /**
+     * The scripts registered on the page so far.
+     *
+     * @return array
+     */
+    protected function scripts()
+    {
+        return array(
+            'jscripts' => (array)$this->modx->jscripts,
+            'sjscripts' => (array)$this->modx->sjscripts,
+            'loadedjscripts' => (array)$this->modx->loadedjscripts,
+        );
+    }
+
+
+    /**
+     * Turn off the AJAX mode of FormIt 5.2+ for a form of FetchIt. Without a
+     * submission, FormIt keeps the snippet properties (hooks, emails) in the
+     * session and the cache under a token for its own action.php, which
+     * processes the form without the protection of FetchIt, and links
+     * formit.js, which takes over the submission of a form with that token.
+     * FetchIt sends the form itself, so all of it is undone: the stored
+     * properties, the fi.ajaxToken placeholder and the scripts FormIt has
+     * just added. Older FormIt versions do none of it.
+     *
+     * @param array $properties The FormIt properties
+     * @param array $before The scripts of the page before FormIt ran, from scripts()
+     */
+    protected function disableFormItAjax(array $properties, array $before)
+    {
+        $prefix = isset($properties['placeholderPrefix']) ? $properties['placeholderPrefix'] : 'fi.';
+        $token = isset($this->modx->placeholders[$prefix . 'ajaxToken'])
+            ? (string)$this->modx->placeholders[$prefix . 'ajaxToken']
+            : '';
+        if (preg_match('/^[a-f0-9]{32}$/', $token)) {
+            if (isset($_SESSION['formit'][$token])) {
+                unset($_SESSION['formit'][$token]);
+            }
+            $this->modx->cacheManager->delete('formit/props_' . $token);
+            $this->modx->unsetPlaceholder($prefix . 'ajaxToken');
+        }
+
+        $script = trim((string)$this->modx->getOption('formit.frontend_js', null, ''));
+        $isFormIt = function ($entry) use ($script) {
+            return ($script !== '' && strpos($entry, $script) !== false)
+                || strpos($entry, 'Object.assign(FormIt,') !== false;
+        };
+        foreach (array('jscripts', 'sjscripts') as $list) {
+            $entries = (array)$this->modx->$list;
+            $added = array_slice($entries, count($before[$list]));
+            $kept = array_filter($added, function ($entry) use ($isFormIt) {
+                return !$isFormIt($entry);
+            });
+            if (count($kept) !== count($added)) {
+                $this->modx->$list = array_merge(array_slice($entries, 0, count($before[$list])), array_values($kept));
+            }
+        }
+        foreach (array_keys((array)$this->modx->loadedjscripts) as $src) {
+            if (!isset($before['loadedjscripts'][$src]) && $isFormIt((string)$src)) {
+                unset($this->modx->loadedjscripts[$src]);
+            }
+        }
     }
 
 

@@ -192,6 +192,37 @@ class modX
         $this->placeholders[$key] = $value;
     }
 
+    public function unsetPlaceholder($key)
+    {
+        unset($this->placeholders[$key]);
+    }
+
+    /** @var string[] As modX: the scripts for the end of <body>, for <head>, and the sources already registered */
+    public $jscripts = [];
+    public $sjscripts = [];
+    public $loadedjscripts = [];
+
+    /**
+     * As modX::regClientScript(): a source is registered once.
+     */
+    public function regClientScript($src, $plaintext = false)
+    {
+        if (!empty($this->loadedjscripts[$src])) {
+            return;
+        }
+        $this->loadedjscripts[$src] = true;
+        $this->jscripts[count($this->jscripts)] = $plaintext ? $src : '<script src="' . $src . '"></script>';
+    }
+
+    public function regClientStartupScript($src)
+    {
+        if (!empty($this->loadedjscripts[$src])) {
+            return;
+        }
+        $this->loadedjscripts[$src] = true;
+        $this->sjscripts[count($this->sjscripts)] = '<script src="' . $src . '"></script>';
+    }
+
     public function log($level, $message)
     {
         $this->logged[] = [$level, $message];
