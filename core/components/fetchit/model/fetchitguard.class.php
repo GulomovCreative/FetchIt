@@ -23,11 +23,11 @@
  * - the trap, a hidden field only bots fill, gets a fake success;
  * - with fetchit.protection.pow above 0, the script must have solved a
  *   proof of work on the token: a number n such that sha256("token:n") starts
- *   with that many zero bits (see pow() in src/index.ts);
+ *   with that many zero bits (see solve() in src/pow.ts);
  * - a form sent sooner than fetchit.protection.min_time seconds after it was
  *   rendered is refused;
  * - with fetchit.captcha set up, the provider confirms the captcha
- *   (FetchItCaptcha).
+ *   (FetchItCaptcha); when it cannot tell, the form is refused too.
  * Then plugins on OnFetchItBeforeProcess may refuse, also with protection off.
  *
  * Only a request that brought a well-signed token of the form gets the next
@@ -45,7 +45,7 @@ class FetchItGuard
     /** The field with the solution of the proof of work */
     const POW = 'fetchit_pow';
 
-    /** The largest proof of work, in bits: 24 takes a phone many seconds */
+    /** The largest proof of work, in bits: 24 takes a computer about a minute on average */
     const MAX_POW = 24;
 
     /** Seconds a token and its mark live when fetchit.protection.token_ttl is 0 */
@@ -68,11 +68,17 @@ class FetchItGuard
     /** @var string|null The token for the next submission, see nextToken() */
     protected $next;
 
-    /** @var string|null Why the last check refused: token, rate, store, pow, too_fast, captcha or plugin */
+    /**
+     * @var string|null Why the last check refused: token, rate, store, pow,
+     *     too_fast, captcha, captcha_unavailable or plugin
+     */
     protected $reason;
 
     /** @var FetchItCaptcha|null */
     protected $captcha;
+
+    /** @var bool[] The setting problems logged in this request */
+    protected $warned = [];
 
 
     /**
@@ -122,7 +128,29 @@ class FetchItGuard
 
 
     /**
+     * The captcha for the page and the check: provider, siteKey, field and
+     * script; null when protection is off or no captcha is set up.
+     *
+     * @return array|null
+     */
+    public function activeCaptcha()
+    {
+        if (!$this->enabled() || ($provider = $this->captcha()->provider()) === null) {
+            return null;
+        }
+
+        return [
+            'provider' => $provider,
+            'siteKey' => $this->captcha()->siteKey(),
+            'field' => $this->captcha()->field(),
+            'script' => $this->captcha()->script(),
+        ];
+    }
+
+
+    /**
      * The proof of work asked of the script, in bits; 0 when there is none.
+     * A setting that is not a whole number from 0 to MAX_POW is logged.
      *
      * @return int
      */
@@ -132,7 +160,15 @@ class FetchItGuard
             return 0;
         }
 
-        return max(0, min(self::MAX_POW, (int)$this->modx->getOption('fetchit.protection.pow', null, 0)));
+        $setting = trim((string)$this->modx->getOption('fetchit.protection.pow', null, 0));
+        $bits = max(0, min(self::MAX_POW, (int)$setting));
+        if ($setting !== '' && $setting !== (string)$bits && !isset($this->warned['pow'])) {
+            $this->warned['pow'] = true;
+            $this->modx->log(modX::LOG_LEVEL_ERROR, "[FetchIt] fetchit.protection.pow is \"{$setting}\", not a whole number from 0 to "
+                . self::MAX_POW . "; using {$bits}");
+        }
+
+        return $bits;
     }
 
 
@@ -148,9 +184,11 @@ class FetchItGuard
      */
     public static function solves($token, $solution, $bits)
     {
-        if (!is_string($solution) || !preg_match('/^\d{1,12}$/', $solution)) {
+        if (!is_string($token) || !is_string($solution) || !preg_match('/^\d{1,12}$/', $solution)) {
             return false;
         }
+        // A hash has 256 bits.
+        $bits = max(0, min(256, (int)$bits));
         $hash = hash('sha256', $token . ':' . $solution, true);
         $bytes = intdiv($bits, 8);
         if ($bytes > 0 && substr($hash, 0, $bytes) !== str_repeat("\0", $bytes)) {
@@ -367,7 +405,7 @@ class FetchItGuard
         }
 
         $bits = $this->pow();
-        if ($bits > 0 && !self::solves($sent[self::TOKEN], isset($sent[self::POW]) ? $sent[self::POW] : '', $bits)) {
+        if ($bits > 0 && !self::solves($token['raw'], isset($sent[self::POW]) ? $sent[self::POW] : '', $bits)) {
             $this->log(self::LOG_ALL, 'no solution of the proof of work', $action);
 
             return $this->refuse('pow', 'fetchit_err_pow');
@@ -379,12 +417,20 @@ class FetchItGuard
             return $this->refuse('too_fast', 'fetchit_err_too_fast');
         }
 
-        // Last: it asks the provider over the network.
-        $field = $this->captcha()->field();
-        if ($field !== null) {
+        // Last: it asks the provider over the network. The script also
+        // relies on it: after a "token" refusal it sends the same answer
+        // again, which is still unused only because it was not checked.
+        $captcha = $this->activeCaptcha();
+        if ($captcha !== null) {
+            $field = $captcha['field'];
             $problem = $this->captcha()->verify(isset($sent[$field]) ? $sent[$field] : '', $this->clientAddress());
+            if ($problem !== null && $problem['unavailable']) {
+                $this->log(self::LOG_PROBLEMS, 'captcha: ' . $problem['problem'], $action);
+
+                return $this->refuse('captcha_unavailable', 'fetchit_err_captcha_unavailable');
+            }
             if ($problem !== null) {
-                $this->log(self::LOG_PROBLEMS, 'captcha: ' . $problem, $action);
+                $this->log(self::LOG_ALL, 'captcha: ' . $problem['problem'], $action);
 
                 return $this->refuse('captcha', 'fetchit_err_captcha');
             }
@@ -592,7 +638,7 @@ class FetchItGuard
      *
      * @param array $post
      *
-     * @return array|null form, time, nonce, signature
+     * @return array|null raw (the whole token), form, time, nonce, signature
      */
     protected function read(array $post)
     {
@@ -601,7 +647,7 @@ class FetchItGuard
             return null;
         }
 
-        return ['form' => $match[1], 'time' => (int)$match[2], 'nonce' => $match[3], 'signature' => $match[4]];
+        return ['raw' => $token, 'form' => $match[1], 'time' => (int)$match[2], 'nonce' => $match[3], 'signature' => $match[4]];
     }
 
 
@@ -636,15 +682,18 @@ class FetchItGuard
 
 
     /**
-     * Remove the service fields from $post, $_POST and $_REQUEST.
+     * Remove the service fields from $post, $_POST and $_REQUEST. The answer
+     * field of a captcha only when it is FetchIt's: a site may check its own
+     * captcha with a FormIt hook, which reads the same field.
      *
      * @param array $post
      */
     protected function strip(array &$post)
     {
         $fields = [self::TOKEN, self::POW, $this->trapName()];
-        foreach (FetchItCaptcha::PROVIDERS as $provider) {
-            $fields[] = $provider['field'];
+        $captcha = $this->activeCaptcha();
+        if ($captcha !== null) {
+            $fields[] = $captcha['field'];
         }
         foreach ($fields as $field) {
             unset($post[$field], $_POST[$field], $_REQUEST[$field]);

@@ -47,9 +47,14 @@ if (empty($_POST)) {
     if ($next = $FetchIt->guard()->nextToken()) {
         header('X-FetchIt-Token: ' . $next);
     }
-    // The script retries once by itself when the page's token was stale.
+    // The script retries once by itself when the page's token was stale, or
+    // when the page asked for no proof of work or a smaller one (a page from
+    // a cache made before it was turned on or raised).
     if ($reason = $FetchIt->guard()->reason()) {
         header('X-FetchIt-Refused: ' . $reason);
+        if ($reason === 'pow') {
+            header('X-FetchIt-Pow: ' . $FetchIt->guard()->pow());
+        }
     }
     echo $refused !== null ? $refused : $FetchIt->process($action, array_merge($_FILES, $post));
 }

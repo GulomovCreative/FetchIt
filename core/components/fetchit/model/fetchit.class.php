@@ -355,6 +355,7 @@ class FetchIt
     {
         self::$scriptRequested = true;
 
+        $captcha = $this->guard()->activeCaptcha();
         $config = $this->modx->toJSON([
             'action' => $action,
             'assetsUrl' => $this->config['assetsUrl'],
@@ -365,9 +366,8 @@ class FetchIt
             'defaultNotifier' => $this->config['default_notifier'],
             'requestErrorMessage' => $this->modx->lexicon('fetchit_err_request'),
             'pow' => $this->guard()->pow(),
-            'captcha' => $this->guard()->enabled() && $this->guard()->captcha()->provider() !== null
-                ? ['provider' => $this->guard()->captcha()->provider(), 'siteKey' => $this->guard()->captcha()->siteKey()]
-                : null,
+            'captcha' => $captcha !== null ? ['provider' => $captcha['provider'], 'siteKey' => $captcha['siteKey']] : null,
+            'captchaErrorMessage' => $captcha !== null ? $this->modx->lexicon('fetchit_err_captcha_client') : '',
             'pageId' => !empty($this->modx->resource)
                 ? $this->modx->resource->get('id')
                 : 0,
@@ -409,8 +409,8 @@ class FetchIt
         }
 
         // The script of the captcha provider, before FetchIt's (both defer).
-        if ($this->guard()->enabled() && ($captcha = $this->guard()->captcha()->script())) {
-            array_unshift($assets, '<script src="' . htmlspecialchars($captcha, ENT_QUOTES) . '" defer></script>');
+        if ($captcha = $this->guard()->activeCaptcha()) {
+            array_unshift($assets, '<script src="' . htmlspecialchars($captcha['script'], ENT_QUOTES) . '" defer></script>');
         }
 
         $output = &$this->modx->resource->_output;
