@@ -23,6 +23,13 @@ class FetchIt
      */
     protected static $scriptRequested = false;
 
+    /**
+     * The actions whose page POST this request has handled already.
+     *
+     * @var bool[]
+     */
+    protected static $handled = [];
+
 
     /**
      * The shared instance, the one custom snippets should use. On MODX 3 it
@@ -226,12 +233,19 @@ class FetchIt
 
     /**
      * The snippet's run of FormIt or the processing snippet when the page
-     * renders. FormIt runs its preHooks on every page view, so it always
-     * runs; a POST counts as a submission of this form only when it carries
-     * a token of it (a form sent without JavaScript) and passes the
-     * protection. Otherwise FormIt does not see the POST, and a refusal is
-     * shown through the FormIt placeholders of the form, with the values
-     * kept.
+     * renders:
+     * - without a POST it runs as before (FormIt preHooks, e.g. prefilled
+     *   values);
+     * - with the protection off, a POST is checked by the plugins only and
+     *   processed;
+     * - with the protection on, a POST without a token of this form (another
+     *   form's, or a bot's) is hidden from FormIt, which only runs its
+     *   preHooks; a POST with a token of this form (a form sent without
+     *   JavaScript) is processed when it passes the protection, and
+     *   otherwise the refusal and the values sent are shown through the
+     *   FormIt placeholders of the form.
+     * A form is handled once per request, even when the snippet is called
+     * twice with the same properties.
      *
      * @param string $action
      * @param array $properties The snippet properties
@@ -244,11 +258,13 @@ class FetchIt
             return;
         }
 
-        if ($this->guard()->enabled() && !$this->guard()->isSubmission($action, $_POST)) {
+        $guarded = $this->guard()->enabled();
+        if (isset(self::$handled[$action]) || ($guarded && !$this->guard()->isFor($action, $_POST))) {
             $this->processWithoutPost($action);
 
             return;
         }
+        self::$handled[$action] = true;
 
         $post = $_POST;
         $refused = $this->guard()->check($action, $post);
@@ -258,26 +274,30 @@ class FetchIt
             return;
         }
 
+        // FormIt preHooks run first, so they do not overwrite the refusal.
+        $this->processWithoutPost($action);
+
         $prefix = isset($properties['placeholderPrefix']) ? $properties['placeholderPrefix'] : 'fi.';
         $message = $this->modx->lexicon($refused['message']);
         if ($refused['status'] === 'success') {
             $this->modx->setPlaceholder($prefix . 'success', 1);
             $this->modx->setPlaceholder($prefix . 'successMessage', $message);
-        } else {
-            $this->modx->setPlaceholder($prefix . 'validation_error', 1);
-            $this->modx->setPlaceholder($prefix . 'validation_error_message', $message);
-            foreach ($post as $field => $value) {
-                if (is_string($value)) {
-                    $this->modx->setPlaceholder($prefix . $field, htmlspecialchars($value, ENT_QUOTES, 'UTF-8'));
-                }
+
+            return;
+        }
+        $this->modx->setPlaceholder($prefix . 'validation_error', 1);
+        $this->modx->setPlaceholder($prefix . 'validation_error_message', htmlspecialchars($message, ENT_QUOTES, 'UTF-8'));
+        foreach ($post as $field => $value) {
+            if (is_string($value)) {
+                $this->modx->setPlaceholder($prefix . $field, htmlspecialchars($value, ENT_QUOTES, 'UTF-8'));
             }
         }
-        $this->processWithoutPost($action);
     }
 
 
     /**
-     * Run FormIt for its preHooks only: it does not see the POST.
+     * Run FormIt or the processing snippet with no fields and the POST
+     * hidden: FormIt then only runs its preHooks.
      *
      * @param string $action
      */

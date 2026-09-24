@@ -20,6 +20,7 @@ $_lang['fetchit_err_request'] = 'Could not send the form. Please try again.';
 $_lang['fetchit_err_token'] = 'The form has expired. Please send it again.';
 $_lang['fetchit_err_too_fast'] = 'The form was sent too fast. Please send it again.';
 $_lang['fetchit_err_rate'] = 'Too many submissions. Please try again later.';
+$_lang['fetchit_err_store'] = 'The form cannot be checked right now. Please try again later.';
 $_lang['fetchit_trap_label'] = 'Leave this field empty';
 $_lang['fetchit_err_has_errors'] = 'The form has errors';
 $_lang['fetchit_success_submit'] = 'The form has been successfully submitted';

@@ -20,6 +20,7 @@ $_lang['fetchit_err_request'] = 'Не удалось отправить форм
 $_lang['fetchit_err_token'] = 'Форма устарела. Отправьте её ещё раз.';
 $_lang['fetchit_err_too_fast'] = 'Форма отправлена слишком быстро. Отправьте её ещё раз.';
 $_lang['fetchit_err_rate'] = 'Слишком много отправок. Попробуйте позже.';
+$_lang['fetchit_err_store'] = 'Сейчас форму не удаётся проверить. Попробуйте позже.';
 $_lang['fetchit_trap_label'] = 'Оставьте это поле пустым';
 $_lang['fetchit_err_has_errors'] = 'Форма содержит ошибки';
 $_lang['fetchit_success_submit'] = 'Форма успешно отправлена';

@@ -59,8 +59,14 @@ class modX
     /** @var string As $site_id in core/config/config.inc.php */
     public $site_id = 'modx0123456789abcdef.12345678';
 
-    /** @var array event name => callables the "plugins" run */
+    /** @var array event name => callables the "plugins" run, given ($params, $modx) */
     public $plugins = [];
+
+    /** @var FakeEvent|null The event the plugins run for */
+    public $event;
+
+    /** @var string A cache directory of this instance */
+    public $cachePath;
 
     /** @var array[] [event, params] of every invokeEvent() call */
     public $invoked = [];
@@ -132,17 +138,53 @@ class modX
     }
 
     /**
-     * As modX::invokeEvent(): one output per plugin.
+     * As modX::invokeEvent(): each plugin runs with a fresh $modx->event, and
+     * the result is what it passed to $modx->event->output(). What a plugin
+     * returns only goes to the error log in MODX.
      */
     public function invokeEvent($event, array $params = [])
     {
         $this->invoked[] = [$event, $params];
         $results = [];
         foreach (isset($this->plugins[$event]) ? $this->plugins[$event] : [] as $plugin) {
-            $results[] = (string)call_user_func($plugin, $params);
+            $this->event = new FakeEvent();
+            $returned = call_user_func($plugin, $params, $this);
+            if (is_string($returned) && $returned !== '') {
+                $this->log(self::LOG_LEVEL_ERROR, "[{$event}]{$returned}");
+            }
+            $results[] = $this->event->_output;
         }
+        $this->event = null;
 
         return $results;
+    }
+
+    public function getCachePath()
+    {
+        if ($this->cachePath === null) {
+            $this->cachePath = sys_get_temp_dir() . '/fetchit-cache-' . uniqid('', true) . '/';
+            mkdir($this->cachePath);
+        }
+
+        return $this->cachePath;
+    }
+
+    /**
+     * Remove the cache directory of this instance.
+     */
+    public function removeCache()
+    {
+        if ($this->cachePath === null || !is_dir($this->cachePath)) {
+            return;
+        }
+        $files = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($this->cachePath, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::CHILD_FIRST
+        );
+        foreach ($files as $file) {
+            $file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+        }
+        rmdir($this->cachePath);
     }
 
     public function setPlaceholder($key, $value)
@@ -160,10 +202,16 @@ class modX
         $this->htmlBlocks[] = $html;
     }
 
+    /** @var FakeSetting[] System settings getObject() finds, by key */
+    public $settings = [];
+
     public function getObject($class, $criteria)
     {
         if ($class === 'modSnippet' && isset($this->snippets[$criteria['name']])) {
             return $this->snippets[$criteria['name']];
+        }
+        if ($class === 'modSystemSetting' && isset($this->settings[$criteria['key']])) {
+            return $this->settings[$criteria['key']];
         }
 
         return null;
@@ -199,6 +247,54 @@ class FakeContainer
     }
 }
 
+class FakeEvent
+{
+    /** @var mixed As modSystemEvent::$_output */
+    public $_output = '';
+
+    /**
+     * As modSystemEvent::output(): the first output is kept as it is, later
+     * ones are appended.
+     */
+    public function output($output)
+    {
+        if ($this->_output === '') {
+            $this->_output = $output;
+        } else {
+            $this->_output .= $output;
+        }
+    }
+}
+
+class FakeSetting
+{
+    /** @var array */
+    public $fields;
+
+    /** @var bool */
+    public $saved = false;
+
+    public function __construct($key, $value)
+    {
+        $this->fields = ['key' => $key, 'value' => $value];
+    }
+
+    public function get($field)
+    {
+        return $this->fields[$field];
+    }
+
+    public function set($field, $value)
+    {
+        $this->fields[$field] = $value;
+    }
+
+    public function save()
+    {
+        return $this->saved = true;
+    }
+}
+
 class FakeLoader
 {
     /** @var array prefix => path */
@@ -231,13 +327,23 @@ class FakeCacheManager
     /** @var array */
     public $items = [];
 
+    /** @var bool false makes set() fail, as with an unwritable cache */
+    public $writable = true;
+
+    /** @var array key => lifetime of the last set() */
+    public $lifetimes = [];
+
     /**
      * As xPDOCacheManager::set(), which takes the value by reference: a
      * literal there is a fatal error on a real site.
      */
     public function set($key, &$value, $lifetime = 0)
     {
+        if (!$this->writable) {
+            return false;
+        }
         $this->items[$key] = $value;
+        $this->lifetimes[$key] = $lifetime;
 
         return true;
     }
@@ -245,6 +351,16 @@ class FakeCacheManager
     public function get($key)
     {
         return isset($this->items[$key]) ? $this->items[$key] : null;
+    }
+
+    /** @var array[] The arguments of every refresh() call */
+    public $refreshed = [];
+
+    public function refresh(array $providers = [])
+    {
+        $this->refreshed[] = $providers;
+
+        return true;
     }
 
     public function delete($key)
@@ -319,10 +435,16 @@ class FakeSnippet
     /** @var array|null $_POST as the last process() call saw it, as FormIt reads it */
     public $seenPost;
 
+    /** @var callable|null Runs in process(), before the handler */
+    public $onProcess;
+
     public function process($properties)
     {
         $this->received = $properties;
         $this->seenPost = $_POST;
+        if ($this->onProcess) {
+            call_user_func($this->onProcess);
+        }
 
         return call_user_func($this->handler, $properties);
     }
