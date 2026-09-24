@@ -1,0 +1,10 @@
+# Scripts run inside Docker and on Linux runners: keep LF even on Windows
+# checkouts (core.autocrlf=true would break shebangs and "set -o").
+* text=auto
+*.sh text eol=lf
+docker/** text eol=lf
+*.php text eol=lf
+*.yml text eol=lf
+
+*.zip binary
+*.png binary

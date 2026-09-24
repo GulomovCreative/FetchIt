@@ -15,12 +15,16 @@ require rtrim($core, '/') . '/config/config.inc.php';
 require MODX_CORE_PATH . 'model/modx/modx.class.php';
 
 $modx = new modX();
-$modx->initialize('mgr');
+if (!$modx->initialize('mgr')) {
+    fwrite(STDERR, "Could not initialize MODX.\n");
+    exit(1);
+}
 $modx->setLogLevel(modX::LOG_LEVEL_INFO);
 $modx->setLogTarget('ECHO');
 
 /**
- * The class key of a core class: namespaced on MODX 3, bare on MODX 2.
+ * The class key of a core class: namespaced on MODX 3, the legacy class key
+ * on MODX 2.
  */
 function modx_class($name)
 {
@@ -28,12 +32,16 @@ function modx_class($name)
         'modChunk' => 'MODX\Revolution\modChunk',
         'modResource' => 'MODX\Revolution\modResource',
         'modSnippet' => 'MODX\Revolution\modSnippet',
+        'modSystemSetting' => 'MODX\Revolution\modSystemSetting',
         'modTransportPackage' => 'MODX\Revolution\Transport\modTransportPackage',
     ];
     $legacy = [
         'modTransportPackage' => 'transport.modTransportPackage',
     ];
 
+    if (!isset($modern[$name])) {
+        throw new InvalidArgumentException("modx_class() does not know {$name}; add it to the map.");
+    }
     if (class_exists('MODX\Revolution\modX')) {
         return $modern[$name];
     }
