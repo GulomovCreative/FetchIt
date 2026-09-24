@@ -71,4 +71,29 @@ return [
         'value' => 'X-Forwarded-For',
         'area' => 'fetchit_protection',
     ],
+    'protection.pow' => [
+        'xtype' => 'numberfield',
+        'value' => 0,
+        'area' => 'fetchit_protection',
+    ],
+    'captcha' => [
+        'xtype' => 'textfield',
+        'value' => '',
+        'area' => 'fetchit_captcha',
+    ],
+    'captcha.site_key' => [
+        'xtype' => 'textfield',
+        'value' => '',
+        'area' => 'fetchit_captcha',
+    ],
+    'captcha.secret_key' => [
+        'xtype' => 'textfield',
+        'value' => '',
+        'area' => 'fetchit_captcha',
+    ],
+    'captcha.min_score' => [
+        'xtype' => 'numberfield',
+        'value' => 0.5,
+        'area' => 'fetchit_captcha',
+    ],
 ];

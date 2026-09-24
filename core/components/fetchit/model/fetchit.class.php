@@ -1,6 +1,7 @@
 <?php
 
 require_once dirname(__FILE__) . '/fetchitguard.class.php';
+require_once dirname(__FILE__) . '/fetchitcaptcha.class.php';
 
 class FetchIt
 {
@@ -363,6 +364,10 @@ class FetchIt
             'clearFieldsOnSuccess' => (bool)$this->modx->getOption('clearFieldsOnSuccess', $this->config, 1, false),
             'defaultNotifier' => $this->config['default_notifier'],
             'requestErrorMessage' => $this->modx->lexicon('fetchit_err_request'),
+            'pow' => $this->guard()->pow(),
+            'captcha' => $this->guard()->enabled() && $this->guard()->captcha()->provider() !== null
+                ? ['provider' => $this->guard()->captcha()->provider(), 'siteKey' => $this->guard()->captcha()->siteKey()]
+                : null,
             'pageId' => !empty($this->modx->resource)
                 ? $this->modx->resource->get('id')
                 : 0,
@@ -401,6 +406,11 @@ class FetchIt
                 '<link rel="stylesheet" href="' . $this->config['assetsUrl'] . 'lib/notyf.min.css?v=' . $this->version . '" />',
                 '<script src="' . $this->config['assetsUrl'] . 'lib/notyf.min.js?v=' . $this->version . '" defer></script>'
             );
+        }
+
+        // The script of the captcha provider, before FetchIt's (both defer).
+        if ($this->guard()->enabled() && ($captcha = $this->guard()->captcha()->script())) {
+            array_unshift($assets, '<script src="' . htmlspecialchars($captcha, ENT_QUOTES) . '" defer></script>');
         }
 
         $output = &$this->modx->resource->_output;
