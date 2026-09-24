@@ -69,6 +69,36 @@ FetchIt не тянет внешних JS-библиотек. У AjaxForm их �
 
 Либо соберите transport-пакет из `_build/` в этом репозитории.
 
+# Разработка
+
+Нужны Node.js 22.12+ (версия для CI — в `.node-version`), PHP 7.4+ с Composer и Docker.
+
+```sh
+npm ci && composer install
+
+npm run build       # src/index.ts → assets/components/fetchit/js/ (rolldown)
+npm run lint        # oxlint
+npm run typecheck   # tsc
+npm test            # Vitest
+vendor/bin/phpunit  # PHPUnit
+```
+
+Локально поднимаются два сайта — MODX 2.8.6 на PHP 7.4 и MODX 3.2.4 на PHP 8.3; папки компонента из репозитория подключены в оба:
+
+```sh
+docker compose up -d --build
+# MODX 2: http://localhost:8052/, MODX 3: http://localhost:8053/ (admin / FetchItDev2026)
+
+# пакет собирается на MODX 2 и ставится на оба сайта
+docker compose exec -u www-data -e PKG_DIST=1 modx2 php /extra/_build/build.php
+docker compose exec -u www-data modx2 php /extra/_build/ci/install.php /extra/_packages/fetchit-<версия>.transport.zip
+docker compose exec -u www-data modx3 php /extra/_build/ci/install.php /extra/_packages/fetchit-<версия>.transport.zip
+```
+
+CI проверяет каждый PR: синтаксис PHP 7.4–8.4, PHPUnit, линтер, типы, тесты и актуальность собранного JS, workflow и shell-скрипты, согласованность версий. Затем собирает пакет на MODX 2.8.6, ставит его на MODX 2.8.6 и 3.2.4 и отправляет формы через HTTP и из браузера (Playwright).
+
+Релиз: поднять версию в `_build/config.inc.php`, `core/components/fetchit/model/fetchit.class.php` и `package.json`, добавить раздел в `core/components/fetchit/docs/changelog.txt` и опубликовать GitHub-релиз с тегом `vX.Y.Z`. Пакет и заметки из истории коммитов ([conventional commits](https://www.conventionalcommits.org/ru/)) прикрепятся к релизу автоматически.
+
 ---
 
 💗 Угостить автора чашкой кофе: [cloudtips.ru](https://pay.cloudtips.ru/p/d4668b6e)
