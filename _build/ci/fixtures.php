@@ -2,12 +2,17 @@
 /**
  * Create the pages the integration tests submit, and write their ids as JSON
  * to <output> (or print them):
- * {"modx": 2|3, "custom": <id>, "api": <id>, "formit": <id|null>, "pdotools": <id|null>}
+ * {"modx": 2|3, "custom": <id>, "api": <id>, "probe": <id>, "formit": <id|null>,
+ *  "pdotools": <id|null>, "installed": {"package": <signature>, "elements": <bool>}}
  *
  * "custom" is processed by a snippet of its own; "api" by a snippet that
  * gets FetchIt the way custom snippets did in 1.x (MODX 2) or 3.x (MODX 3);
+ * "probe" shows what bootstrap.php set up before anything loaded FetchIt;
  * "formit" by FormIt and "pdotools" with a Fenom @FILE chunk, when FormIt
- * and pdoTools are installed. Exits non-zero when anything cannot be saved.
+ * and pdoTools are installed. "installed" is the newest FetchIt package
+ * installed and whether the snippet and plugin in the database are the
+ * FetchIt 4 ones (an upgrade replaced them). Exits non-zero when anything
+ * cannot be saved.
  *
  * Usage: MODX_CORE_PATH=/path/to/core/ php _build/ci/fixtures.php [output]
  */
@@ -116,7 +121,25 @@ if (is_object($modx->services) && $modx->services->has('FetchIt')) {
     $class = $FetchIt instanceof FetchIt;
 }
 
-return $FetchIt->success('API ' . $api, ['class' => $class]);
+// One shared instance, whichever way it is asked for.
+$legacy = $modx->getService('fetchit', 'FetchIt', MODX_CORE_PATH . 'components/fetchit/model/', []);
+$FetchIt->saveActionProperties('fetchit-api-probe', ['probe' => 1]);
+
+return $FetchIt->success('API ' . $api, [
+    'class' => $class,
+    'same' => $FetchIt === FetchIt::service($modx) && $FetchIt === $legacy,
+    'props' => $FetchIt->getActionProperties('fetchit-api-probe') === ['probe' => 1],
+]);
+PHP
+);
+
+fixture_element($modx, 'modSnippet', 'FetchItTestProbe', 'snippet', <<<'PHP'
+// Runs at page render, before anything on the page loads FetchIt: on
+// MODX 3 bootstrap.php has registered the service and the class by now.
+$container = is_object($modx->services) && $modx->services->has('FetchIt') ? 1 : 0;
+$namespaced = class_exists('FetchIt\FetchIt') ? 1 : 0;
+
+return "<p id=\"probe\">container={$container} namespaced={$namespaced}</p>";
 PHP
 );
 
@@ -132,13 +155,35 @@ $pages = [
         'fetchit-api',
         '[[!FetchIt? &snippet=`FetchItTestApi` &form=`tpl.FetchIt.test`]]'
     ),
+    'probe' => fixture_page($modx, 'fetchit-probe', '[[!FetchItTestProbe]]'),
     'formit' => null,
     'pdotools' => null,
 ];
 
+$snippet = $modx->getObject(modx_class('modSnippet'), ['name' => 'FetchIt']);
+$plugin = $modx->getObject(modx_class('modPlugin'), ['name' => 'FetchIt']);
+// The newest installed version: an upgrade may stamp both packages with the
+// same "installed" second, so the time does not tell them apart.
+$query = $modx->newQuery(modx_class('modTransportPackage'), ['signature:LIKE' => 'fetchit-%', 'installed:!=' => null]);
+$query->sortby('version_major', 'DESC');
+$query->sortby('version_minor', 'DESC');
+$query->sortby('version_patch', 'DESC');
+$package = $modx->getObject(modx_class('modTransportPackage'), $query);
+$pages['installed'] = [
+    'package' => $package ? $package->get('signature') : null,
+    'elements' => $snippet && $plugin
+        && strpos($snippet->get('snippet'), 'FetchIt::pdoTools') !== false
+        && strpos($plugin->get('plugincode'), 'FetchIt::service') !== false,
+];
+
 if ($modx->getObject(modx_class('modSnippet'), ['name' => 'pdoResources'])) {
-    // pdoTools reads @FILE chunks from pdotools_elements_path, core/elements/ by default.
-    $file = MODX_CORE_PATH . 'elements/fetchit-test.tpl';
+    // pdoTools reads @FILE chunks from pdotools_elements_path.
+    $elements = str_replace(
+        ['{core_path}', '{base_path}', '{assets_path}'],
+        [MODX_CORE_PATH, MODX_BASE_PATH, MODX_ASSETS_PATH],
+        $modx->getOption('pdotools_elements_path', null, '{core_path}elements/')
+    );
+    $file = rtrim($elements, '/') . '/fetchit-test.tpl';
     if (!is_dir(dirname($file)) && !mkdir(dirname($file), 0755, true)) {
         fixture_fail('Could not create ' . dirname($file) . '.');
     }

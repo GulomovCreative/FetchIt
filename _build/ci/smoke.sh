@@ -6,7 +6,8 @@
 # Usage: smoke.sh <base url> <fixtures json from fixtures.php>
 #
 # REQUIRE_FORMIT=1 / REQUIRE_PDOTOOLS=1 fail the run when FormIt / pdoTools
-# did not get installed.
+# did not get installed. EXPECT_PACKAGE=<signature> checks that it is the
+# newest FetchIt package installed.
 #
 # Every submission carries a fetchit_probe cookie. Whether cookies reach
 # $_REQUEST depends on request_order, so the server should run with
@@ -60,6 +61,7 @@ json() {
 modx="$(jq -r '.modx' <<< "$fixtures")"
 custom="$(jq -r '.custom' <<< "$fixtures")"
 api="$(jq -r '.api' <<< "$fixtures")"
+probe="$(jq -r '.probe' <<< "$fixtures")"
 formit="$(jq -r '.formit // empty' <<< "$fixtures")"
 pdotools="$(jq -r '.pdotools // empty' <<< "$fixtures")"
 
@@ -98,12 +100,26 @@ check "an unknown action is refused" json '.success == false' "$response"
 response="$(curl -fsS -H "Accept: application/json" -F email=a "$base/assets/components/fetchit/action.php" || true)"
 check "a request without the action header is refused" json '.success == false' "$response"
 
+echo "# The installed package"
+check "the snippet and plugin in the database are FetchIt 4" json '.installed.elements == true' "$fixtures"
+if [ -n "${EXPECT_PACKAGE:-}" ]; then
+    check "$EXPECT_PACKAGE is the newest installed package" json ".installed.package == \"$EXPECT_PACKAGE\"" "$fixtures"
+fi
+
+echo "# What bootstrap.php set up on MODX $modx (id $probe)"
+expected="container=0 namespaced=0"
+[ "$modx" = 3 ] && expected="container=1 namespaced=1"
+open_page "$probe" > /dev/null
+check "the page sees $expected" grep -q "<p id=\"probe\">$expected</p>" "$jar.html"
+
 echo "# The FetchIt API of custom snippets on MODX $modx (id $api)"
 action="$(open_page "$api")"
 response="$(submit "$action" -F email=ann@example.com -F "pageId=$api")"
 expected="1.x"
 [ "$modx" = 3 ] && expected="3.x"
 check "a snippet gets FetchIt as in FetchIt $expected" json ".success == true and .message == \"API $expected\" and .data.class == true" "$response"
+check "1.x, 3.x and FetchIt::service() give one instance" json '.data.same == true' "$response"
+check "the 3.x action property methods work" json '.data.props == true' "$response"
 
 if [ -n "$pdotools" ]; then
     echo "# pdoTools: Fenom in an @FILE chunk (id $pdotools)"

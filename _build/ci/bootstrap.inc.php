@@ -30,6 +30,7 @@ function modx_class($name)
 {
     $modern = [
         'modChunk' => 'MODX\Revolution\modChunk',
+        'modPlugin' => 'MODX\Revolution\modPlugin',
         'modResource' => 'MODX\Revolution\modResource',
         'modSnippet' => 'MODX\Revolution\modSnippet',
         'modSystemSetting' => 'MODX\Revolution\modSystemSetting',
