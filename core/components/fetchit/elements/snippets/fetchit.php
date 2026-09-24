@@ -36,5 +36,4 @@ $action = !empty($_SERVER['HTTP_X_FETCHIT_ACTION'])
 
 $FetchIt->process($action, $_POST);
 
-// Return chunk
 return $content;
