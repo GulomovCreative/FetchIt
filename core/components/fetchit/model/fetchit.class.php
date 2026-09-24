@@ -20,8 +20,10 @@ class FetchIt
 
 
     /**
-     * The shared instance: from the service container on MODX 3 (bootstrap.php
-     * registers it), from getService() on MODX 2.
+     * The shared instance, the one custom snippets should use. On MODX 3 it
+     * is "FetchIt" in the service container (bootstrap.php registers it, or
+     * this method does), also found under "fetchit", the name FetchIt 1.x
+     * code passes to getService(). On MODX 2 it is getService('fetchit').
      *
      * @param modX $modx
      *
@@ -34,13 +36,32 @@ class FetchIt
             return $modx->getService('fetchit', 'FetchIt', dirname(__FILE__) . '/');
         }
 
+        self::register($modx);
+
+        return $container->get('FetchIt');
+    }
+
+
+    /**
+     * Register the shared instance in the MODX 3 service container as
+     * "FetchIt" (FetchIt 3.x) and "fetchit" (getService() calls of 1.x code;
+     * the container keys are case-sensitive).
+     *
+     * @param modX $modx
+     */
+    public static function register($modx)
+    {
+        $container = self::container($modx);
         if (!$container->has('FetchIt')) {
             $container->add('FetchIt', function () use ($modx) {
                 return new FetchIt($modx);
             });
         }
-
-        return $container->get('FetchIt');
+        if (!$container->has('fetchit')) {
+            $container->add('fetchit', function () use ($container) {
+                return $container->get('FetchIt');
+            });
+        }
     }
 
 
@@ -370,7 +391,7 @@ class FetchIt
         }
 
         // Do not set FetchIt=>$this here (PDO in session, #17).
-        // Custom snippets: $modx->getService('fetchit', 'FetchIt', MODX_CORE_PATH . 'components/fetchit/model/', []).
+        // Custom snippets: FetchIt::service($modx).
         $scriptProperties = array_merge($stored, array(
             'fields' => $fields,
         ));
@@ -537,8 +558,9 @@ class FetchIt
     }
 }
 
-// FetchIt 3.x called this class FetchIt\FetchIt. The alias is set here, not
-// only in src/FetchIt.php, because instanceof does not autoload.
+// FetchIt 3.x called this class FetchIt\FetchIt. The alias lives with the
+// class because instanceof does not autoload, and MODX 2 has no autoloader
+// for FetchIt\ at all (src/FetchIt.php only loads this file).
 if (!class_exists('FetchIt\FetchIt', false)) {
     class_alias('FetchIt', 'FetchIt\FetchIt');
 }
