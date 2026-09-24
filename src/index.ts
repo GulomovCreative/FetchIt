@@ -2,6 +2,8 @@ class FetchIt {
   declare static Message?: FetchItMessage;
   static forms: HTMLFormElement[] = [];
   static instances = new Map<HTMLFormElement, FetchIt>();
+  // Used when the page config has no requestErrorMessage (a page cached by 1.1.3).
+  static defaultRequestErrorMessage = 'Could not send the form. Please try again.';
   static events = {
     before: 'fetchit:before',
     success: 'fetchit:success',
@@ -16,6 +18,7 @@ class FetchIt {
   declare formData: FormData;
   declare preserveFormMessagesOnReset: boolean;
   declare disabledBefore: Element[];
+  declare pending: boolean;
 
   constructor (form: unknown, config: FetchItConfig) {
     if (!(form instanceof HTMLFormElement)) {
@@ -44,6 +47,11 @@ class FetchIt {
     this.form.addEventListener('submit', async event => {
       event.preventDefault();
 
+      // requestSubmit() works on disabled buttons too: one request at a time.
+      if (this.pending) {
+        return;
+      }
+
       this.formData = new FormData(this.form);
       this.formData.set('pageId', String(this.config.pageId));
 
@@ -65,13 +73,21 @@ class FetchIt {
         return;
       }
 
+      this.pending = true;
       this.disableFields();
+
+      // Set once the visitor has seen the outcome; a later error is only logged.
+      let shown = false;
 
       try {
         let response: FetchItResponse;
         try {
           const query = await fetch(this.request, { method: 'post', body: this.formData });
-          response = await query.json();
+          const body: unknown = await query.json();
+          if (!FetchIt.isResponse(body)) {
+            throw new Error(`FetchIt: unexpected answer from ${query.url || this.config.actionUrl} (HTTP ${query.status})`);
+          }
+          response = body;
         } catch (error) {
           this.failRequest(error);
           return;
@@ -110,7 +126,7 @@ class FetchIt {
             return;
           }
 
-          for (const [ name, message ] of Object.entries(response.data)) {
+          for (const [ name, message ] of Object.entries(response.data ?? {})) {
             if (!FetchIt.hasErrorMessage(message)) {
               continue;
             }
@@ -119,12 +135,14 @@ class FetchIt {
           }
 
           this.setFormMessage('validation', response.message);
+          shown = true;
 
           return;
         }
 
         this.clearErrors();
         this.setFormMessage('success', response.message);
+        shown = true;
         FetchIt?.Message?.success?.(response.message);
 
         const successEvent = new CustomEvent(FetchIt.events.success, {
@@ -150,9 +168,14 @@ class FetchIt {
           this.preserveFormMessagesOnReset = false;
         }
       } catch (error) {
-        console.error(error);
+        if (shown) {
+          console.error(error);
+        } else {
+          this.failRequest(error);
+        }
       } finally {
         this.enableFields();
+        this.pending = false;
       }
     });
 
@@ -180,16 +203,16 @@ class FetchIt {
   }
 
   /**
-   * The request failed or the answer was not JSON (a PHP error page,
-   * a redirect): tell the visitor instead of failing silently.
+   * fetch() rejected (network error), the body was not a FetchIt answer
+   * (a PHP error page, HTML after a redirect, JSON from a firewall), or
+   * handling the answer threw: tell the visitor instead of failing silently.
+   * An HTTP error status with a FetchIt answer goes the normal way.
    */
   failRequest (error: unknown) {
     console.error(error);
 
-    const message = this.config.requestErrorMessage ?? '';
-    if (message) {
-      FetchIt?.Message?.error?.(message);
-    }
+    const message = this.config.requestErrorMessage || FetchIt.defaultRequestErrorMessage;
+    FetchIt?.Message?.error?.(message);
 
     const errorEvent = new CustomEvent(FetchIt.events.error, {
       cancelable: true,
@@ -349,10 +372,15 @@ class FetchIt {
   }
 
   /**
-   * Escape a value for a double-quoted attribute selector.
+   * Escape a value for a double-quoted attribute selector: only " and \
+   * need it there.
    */
   static escapeAttribute (value: string): string {
     return value.replace(/["\\]/g, '\\$&');
+  }
+
+  static isResponse (value: unknown): value is FetchItResponse {
+    return typeof value === 'object' && value !== null && typeof (value as FetchItResponse).success === 'boolean';
   }
 
   static sanitizeHTML (str: string = ''): string {
