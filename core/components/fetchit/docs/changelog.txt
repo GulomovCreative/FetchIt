@@ -11,7 +11,14 @@ FetchIt 4 is one package for MODX 2.8 and MODX 3. It replaces the 1.x and 3.x li
 
 ### Added
 
-- Spam protection, on by default, for the AJAX path and forms sent without JavaScript: a signed single-use token in every form (`fetchit_token`, no session needed; `action.php` sends the next one in the `X-FetchIt-Token` header), a minimum fill time (`fetchit.protection.min_time`), a hidden trap field (`fetchit_website`) that gets a fake success, and a limit per form and address (`fetchit.protection.rate_limit`, `fetchit.protection.rate_window`). `fetchit.protection` turns it off; `fetchit.protection.secret` sets the signing key, derived from the MODX installation when empty.
+- Spam protection, on by default, for the AJAX path and forms sent without JavaScript:
+  - a signed single-use token in every form (`fetchit_token`, no session needed). Only a request with a well-signed token of the form gets the next one, in the `X-FetchIt-Token` header; the script uses it for the next submission and, when the page's token was stale (a cached page, a page open for long, a new key), sends the form once more by itself;
+  - a minimum fill time (`fetchit.protection.min_time`), counted from the first render of the page, retries included;
+  - a hidden trap field with a random name per installation that gets a fake success;
+  - a limit per form and client address (`fetchit.protection.rate_limit`, `fetchit.protection.rate_window`), also behind trusted proxies (`fetchit.protection.proxies`, `fetchit.protection.ip_header`);
+  - used tokens are marked atomically under `core/cache/fetchit/tokens/`, which "Clear cache" leaves alone; when the mark cannot be written, forms are refused and it is logged;
+  - `fetchit.protection.log` controls what is logged; the signing key `fetchit.protection.secret` is generated at install.
+  `fetchit.protection` turns it all off.
 - The `OnFetchItBeforeProcess` event: plugins get `$action`, `$fields`, `$properties` and `$FetchIt`, and refuse a submission with `$modx->event->output('message')`. It also runs with the protection off.
 - MODX 3 support in the same package, built on MODX 2.8. It installs fresh on MODX 2.8 and MODX 3, and upgrades FetchIt 1.x on MODX 2 and FetchIt 3.x on MODX 3.
 - The FetchIt 3.x API: `$modx->services->get('FetchIt')` on MODX 3 (registered by `bootstrap.php`), and on both versions the `FetchIt\FetchIt` class, `saveActionProperties()` and `getActionProperties()`.
@@ -24,8 +31,9 @@ FetchIt 4 is one package for MODX 2.8 and MODX 3. It replaces the 1.x and 3.x li
 
 ### Changed
 
-- Forms get two hidden fields of the protection right after the form tag. The service fields are removed from `$_POST` and `$_REQUEST` before FormIt reads them.
-- On the page, the snippet still runs FormIt on every view (for its preHooks), but only a POST that carries a token of its form counts as a submission; any other POST is hidden from FormIt. A POST to the page URL used to reach FormIt directly.
+- Forms get the service fields of the protection right after the form tag: a hidden input and an off-screen `div` with the trap. They are removed from `$_POST` and `$_REQUEST` before FormIt reads them.
+- Scripts other than the bundled one must send `fetchit_token` and take the next token from the `X-FetchIt-Token` header of every answer (see README).
+- With the protection on, the snippet still runs FormIt on every page view (for its preHooks), but only a POST that carries a token of its form counts as a submission; any other POST is hidden from FormIt. A POST to the page URL used to reach FormIt directly.
 - On MODX 3 the plugin and `action.php` take FetchIt from the service container instead of the deprecated `getService()`.
 - `fetchit:error` also fires for failed requests, with `detail.response` set to `null`. Handlers that read `detail.response` must allow for it.
 - The processing snippet gets only posted values in `fields`: `$_POST` (and `$_FILES` from `action.php`). Before it got `$_REQUEST`, which also holds GET values and, depending on `request_order`, cookies.
@@ -39,6 +47,7 @@ FetchIt 4 is one package for MODX 2.8 and MODX 3. It replaces the 1.x and 3.x li
 
 ### Fixed
 
+- A form sent without JavaScript never showed its success or error message when the chunk used output filters on the FormIt placeholders, like the example chunk: the chunk rendered before FormIt ran. The snippet now processes first.
 - A form that already had a `data-fetchit` attribute came out broken: `<form\data-fetchit="$action" ...>`, with the attributes before it lost. The snippet also changed look-alike tags such as `<form-field>` and the `formmethod` or `data-fetchit` of elements inside the form. Form tags are now parsed one by one, values in quotes included (so `@submit="step > 1"` stays intact), and only their own `method` and `data-fetchit` are replaced.
 - No scripts were added on sites without anonymous sessions. Whether a page has a form is now remembered for the current request, not in the session.
 - No scripts were added when `<head>` was written in capitals; with attributes on `<head>` they went to its end instead of before the first script.

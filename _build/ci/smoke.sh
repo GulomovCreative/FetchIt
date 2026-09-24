@@ -5,10 +5,11 @@
 #
 # Usage: smoke.sh <base url> <fixtures json from fixtures.php>
 #
-# The spam protection has to let these checks through: CI sets
-# fetchit.protection.min_time and fetchit.protection.rate_limit to 0 (the
-# time and the limit are checked by protection.sh), and every submission
-# carries the token of the form, the next one coming from the answer.
+# The spam protection has to let these checks through: set
+# fetchit.protection.min_time and fetchit.protection.rate_limit to 0 first,
+# as CI does (the time and the limit are checked by protection.sh). Every
+# submission carries the token of the form, the next one coming from the
+# answer.
 #
 # REQUIRE_FORMIT=1 / REQUIRE_PDOTOOLS=1 fail the run when FormIt / pdoTools
 # did not get installed. EXPECT_PACKAGE=<signature> checks that it is the
