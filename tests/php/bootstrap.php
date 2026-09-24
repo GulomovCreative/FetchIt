@@ -56,6 +56,15 @@ class modX
     /** @var FakeLoader */
     public static $loader;
 
+    /** @var string As $site_id in core/config/config.inc.php */
+    public $site_id = 'modx0123456789abcdef.12345678';
+
+    /** @var array event name => callables the "plugins" run */
+    public $plugins = [];
+
+    /** @var array[] [event, params] of every invokeEvent() call */
+    public $invoked = [];
+
     public function __construct()
     {
         $this->lexicon = new FakeLexicon();
@@ -120,6 +129,25 @@ class modX
     public function toJSON($data)
     {
         return json_encode($data);
+    }
+
+    /**
+     * As modX::invokeEvent(): one output per plugin.
+     */
+    public function invokeEvent($event, array $params = [])
+    {
+        $this->invoked[] = [$event, $params];
+        $results = [];
+        foreach (isset($this->plugins[$event]) ? $this->plugins[$event] : [] as $plugin) {
+            $results[] = (string)call_user_func($plugin, $params);
+        }
+
+        return $results;
+    }
+
+    public function setPlaceholder($key, $value)
+    {
+        $this->placeholders[$key] = $value;
     }
 
     public function log($level, $message)
@@ -203,7 +231,11 @@ class FakeCacheManager
     /** @var array */
     public $items = [];
 
-    public function set($key, $value, $lifetime = 0)
+    /**
+     * As xPDOCacheManager::set(), which takes the value by reference: a
+     * literal there is a fatal error on a real site.
+     */
+    public function set($key, &$value, $lifetime = 0)
     {
         $this->items[$key] = $value;
 
@@ -213,6 +245,13 @@ class FakeCacheManager
     public function get($key)
     {
         return isset($this->items[$key]) ? $this->items[$key] : null;
+    }
+
+    public function delete($key)
+    {
+        unset($this->items[$key]);
+
+        return true;
     }
 }
 
@@ -277,9 +316,13 @@ class FakeSnippet
         return isset($this->propertySets[$set]) ? $this->propertySets[$set] : null;
     }
 
+    /** @var array|null $_POST as the last process() call saw it, as FormIt reads it */
+    public $seenPost;
+
     public function process($properties)
     {
         $this->received = $properties;
+        $this->seenPost = $_POST;
 
         return call_user_func($this->handler, $properties);
     }

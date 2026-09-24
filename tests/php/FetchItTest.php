@@ -10,6 +10,8 @@ class FetchItTest extends TestCase
     protected function setUp(): void
     {
         $this->modx = new modX();
+        // The markup and the submissions of the protection: GuardTest.
+        $this->modx->options['fetchit.protection'] = false;
         $_SESSION = [];
         // The "scripts requested" flag lives for one request, i.e. one test.
         $flag = new ReflectionProperty(FetchIt::class, 'scriptRequested');

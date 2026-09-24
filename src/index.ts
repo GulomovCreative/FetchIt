@@ -4,6 +4,8 @@ class FetchIt {
   static instances = new Map<HTMLFormElement, FetchIt>();
   // Used when the page config has no requestErrorMessage (a page cached by 1.1.3).
   static defaultRequestErrorMessage = 'Could not send the form. Please try again.';
+  // The hidden field of the spam protection (FetchItGuard::TOKEN).
+  static tokenField = 'fetchit_token';
   static events = {
     before: 'fetchit:before',
     success: 'fetchit:success',
@@ -83,6 +85,7 @@ class FetchIt {
       try {
         try {
           const query = await fetch(this.request, { method: 'post', body: this.formData });
+          this.updateToken(query.headers?.get('X-FetchIt-Token'));
           const body: unknown = await query.json();
           if (!FetchIt.isResponse(body)) {
             throw new Error(`FetchIt: unexpected answer from ${query.url || this.config.actionUrl} (HTTP ${query.status})`);
@@ -234,6 +237,20 @@ class FetchIt {
     }
 
     this.setFormMessage('validation', message);
+  }
+
+  /**
+   * The protection token is single-use: every answer brings the next one.
+   * The value attribute changes too, so a form reset keeps it.
+   */
+  updateToken (token: string | null | undefined) {
+    if (!token) {
+      return;
+    }
+    this.form.querySelectorAll<HTMLInputElement>(`input[name="${FetchIt.tokenField}"]`).forEach(input => {
+      input.value = token;
+      input.defaultValue = token;
+    });
   }
 
   clearErrors () {

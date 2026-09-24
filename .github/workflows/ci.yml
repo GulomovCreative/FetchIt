@@ -101,7 +101,7 @@ jobs:
         run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:latest -color
 
       - name: shellcheck
-        run: shellcheck _build/ci/*.sh docker/php/entrypoint.sh
+        run: shellcheck -x _build/ci/*.sh docker/php/entrypoint.sh
 
   version:
     name: Version

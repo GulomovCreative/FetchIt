@@ -3,6 +3,7 @@
 		static forms = [];
 		static instances = /* @__PURE__ */ new Map();
 		static defaultRequestErrorMessage = "Could not send the form. Please try again.";
+		static tokenField = "fetchit_token";
 		static events = {
 			before: "fetchit:before",
 			success: "fetchit:success",
@@ -54,6 +55,7 @@
 							method: "post",
 							body: this.formData
 						});
+						this.updateToken(query.headers?.get("X-FetchIt-Token"));
 						const body = await query.json();
 						if (!FetchIt.isResponse(body)) throw new Error(`FetchIt: unexpected answer from ${query.url || this.config.actionUrl} (HTTP ${query.status})`);
 						response = body;
@@ -158,6 +160,17 @@
 			});
 			if (!document.dispatchEvent(errorEvent)) return;
 			this.setFormMessage("validation", message);
+		}
+		/**
+		* The protection token is single-use: every answer brings the next one.
+		* The value attribute changes too, so a form reset keeps it.
+		*/
+		updateToken(token) {
+			if (!token) return;
+			this.form.querySelectorAll(`input[name="${FetchIt.tokenField}"]`).forEach((input) => {
+				input.value = token;
+				input.defaultValue = token;
+			});
 		}
 		clearErrors() {
 			this.fields.forEach((field) => this.clearError(field.getAttribute("name")));

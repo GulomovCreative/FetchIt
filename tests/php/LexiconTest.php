@@ -31,7 +31,10 @@ class LexiconTest extends TestCase
             $keys = array_merge($keys, $matches[1]);
         }
 
-        return array_values(array_unique($keys));
+        // Field names that look like keys.
+        $fields = [FetchItGuard::TOKEN, FetchItGuard::TRAP];
+
+        return array_values(array_diff(array_unique($keys), $fields));
     }
 
     public function languages()

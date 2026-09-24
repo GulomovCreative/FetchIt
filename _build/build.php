@@ -78,6 +78,38 @@ class FetchItPackage
 
 
     /**
+     * Add the system events of FetchIt
+     */
+    protected function events()
+    {
+        /** @noinspection PhpIncludeInspection */
+        $events = include($this->config['elements'] . 'events.php');
+        if (!is_array($events)) {
+            $this->modx->log(modX::LOG_LEVEL_ERROR, 'Could not package in System Events');
+
+            return;
+        }
+        $attributes = [
+            xPDOTransport::UNIQUE_KEY => 'name',
+            xPDOTransport::PRESERVE_KEYS => true,
+            xPDOTransport::UPDATE_OBJECT => true,
+            xPDOTransport::RELATED_OBJECTS => false,
+        ];
+        foreach ($events as $name => $data) {
+            /** @var modEvent $event */
+            $event = $this->modx->newObject('modEvent');
+            $event->fromArray(array_merge([
+                'name' => $name,
+                'service' => 6,
+                'groupname' => $this->config['name'],
+            ], $data), '', true, true);
+            $this->builder->putVehicle($this->builder->createVehicle($event, $attributes));
+        }
+        $this->modx->log(modX::LOG_LEVEL_INFO, 'Packaged in ' . count($events) . ' System Events');
+    }
+
+
+    /**
      * Add settings
      */
     protected function settings()

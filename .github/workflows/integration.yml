@@ -105,6 +105,13 @@ jobs:
           php _build/ci/fixtures.php fixtures.json
           cat fixtures.json
 
+      - name: Let the checks through the time and rate checks
+        # The checks send forms right after loading them, many times; the
+        # protection steps below turn both checks back on one at a time.
+        run: |
+          php _build/ci/setting.php fetchit.protection.min_time 0
+          php _build/ci/setting.php fetchit.protection.rate_limit 0
+
       - name: Start the web server
         # request_order=GPC puts cookies into $_REQUEST, as on servers without
         # a php.ini. The cookie check in smoke.sh only bites with it.
@@ -139,6 +146,24 @@ jobs:
       - name: Turn anonymous sessions back on
         if: always()
         run: php _build/ci/setting.php anonymous_sessions 1
+
+      - name: Protection refuses a form sent too fast
+        run: |
+          php _build/ci/setting.php fetchit.protection.min_time 30
+          _build/ci/protection.sh "$BASE_URL" "$(cat fixtures.json)" too-fast
+
+      - name: Turn the time check back off
+        if: always()
+        run: php _build/ci/setting.php fetchit.protection.min_time 0
+
+      - name: Protection limits submissions per address
+        run: |
+          php _build/ci/setting.php fetchit.protection.rate_limit 2
+          _build/ci/protection.sh "$BASE_URL" "$(cat fixtures.json)" rate-limit
+
+      - name: Turn the rate limit back off
+        if: always()
+        run: php _build/ci/setting.php fetchit.protection.rate_limit 0
 
       - uses: actions/setup-node@v7
         with:

@@ -524,3 +524,64 @@ describe('failed requests', () => {
     expect(element(form, '[data-validation-error]').textContent).toBe('Try later')
   })
 })
+
+function mountProtectedForm() {
+  document.body.innerHTML = `
+    <form data-fetchit="${action}">
+      <input type="hidden" name="fetchit_token" value="old-token">
+      <input name="email" value="">
+      <div data-success style="display: none"></div>
+    </form>`
+  return document.querySelector('form') as HTMLFormElement
+}
+
+function answerWithToken(body: unknown, token: string | null) {
+  return vi.fn(async (_request: Request, _init?: RequestInit) => ({
+    headers: new Headers(token ? { 'X-FetchIt-Token': token } : {}),
+    json: async () => body,
+  }))
+}
+
+describe('spam protection', () => {
+  it('sends the token of the form', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config())
+    const fetch = answerWithToken({ success: true, message: '', data: [] }, 'next-token')
+    vi.stubGlobal('fetch', fetch)
+
+    await submit(form)
+
+    expect((fetch.mock.calls[0]![1]!.body as FormData).get('fetchit_token')).toBe('old-token')
+  })
+
+  it('takes the next token from the answer, also after a reset', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config())
+    vi.stubGlobal('fetch', answerWithToken({ success: true, message: 'Sent', data: [] }, 'next-token'))
+
+    await submit(form)
+
+    // clearFieldsOnSuccess resets the form: the token must survive it.
+    expect(field(form, 'fetchit_token').value).toBe('next-token')
+  })
+
+  it('takes the next token from a refusal too', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config())
+    vi.stubGlobal('fetch', answerWithToken({ success: false, message: 'Too fast', data: [] }, 'retry-token'))
+
+    await submit(form)
+
+    expect(field(form, 'fetchit_token').value).toBe('retry-token')
+  })
+
+  it('keeps the token when the answer has none', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config())
+    vi.stubGlobal('fetch', answerWithToken({ success: false, message: 'x', data: [] }, null))
+
+    await submit(form)
+
+    expect(field(form, 'fetchit_token').value).toBe('old-token')
+  })
+})
