@@ -50,8 +50,10 @@ FetchIt не тянет внешних JS-библиотек. У AjaxForm их �
 
 | Ветка | Пакет | MODX |
 |-------|-------|------|
-| `master` | 1.x | 2.x |
+| `master` | 4.x (в разработке) | 2.x и 3.x |
 | `next` | 3.x | 3.x |
+
+FetchIt 4 будет одним пакетом для MODX 2 и MODX 3 и заменит линии 1.x и 3.x. Ветка `next` замораживается с выходом 4.0.
 
 На [extras.modx.com](https://extras.modx.com/package/fetchit): **3.1.2-pl** (MODX 3) и **1.1.2-pl** (MODX 2).
 
