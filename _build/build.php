@@ -78,66 +78,6 @@ class FetchItPackage
 
 
     /**
-     * Update the model
-     */
-    protected function model()
-    {
-        $model_file = $this->config['core'] . 'model/schema/' . $this->config['name_lower'] . '.mysql.schema.xml';
-        if (!file_exists($model_file) || empty(file_get_contents($model_file))) {
-            return;
-        }
-        /** @var xPDOCacheManager $cache */
-        if ($cache = $this->modx->getCacheManager()) {
-            $cache->deleteTree(
-                $this->config['core'] . 'model/' . $this->config['name_lower'] . '/mysql',
-                ['deleteTop' => true, 'skipDirs' => false, 'extensions' => []]
-            );
-        }
-
-        /** @var xPDOManager $manager */
-        $manager = $this->modx->getManager();
-        /** @var xPDOGenerator $generator */
-        $generator = $manager->getGenerator();
-        $generator->parseSchema(
-            $this->config['core'] . 'model/schema/' . $this->config['name_lower'] . '.mysql.schema.xml',
-            $this->config['core'] . 'model/'
-        );
-        $this->modx->log(modX::LOG_LEVEL_INFO, 'Model updated');
-    }
-
-
-    /**
-     * Install nodejs and update assets
-     */
-    protected function assets()
-    {
-        $output = [];
-        if (!file_exists($this->config['build'] . 'node_modules')) {
-            putenv('PATH=' . trim(shell_exec('echo $PATH')) . ':' . dirname(MODX_BASE_PATH) . '/');
-            if (file_exists($this->config['build'] . 'package.json')) {
-                $this->modx->log(modX::LOG_LEVEL_INFO, 'Trying to install or update nodejs dependencies');
-                $output = [
-                    shell_exec('cd ' . $this->config['build'] . ' && npm config set scripts-prepend-node-path true && npm install'),
-                ];
-            }
-            if (file_exists($this->config['build'] . 'gulpfile.js')) {
-                $output = array_merge($output, [
-                    shell_exec('cd ' . $this->config['build'] . ' && npm link gulp'),
-                    shell_exec('cd ' . $this->config['build'] . ' && gulp copy'),
-                ]);
-            }
-            if ($output) {
-                $this->modx->log(xPDO::LOG_LEVEL_INFO, implode("\n", array_map('trim', $output)));
-            }
-        }
-        if (file_exists($this->config['build'] . 'gulpfile.js')) {
-            $output = shell_exec('cd ' . $this->config['build'] . ' && gulp default 2>&1');
-            $this->modx->log(xPDO::LOG_LEVEL_INFO, 'Compile scripts and styles ' . trim($output));
-        }
-    }
-
-
-    /**
      * Add settings
      */
     protected function settings()
@@ -375,13 +315,28 @@ class FetchItPackage
 
 
     /**
+     * Copy the package into _packages/ of the repository
+     */
+    protected function export()
+    {
+        $name = $this->builder->getSignature() . '.transport.zip';
+        $target = $this->config['root'] . '_packages/';
+        if (!is_dir($target)) {
+            mkdir($target, 0755, true);
+        }
+        if (copy(MODX_CORE_PATH . 'packages/' . $name, $target . $name)) {
+            $this->modx->log(modX::LOG_LEVEL_INFO, 'Package saved to _packages/' . $name);
+        } else {
+            $this->modx->log(modX::LOG_LEVEL_ERROR, 'Could not copy the package to _packages/');
+        }
+    }
+
+
+    /**
      * @return modPackageBuilder
      */
     public function process()
     {
-        $this->model();
-        $this->assets();
-
         // Add elements
         $elements = scandir($this->config['elements']);
         foreach ($elements as $element) {
@@ -410,20 +365,6 @@ class FetchItPackage
 
         // Add resolvers into vehicle
         $resolvers = scandir($this->config['resolvers']);
-        // Remove Office files
-        if (!in_array('office', $resolvers)) {
-            if ($cache = $this->modx->getCacheManager()) {
-                $dirs = [
-                    $this->config['assets'] . 'js/office',
-                    $this->config['core'] . 'controllers/office',
-                    $this->config['core'] . 'processors/office',
-                ];
-                foreach ($dirs as $dir) {
-                    $cache->deleteTree($dir, ['deleteTop' => true, 'skipDirs' => false, 'extensions' => []]);
-                }
-            }
-            $this->modx->log(modX::LOG_LEVEL_INFO, 'Deleted Office files');
-        }
         foreach ($resolvers as $resolver) {
             if (in_array($resolver[0], ['_', '.'])) {
                 continue;
@@ -443,6 +384,8 @@ class FetchItPackage
 
         $this->modx->log(modX::LOG_LEVEL_INFO, 'Packing up transport package zip...');
         $this->builder->pack();
+
+        $this->export();
 
         if (!empty($this->config['install'])) {
             $this->install();
