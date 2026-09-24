@@ -89,20 +89,27 @@ class modX
     }
 
     /**
-     * As xPDO 2 getService(): one shared instance per name.
+     * As xPDO getService(): one shared instance per name, keys exactly as
+     * given (case matters). xPDO 3 keeps them in the service container.
      */
     public function getService($name, $class = '', $path = '', $params = [])
     {
-        $key = strtolower($name);
-        if (!isset($this->legacyServices[$key])) {
-            if (!class_exists($class ?: $name)) {
+        $class = $class ?: $name;
+        if (is_object($this->services)) {
+            if (!$this->services->has($name) && class_exists($class)) {
+                $this->services->add($name, new $class($this, $params));
+            }
+
+            return $this->services->has($name) ? $this->services->get($name) : null;
+        }
+        if (!isset($this->legacyServices[$name])) {
+            if (!class_exists($class)) {
                 return null;
             }
-            $class = $class ?: $name;
-            $this->legacyServices[$key] = new $class($this, $params);
+            $this->legacyServices[$name] = new $class($this, $params);
         }
 
-        return $this->legacyServices[$key];
+        return $this->legacyServices[$name];
     }
 
     public static function getLoader()

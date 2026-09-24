@@ -42,6 +42,29 @@ class ModxApiTest extends TestCase
         $this->assertSame($service, FetchIt::service($this->modx));
     }
 
+    public function testThe1xCallGetsTheSameInstanceOnModx3()
+    {
+        // The container keys are case-sensitive: 1.x code asks for "fetchit".
+        $this->onModx3();
+
+        $service = FetchIt::service($this->modx);
+
+        $this->assertSame($service, $this->modx->getService('fetchit', 'FetchIt', MODX_CORE_PATH . 'components/fetchit/model/'));
+    }
+
+    public function testThe1xCallGetsTheBootstrapInstanceOnModx3()
+    {
+        $this->onModx3();
+        $modx = $this->modx;
+        $namespace = ['path' => MODX_CORE_PATH . 'components/fetchit/'];
+        require MODX_CORE_PATH . 'components/fetchit/bootstrap.php';
+
+        $legacy = $modx->getService('fetchit', 'FetchIt', MODX_CORE_PATH . 'components/fetchit/model/');
+
+        $this->assertSame($modx->services->get('FetchIt'), $legacy);
+        $this->assertSame($legacy, FetchIt::service($modx));
+    }
+
     public function testBootstrapRegistersTheServiceAndTheNamespace()
     {
         $this->onModx3();

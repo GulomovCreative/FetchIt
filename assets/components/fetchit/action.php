@@ -3,8 +3,10 @@
 /** @var modX $modx */
 define('MODX_API_MODE', true);
 require_once dirname(dirname(dirname(dirname(__FILE__)))) . '/index.php';
-require_once $modx->getOption('fetchit.core_path', null, $modx->getOption('core_path') . 'components/fetchit/')
-    . 'model/fetchit.class.php';
+if (!class_exists('FetchIt', false)) {
+    require_once $modx->getOption('fetchit.core_path', null, $modx->getOption('core_path') . 'components/fetchit/')
+        . 'model/fetchit.class.php';
+}
 
 if (is_object($modx->services)) {
     // MODX 3: getService() is deprecated there.
