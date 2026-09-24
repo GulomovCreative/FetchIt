@@ -1,0 +1,359 @@
+<?php
+
+use PHPUnit\Framework\TestCase;
+
+class FetchItTest extends TestCase
+{
+    /** @var modX */
+    private $modx;
+
+    protected function setUp(): void
+    {
+        $this->modx = new modX();
+        $_SESSION = [];
+    }
+
+    protected function tearDown(): void
+    {
+        $_SESSION = [];
+        if (session_id() !== '') {
+            session_id('');
+        }
+    }
+
+    private function fetchit(array $config = [])
+    {
+        return new FetchIt($this->modx, $config);
+    }
+
+    private function withSession()
+    {
+        session_id('phpunit');
+    }
+
+    private function decode($json)
+    {
+        return json_decode($json, true);
+    }
+
+    private function addSnippet($name, callable $handler)
+    {
+        return $this->modx->snippets[$name] = new FakeSnippet($name, $handler);
+    }
+
+    private function formit()
+    {
+        return $this->addSnippet('FormIt', function () {
+            return '';
+        });
+    }
+
+    // ------------------------------------------------------------ configuration
+
+    public function testConstructorLoadsTheLexiconAndDerivesUrls()
+    {
+        $fetchit = $this->fetchit();
+
+        $this->assertContains('fetchit:default', $this->modx->lexicon->loaded);
+        $this->assertSame('/assets/components/fetchit/', $fetchit->config['assetsUrl']);
+        $this->assertSame('/assets/components/fetchit/action.php', $fetchit->config['actionUrl']);
+        $this->assertSame('/srv/core/components/fetchit/', $fetchit->config['corePath']);
+    }
+
+    public function testSnippetPropertiesOverrideTheDefaults()
+    {
+        $fetchit = $this->fetchit(['actionUrl' => '/custom.php']);
+
+        $this->assertSame('/custom.php', $fetchit->config['actionUrl']);
+    }
+
+    // ------------------------------------------------------ action properties
+
+    /**
+     * session_id() cannot change once PHPUnit has printed anything.
+     *
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function testPropertiesGoToTheSessionWhenThereIsOne()
+    {
+        $this->withSession();
+        $fetchit = $this->fetchit();
+
+        $fetchit->storeActionProperties('abc', ['snippet' => 'FormIt']);
+
+        $this->assertSame(['snippet' => 'FormIt'], $_SESSION['FetchIt']['abc']);
+        $this->assertSame([], $this->modx->cacheManager->items);
+        $this->assertSame(['snippet' => 'FormIt'], $fetchit->loadActionProperties('abc'));
+    }
+
+    public function testPropertiesGoToTheCacheWithoutASession()
+    {
+        $fetchit = $this->fetchit();
+
+        $fetchit->storeActionProperties('abc', ['snippet' => 'FormIt']);
+
+        $this->assertSame(['snippet' => 'FormIt'], $this->modx->cacheManager->items['fetchit/props_abc']);
+        $this->assertSame(['snippet' => 'FormIt'], $fetchit->loadActionProperties('abc'));
+    }
+
+    /**
+     * session_id() cannot change once PHPUnit has printed anything.
+     *
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function testObjectsAreStrippedBeforeStoring()
+    {
+        // #17: a PDO handle in the properties broke session serialization.
+        $this->withSession();
+        $fetchit = $this->fetchit();
+
+        $fetchit->storeActionProperties('abc', [
+            'snippet' => 'FormIt',
+            'pdo' => new stdClass(),
+            'stream' => fopen('php://memory', 'r'),
+        ]);
+
+        $this->assertSame(['snippet' => 'FormIt'], $_SESSION['FetchIt']['abc']);
+    }
+
+    public function testUnknownActionHasNoProperties()
+    {
+        $this->assertNull($this->fetchit()->loadActionProperties('missing'));
+    }
+
+    // ---------------------------------------------------------------- process
+
+    public function testUnknownActionIsAnError()
+    {
+        $response = $this->decode($this->fetchit()->process('missing'));
+
+        $this->assertFalse($response['success']);
+        $this->assertSame('fetchit_err_action_nf', $response['message']);
+    }
+
+    public function testMissingSnippetIsAnError()
+    {
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'Nope']);
+
+        $response = $this->decode($fetchit->process('abc'));
+
+        $this->assertFalse($response['success']);
+        $this->assertSame('Snippet "Nope" not found', $response['message']);
+    }
+
+    public function testCustomSnippetGetsMergedPropertiesAndItsOutputIsReturned()
+    {
+        $snippet = $this->addSnippet('Handler', function () {
+            return '{"success":true}';
+        });
+        $snippet->properties = ['a' => 'default', 'b' => 'default', 'c' => 'default'];
+        $snippet->propertySets = ['set' => ['b' => 'set', 'c' => 'set']];
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'Handler@set', 'c' => 'call']);
+
+        $output = $fetchit->process('abc', ['email' => 'a@b.c']);
+
+        $this->assertSame('{"success":true}', $output);
+        $this->assertSame('default', $snippet->received['a']);
+        $this->assertSame('set', $snippet->received['b']);
+        $this->assertSame('call', $snippet->received['c']);
+        $this->assertSame(['email' => 'a@b.c'], $snippet->received['fields']);
+        $this->assertFalse($snippet->_cacheable);
+        $this->assertFalse($snippet->_processed);
+    }
+
+    // ----------------------------------------------------------------- FormIt
+
+    private function processFormIt(array $properties, array $fields)
+    {
+        $this->formit();
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', array_merge(['snippet' => 'FormIt'], $properties));
+
+        return $this->decode($fetchit->process('abc', $fields));
+    }
+
+    public function testFormItFieldErrorsComeFromPlaceholders()
+    {
+        $this->modx->placeholders['fi.error.email'] = '<span class="error">Required</span>';
+        $this->modx->placeholders['fi.validation_error_message'] = 'Fix the form';
+
+        $response = $this->processFormIt([], ['name' => 'Ann', 'email' => '']);
+
+        $this->assertFalse($response['success']);
+        $this->assertSame('Fix the form', $response['message']);
+        $this->assertSame(['email' => 'Required'], $response['data']);
+    }
+
+    public function testBlankFormItErrorsAreIgnored()
+    {
+        // #14: FormIt leaves whitespace in error placeholders of valid fields.
+        $this->modx->placeholders['fi.error.email'] = " \n ";
+        $this->modx->placeholders['fi.error.name'] = '<span class="error"> </span>';
+
+        $response = $this->processFormIt([], ['name' => 'Ann', 'email' => 'a@b.c']);
+
+        $this->assertTrue($response['success']);
+    }
+
+    public function testBlankValidationMessageFallsBackToTheLexicon()
+    {
+        $this->modx->placeholders['fi.error.email'] = 'Required';
+        $this->modx->placeholders['fi.validation_error_message'] = ' ';
+
+        $response = $this->processFormIt([], ['email' => '']);
+
+        $this->assertSame('fetchit_err_has_errors', $response['message']);
+    }
+
+    public function testRecaptchaErrorsAreReportedUnderOneKey()
+    {
+        $this->modx->placeholders['fi.error.recaptchav3_error'] = 'Robot';
+
+        $response = $this->processFormIt([], ['email' => 'a@b.c']);
+
+        $this->assertSame(['recaptcha' => 'Robot'], $response['data']);
+    }
+
+    public function testCustomPlaceholderPrefix()
+    {
+        $this->modx->placeholders['form.error.email'] = 'Required';
+        $this->modx->placeholders['fi.error.email'] = 'Ignored';
+
+        $response = $this->processFormIt(['placeholderPrefix' => 'form.'], ['email' => '']);
+
+        $this->assertSame(['email' => 'Required'], $response['data']);
+    }
+
+    public function testSuccessMessageFromTheSnippetCallWins()
+    {
+        // #5, #11
+        $this->modx->placeholders['fi.successMessage'] = 'From FormIt';
+
+        $response = $this->processFormIt(['successMessage' => 'From the call'], ['email' => 'a@b.c']);
+
+        $this->assertTrue($response['success']);
+        $this->assertSame('From the call', $response['message']);
+    }
+
+    public function testSuccessMessageFallsBackToThePlaceholderThenTheLexicon()
+    {
+        $this->modx->placeholders['fi.successMessage'] = 'From FormIt';
+        $this->assertSame('From FormIt', $this->processFormIt([], [])['message']);
+
+        $this->modx->placeholders = [];
+        $this->assertSame('fetchit_success_submit', $this->processFormIt([], [])['message']);
+    }
+
+    // --------------------------------------------------------------- responses
+
+    public function testResponsesCanBeArrays()
+    {
+        $fetchit = $this->fetchit(['json_response' => false]);
+
+        $this->assertSame(
+            ['success' => true, 'message' => 'Done', 'data' => ['id' => 1]],
+            $fetchit->success('Done', ['id' => 1])
+        );
+        $this->assertSame(
+            ['success' => false, 'message' => 'Snippet "X" not found', 'data' => []],
+            $fetchit->error('fetchit_err_snippet_nf', [], ['name' => 'X'])
+        );
+    }
+
+    // ------------------------------------------------------------------ scripts
+
+    /**
+     * session_id() cannot change once PHPUnit has printed anything.
+     *
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function testLoadScriptRegistersTheInitialisation()
+    {
+        $this->withSession();
+        $this->modx->resource = new FakeResource(7);
+        $this->modx->options['fetchit.frontend.input.invalid.class'] = "  is-invalid \n  error ";
+        $this->modx->options['fetchit.frontend.custom.invalid.class'] = '';
+        $fetchit = $this->fetchit(['actionUrl' => '[[+assetsUrl]]action.php']);
+
+        $fetchit->loadScript('abc');
+
+        $this->assertTrue($_SESSION['fetchit_called']);
+        $this->assertCount(1, $this->modx->htmlBlocks);
+        $this->assertMatchesRegularExpression('/FetchIt\.create\((\{.*\})\)/', $this->modx->htmlBlocks[0]);
+        preg_match('/FetchIt\.create\((\{.*\})\)/', $this->modx->htmlBlocks[0], $match);
+        $config = $this->decode($match[1]);
+        $this->assertSame('abc', $config['action']);
+        $this->assertSame('/assets/components/fetchit/action.php', $config['actionUrl']);
+        $this->assertSame('is-invalid error', $config['inputInvalidClass']);
+        $this->assertSame(7, $config['pageId']);
+        $this->assertTrue($config['clearFieldsOnSuccess']);
+    }
+
+    public function testLoadScriptUsesTheConfiguredClassName()
+    {
+        $this->modx->options['fetchit.frontend.js.classname'] = 'MyForms';
+
+        $this->fetchit()->loadScript('abc');
+
+        $this->assertStringContainsString('MyForms.create(', $this->modx->htmlBlocks[0]);
+    }
+
+    private function render($html, array $options = [])
+    {
+        $this->modx->options = array_merge($this->modx->options, [
+            'fetchit.frontend.js' => '[[+assetsUrl]]js/fetchit.js',
+            'fetchit.frontend.default.notifier' => false,
+        ], $options);
+        $this->modx->resource = new FakeResource(1);
+        $this->modx->resource->_output = $html;
+        $this->fetchit()->registerScript();
+
+        return $this->modx->resource->_output;
+    }
+
+    public function testScriptGoesBeforeTheFirstScriptInHead()
+    {
+        $_SESSION['fetchit_called'] = true;
+
+        $html = $this->render("<html><head>\n<title>T</title>\n<script src=\"/app.js\"></script>\n</head><body></body></html>");
+
+        $this->assertMatchesRegularExpression(
+            '#<script src="/assets/components/fetchit/js/fetchit\.js\?v=[^"]+" defer></script>\s*<script src="/app\.js">#',
+            $html
+        );
+        $this->assertArrayNotHasKey('fetchit_called', $_SESSION);
+    }
+
+    public function testScriptGoesBeforeTheEndOfHeadWithoutOtherScripts()
+    {
+        $_SESSION['fetchit_called'] = true;
+
+        $html = $this->render('<html><head><title>T</title></head><body></body></html>');
+
+        $this->assertMatchesRegularExpression('#fetchit\.js\?v=[^"]+" defer></script>\n</head>#', $html);
+    }
+
+    public function testNotifierAssetsAreAddedWhenEnabled()
+    {
+        $_SESSION['fetchit_called'] = true;
+
+        $html = $this->render('<html><head></head><body></body></html>', [
+            'fetchit.frontend.default.notifier' => true,
+        ]);
+
+        $this->assertStringContainsString('lib/notyf.min.css', $html);
+        $this->assertStringContainsString('lib/notyf.min.js', $html);
+    }
+
+    public function testNothingIsInjectedWhenTheSnippetDidNotRun()
+    {
+        $page = '<html><head></head><body></body></html>';
+
+        $this->assertSame($page, $this->render($page));
+    }
+}

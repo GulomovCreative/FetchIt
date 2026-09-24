@@ -1,0 +1,21 @@
+{
+    "name": "gulomovcreative/fetchit",
+    "description": "MODX Revolution extra for submitting forms with the Fetch API",
+    "type": "modx-extra",
+    "license": "GPL-2.0-only",
+    "require": {
+        "php": ">=7.4"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.6"
+    },
+    "config": {
+        "platform": {
+            "php": "7.4.33"
+        },
+        "sort-packages": true
+    },
+    "scripts": {
+        "test": "phpunit"
+    }
+}
