@@ -18,8 +18,8 @@ name: fetchit
 # (see README.md, "Разработка"):
 #
 #   docker compose exec -u www-data -e PKG_DIST=1 modx2 php /extra/_build/build.php
-#   docker compose exec -u www-data modx2 php /extra/_build/ci/install.php /extra/_packages/fetchit-<version>-pl.transport.zip
-#   docker compose exec -u www-data modx3 php /extra/_build/ci/install.php /extra/_packages/fetchit-<version>-pl.transport.zip
+#   docker compose exec -u www-data modx2 php /extra/_build/ci/install.php /extra/_packages/fetchit-<version>-<release>.transport.zip
+#   docker compose exec -u www-data modx3 php /extra/_build/ci/install.php /extra/_packages/fetchit-<version>-<release>.transport.zip
 
 x-modx: &modx
   restart: unless-stopped
