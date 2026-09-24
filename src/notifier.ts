@@ -7,7 +7,9 @@
 // bare elements (button { ... }) and lose to any class rule of the site that
 // comes later. Rules inside @layer (Tailwind 4) lose to them; the colours
 // are CSS variables for that: --fetchit-toast-color, --fetchit-toast-success,
-// --fetchit-toast-error.
+// --fetchit-toast-error. By default they are the colours of Tailwind CSS 4
+// with enough contrast for white text: green-700 and red-600, in oklch()
+// where the browser knows it and in hex elsewhere.
 //
 // Screen readers hear a toast through two live regions that exist, empty,
 // from the start, since a region added together with its text is often not
@@ -35,11 +37,15 @@ const CSS = `
 }
 .fetchit-toast {
   display: flex; align-items: flex-start; gap: .75rem; margin: 0; padding: .75rem 1rem; border-radius: .5rem;
-  color: var(--fetchit-toast-color, #fff); background: var(--fetchit-toast-success, #1b6e37);
+  color: var(--fetchit-toast-color, #fff); background: var(--fetchit-toast-success, #008236);
   box-shadow: 0 .25rem 1rem rgb(0 0 0 / .2); line-height: 1.4; pointer-events: auto;
   animation: fetchit-toast-in .2s ease-out;
 }
-.fetchit-toast:where([data-type="error"]) { background: var(--fetchit-toast-error, #b3261e); }
+.fetchit-toast:where([data-type="error"]) { background: var(--fetchit-toast-error, #e7000b); }
+@supports (color: oklch(0% 0 0)) {
+  .fetchit-toast { background: var(--fetchit-toast-success, oklch(52.7% 0.154 150.069)); }
+  .fetchit-toast:where([data-type="error"]) { background: var(--fetchit-toast-error, oklch(57.7% 0.245 27.325)); }
+}
 .fetchit-toast__text { flex: 1; overflow-wrap: anywhere; }
 .fetchit-toast__close {
   flex: none; margin: 0; padding: 0 .25rem; border: 0; border-radius: .25rem; background: none; box-shadow: none;
