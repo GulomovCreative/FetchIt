@@ -72,9 +72,9 @@ interface FetchItAnswer {
 
 /**
  * Hooks for notifications: set FetchIt.Message to show the answers your
- * way. They run before the event of the same moment is dispatched, so
- * cancelling the event does not undo them. An exception in a hook is logged
- * and does not stop the form.
+ * way. They run before the event of the same moment is dispatched (reset
+ * after fetchit:reset), so cancelling the event does not undo them. An
+ * exception in a hook is logged and does not stop the form.
  */
 interface FetchItMessage {
   /** On submit, before fetchit:before */
@@ -85,7 +85,7 @@ interface FetchItMessage {
   success?: ((message: string) => void) | undefined;
   /** When the form was refused or could not be sent, before fetchit:error */
   error?: ((message: string) => void) | undefined;
-  /** On every reset of the form, the one after a success included */
+  /** On every reset of the form, the one after a success included; after fetchit:reset */
   reset?: (() => void) | undefined;
 }
 
@@ -147,7 +147,10 @@ interface FetchItErrorDetail extends FetchItBeforeDetail {
   error?: unknown;
 }
 
-/** fetchit:reset, not cancelable */
+/**
+ * fetchit:reset, not cancelable: the form is being reset (its button,
+ * form.reset(), or after a success); the fields still hold their values.
+ */
 interface FetchItResetDetail {
   form: HTMLFormElement;
   fetchit: FetchItInstance;
