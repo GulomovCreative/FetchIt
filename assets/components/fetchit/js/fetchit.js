@@ -173,7 +173,8 @@
 	//#endregion
 	//#region src/text.ts
 	/**
-	* Remove HTML tags: messages are shown as text.
+	* Drop anything tag-like between < and >: messages are shown as text.
+	* Entities such as &amp; are left as they are.
 	*/
 	function stripTags(value = "") {
 		return value.replace(/(<([^>]+)>)/gi, "");
@@ -182,58 +183,122 @@
 	//#region src/notifier.ts
 	const STYLE_ID = "fetchit-toasts-style";
 	const MAX_TOASTS = 3;
+	const DEFAULT_DURATION = 6e3;
+	const MAX_DELAY = 2 ** 31 - 1;
+	const nonce = document.currentScript?.nonce || void 0;
 	const CSS = `
-:where(.fetchit-toasts) {
+.fetchit-toasts {
   position: fixed; z-index: 2147483000; inset-block-end: 1rem; inset-inline-end: 1rem;
   display: flex; flex-direction: column; gap: .5rem;
   width: max-content; max-width: min(24rem, calc(100vw - 2rem)); pointer-events: none;
 }
-:where(.fetchit-toast) {
-  display: flex; align-items: flex-start; gap: .75rem; padding: .75rem 1rem; border-radius: .5rem;
+.fetchit-toast {
+  display: flex; align-items: flex-start; gap: .75rem; margin: 0; padding: .75rem 1rem; border-radius: .5rem;
   color: var(--fetchit-toast-color, #fff); background: var(--fetchit-toast-success, #1b6e37);
   box-shadow: 0 .25rem 1rem rgb(0 0 0 / .2); line-height: 1.4; pointer-events: auto;
   animation: fetchit-toast-in .2s ease-out;
 }
-:where(.fetchit-toast[data-type="error"]) { background: var(--fetchit-toast-error, #b3261e); }
-:where(.fetchit-toast__text) { flex: 1; overflow-wrap: anywhere; }
-:where(.fetchit-toast__close) {
-  flex: none; padding: 0 .25rem; border: 0; border-radius: .25rem; background: none;
+.fetchit-toast:where([data-type="error"]) { background: var(--fetchit-toast-error, #b3261e); }
+.fetchit-toast__text { flex: 1; overflow-wrap: anywhere; }
+.fetchit-toast__close {
+  flex: none; margin: 0; padding: 0 .25rem; border: 0; border-radius: .25rem; background: none; box-shadow: none;
   color: inherit; font: inherit; font-size: 1.25rem; line-height: 1; cursor: pointer; opacity: .85;
 }
-:where(.fetchit-toast__close:hover, .fetchit-toast__close:focus-visible) { opacity: 1; outline: 2px solid currentColor; outline-offset: 2px; }
+.fetchit-toast__close:where(:hover, :focus-visible) { opacity: 1; outline: 2px solid currentColor; outline-offset: 2px; }
 @keyframes fetchit-toast-in { from { opacity: 0; transform: translateY(.5rem); } }
-@media (prefers-reduced-motion: reduce) { :where(.fetchit-toast) { animation: none; } }
-@media (max-width: 30rem) { :where(.fetchit-toasts) { inset-inline: 1rem; width: auto; max-width: none; } }
+@media (prefers-reduced-motion: reduce) { .fetchit-toast { animation: none; } }
+@media (max-width: 30rem) { .fetchit-toasts { inset-inline: 1rem; width: auto; max-width: none; } }
 `;
+	let warned = false;
 	function addStyles() {
 		if (document.getElementById(STYLE_ID)) return;
 		const style = document.createElement("style");
 		style.id = STYLE_ID;
+		if (nonce) style.nonce = nonce;
 		style.textContent = CSS;
-		document.head.prepend(style);
-	}
-	function region() {
-		let element = document.querySelector(".fetchit-toasts");
-		if (!element) {
-			element = document.createElement("div");
-			element.className = "fetchit-toasts";
-			document.body.append(element);
+		(document.head ?? document.documentElement).prepend(style);
+		if (!style.sheet && !warned) {
+			warned = true;
+			console.warn("FetchIt: the styles of the notifier were blocked, probably by a Content-Security-Policy (style-src). Give the FetchIt script a nonce, or style .fetchit-toast yourself.");
 		}
-		return element;
 	}
 	/**
-	* A toast that closes by itself after `duration`, or with its button. The
-	* countdown pauses while the pointer or the focus is on it, so a long
-	* message can be read.
+	* An element the stylesheet cannot hide from sight but keeps for screen
+	* readers; styled through the DOM, which a Content-Security-Policy allows.
 	*/
-	function show(type, message, closeLabel, duration) {
-		const content = stripTags(String(message ?? "")).trim();
+	function visuallyHidden(element) {
+		Object.assign(element.style, {
+			position: "absolute",
+			width: "1px",
+			height: "1px",
+			margin: "-1px",
+			padding: "0",
+			overflow: "hidden",
+			clip: "rect(0 0 0 0)",
+			whiteSpace: "nowrap",
+			border: "0"
+		});
+	}
+	function regions() {
+		const parent = document.body ?? document.documentElement;
+		let toasts = document.querySelector(".fetchit-toasts");
+		if (!toasts) {
+			toasts = document.createElement("div");
+			toasts.className = "fetchit-toasts";
+			parent.append(toasts);
+		}
+		const live = (role) => {
+			let region = document.querySelector(`.fetchit-toasts-live[role="${role}"]`);
+			if (!region) {
+				region = document.createElement("div");
+				region.className = "fetchit-toasts-live";
+				region.setAttribute("role", role);
+				visuallyHidden(region);
+				parent.append(region);
+			}
+			return region;
+		};
+		return {
+			toasts,
+			polite: live("status"),
+			assertive: live("alert")
+		};
+	}
+	/**
+	* Say a message in a live region. The region is emptied first and filled a
+	* moment later, so a region added just now, or the same message twice, is
+	* still announced.
+	*/
+	function announce(region, message) {
+		region.textContent = "";
+		setTimeout(() => {
+			region.textContent = message;
+		}, 100);
+	}
+	function duration(value) {
+		if (value === void 0) return DEFAULT_DURATION;
+		if (value === 0 || value === Infinity) return 0;
+		if (Number.isFinite(value) && value > 0) return Math.min(value, MAX_DELAY);
+		console.warn(`FetchIt: createNotifier() got duration ${value}; using ${DEFAULT_DURATION}`);
+		return DEFAULT_DURATION;
+	}
+	function focusable(element) {
+		return element instanceof HTMLElement && element.isConnected && !element.hasAttribute("disabled");
+	}
+	/**
+	* A toast that closes by itself after `delay` (0: never), or with its
+	* button. The countdown stops while the pointer or the focus is on it and
+	* starts over when both have left. When a toast with the focus goes, the
+	* focus moves to the next toast, or back to where it came from.
+	*/
+	function show(type, message, closeLabel, delay) {
+		const content = stripTags(message == null ? "" : String(message)).trim();
 		if (content === "") return;
 		addStyles();
+		const { toasts, polite, assertive } = regions();
 		const toast = document.createElement("div");
 		toast.className = "fetchit-toast";
 		toast.dataset.type = type;
-		toast.setAttribute("role", type === "error" ? "alert" : "status");
 		const text = document.createElement("div");
 		text.className = "fetchit-toast__text";
 		text.textContent = content;
@@ -243,35 +308,64 @@
 		close.setAttribute("aria-label", closeLabel);
 		close.textContent = "×";
 		let timer;
+		let hovered = false;
+		let focused = false;
+		let before = null;
 		const remove = () => {
 			clearTimeout(timer);
+			if (toast.contains(document.activeElement)) {
+				const others = Array.from(toasts.querySelectorAll(".fetchit-toast__close")).filter((button) => !toast.contains(button));
+				const next = others.find((button) => toast.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING) ?? others.at(-1);
+				if (next) next.focus();
+				else if (focusable(before)) before.focus();
+				else document.activeElement?.blur();
+			}
 			toast.remove();
 		};
 		const start = () => {
 			clearTimeout(timer);
-			timer = setTimeout(remove, duration);
+			if (delay > 0 && !hovered && !focused) timer = setTimeout(remove, delay);
 		};
-		const pause = () => clearTimeout(timer);
+		const stop = () => clearTimeout(timer);
 		close.addEventListener("click", remove);
-		toast.addEventListener("mouseenter", pause);
-		toast.addEventListener("mouseleave", start);
-		toast.addEventListener("focusin", pause);
-		toast.addEventListener("focusout", start);
+		toast.addEventListener("mouseenter", () => {
+			hovered = true;
+			stop();
+		});
+		toast.addEventListener("mouseleave", () => {
+			hovered = false;
+			start();
+		});
+		toast.addEventListener("focusin", (event) => {
+			if (!focused && !toast.contains(event.relatedTarget)) before = event.relatedTarget;
+			focused = true;
+			stop();
+		});
+		toast.addEventListener("focusout", (event) => {
+			if (!toast.contains(event.relatedTarget)) {
+				focused = false;
+				start();
+			}
+		});
 		toast.append(text, close);
-		const toasts = region();
 		toasts.append(toast);
-		while (toasts.children.length > MAX_TOASTS) toasts.firstElementChild?.remove();
+		for (const old of Array.from(toasts.children)) {
+			if (toasts.children.length <= MAX_TOASTS) break;
+			if (!old.contains(document.activeElement)) old.remove();
+		}
+		announce(type === "error" ? assertive : polite, content);
 		start();
 	}
 	function createNotifier(options = {}) {
 		const closeLabel = options.closeLabel || "Close";
-		const duration = options.duration ?? 6e3;
+		const delay = duration(options.duration);
+		if (document.body) regions();
 		return {
 			success(message) {
-				show("success", message, closeLabel, duration);
+				show("success", message, closeLabel, delay);
 			},
 			error(message) {
-				show("error", message, closeLabel, duration);
+				show("error", message, closeLabel, delay);
 			}
 		};
 	}
@@ -428,6 +522,31 @@
 			}
 		}
 	}
+	//#endregion
+	//#region src/index.ts
+	/**
+	* Dispatch an event of FetchIt on document, its detail checked against the
+	* public types (FetchItEventMap). False when a listener cancelled it.
+	*/
+	function dispatch(type, detail, cancelable = true) {
+		return document.dispatchEvent(new CustomEvent(type, {
+			cancelable,
+			detail
+		}));
+	}
+	/**
+	* A FetchIt answer as the hooks and events get it: a processing snippet may
+	* leave out the message or the data, or send a message that is not a string.
+	*/
+	function toResponse(answer) {
+		const message = answer.message;
+		const data = answer.data;
+		return {
+			success: answer.success,
+			message: typeof message === "string" ? message : message == null ? "" : String(message),
+			data: data !== null && typeof data === "object" ? data : {}
+		};
+	}
 	window.FetchIt = class FetchIt {
 		static forms = [];
 		static instances = /* @__PURE__ */ new Map();
@@ -441,6 +560,7 @@
 			after: "fetchit:after",
 			reset: "fetchit:reset"
 		};
+		formData = void 0;
 		constructor(form, config) {
 			if (!(form instanceof HTMLFormElement)) throw new Error("FetchIt: the element is not a form");
 			this.form = form;
@@ -462,30 +582,27 @@
 			this.form.addEventListener("submit", async (event) => {
 				event.preventDefault();
 				if (this.pending) return;
-				this.formData = new FormData(this.form);
-				this.formData.set("pageId", String(this.config.pageId));
+				const formData = new FormData(this.form);
+				formData.set("pageId", String(this.config.pageId));
+				this.formData = formData;
 				this.clearErrors();
 				this.clearFormMessages();
-				const beforeEvent = new CustomEvent(FetchIt.events.before, {
-					cancelable: true,
-					detail: {
-						form: this.form,
-						formData: this.formData,
-						fetchit: this
-					}
-				});
 				FetchIt.notify("before");
-				if (!document.dispatchEvent(beforeEvent)) return;
+				if (!dispatch("fetchit:before", {
+					form: this.form,
+					formData,
+					fetchit: this
+				})) return;
 				this.pending = true;
 				this.disableFields();
 				let shown = false;
 				let response;
 				try {
 					try {
-						await this.protectSubmission();
+						await this.protectSubmission(formData);
 						let query = await fetch(this.request, {
 							method: "post",
-							body: this.formData
+							body: formData
 						});
 						let next = query.headers?.get("X-FetchIt-Token");
 						this.updateToken(next);
@@ -493,11 +610,11 @@
 						const bits = Number(query.headers?.get("X-FetchIt-Pow") ?? 0);
 						if (next && (refused === "token" || refused === "pow" && bits > (this.config.pow ?? 0))) {
 							if (refused === "pow") this.config.pow = bits;
-							this.formData.set(FetchIt.tokenField, next);
-							if (this.config.pow) this.formData.set(FetchIt.powField, await this.solution(next));
+							formData.set(FetchIt.tokenField, next);
+							if (this.config.pow) formData.set(FetchIt.powField, await this.solution(next));
 							query = await fetch(this.request, {
 								method: "post",
-								body: this.formData
+								body: formData
 							});
 							next = query.headers?.get("X-FetchIt-Token");
 							this.updateToken(next);
@@ -505,35 +622,27 @@
 						if (refused === "captcha" && !this.config.captcha) console.warn("FetchIt: the server asks for a captcha this page does not have; the page may come from a cache made before the captcha was turned on");
 						const body = await query.json();
 						if (!FetchIt.isResponse(body)) throw new Error(`FetchIt: unexpected answer from ${query.url || this.config.actionUrl} (HTTP ${query.status})`);
-						response = body;
+						response = toResponse(body);
 					} catch (error) {
-						this.failRequest(error);
+						this.failRequest(error, formData);
 						return;
 					}
-					const afterEvent = new CustomEvent(FetchIt.events.after, {
-						cancelable: true,
-						detail: {
-							form: this.form,
-							formData: this.formData,
-							response,
-							fetchit: this
-						}
-					});
 					FetchIt.notify("after", response.message);
-					if (!document.dispatchEvent(afterEvent)) return;
+					if (!dispatch("fetchit:after", {
+						form: this.form,
+						formData,
+						response,
+						fetchit: this
+					})) return;
 					if (!response.success) {
 						FetchIt.notify("error", response.message);
-						const errorEvent = new CustomEvent(FetchIt.events.error, {
-							cancelable: true,
-							detail: {
-								form: this.form,
-								formData: this.formData,
-								response,
-								fetchit: this
-							}
-						});
-						if (!document.dispatchEvent(errorEvent)) return;
-						for (const [name, message] of Object.entries(response.data ?? {})) {
+						if (!dispatch("fetchit:error", {
+							form: this.form,
+							formData,
+							response,
+							fetchit: this
+						})) return;
+						for (const [name, message] of Object.entries(response.data)) {
 							if (!FetchIt.hasErrorMessage(message)) continue;
 							this.setError(name, message);
 						}
@@ -545,16 +654,12 @@
 					this.setFormMessage("success", response.message);
 					shown = true;
 					FetchIt.notify("success", response.message);
-					const successEvent = new CustomEvent(FetchIt.events.success, {
-						cancelable: true,
-						detail: {
-							form: this.form,
-							formData: this.formData,
-							response,
-							fetchit: this
-						}
-					});
-					if (!document.dispatchEvent(successEvent)) return;
+					if (!dispatch("fetchit:success", {
+						form: this.form,
+						formData,
+						response,
+						fetchit: this
+					})) return;
 					if (this.config.captcha?.provider !== "recaptcha") try {
 						window.grecaptcha?.reset?.();
 					} catch (error) {
@@ -567,7 +672,7 @@
 					}
 				} catch (error) {
 					if (shown || response?.success) console.error(error);
-					else this.failRequest(error);
+					else this.failRequest(error, formData);
 				} finally {
 					this.enableFields();
 					this.pending = false;
@@ -575,11 +680,10 @@
 				}
 			});
 			this.form.addEventListener("reset", () => {
-				const resetEvent = new CustomEvent(FetchIt.events.reset, { detail: {
+				dispatch("fetchit:reset", {
 					form: this.form,
 					fetchit: this
-				} });
-				document.dispatchEvent(resetEvent);
+				}, false);
 				this.clearErrors();
 				if (!this.preserveFormMessagesOnReset) this.clearFormMessages();
 				FetchIt.notify("reset");
@@ -598,32 +702,28 @@
 		* the visitor instead of failing silently. An HTTP error status with a
 		* FetchIt answer goes the normal way.
 		*/
-		failRequest(error) {
+		failRequest(error, formData) {
 			console.error(error);
 			const message = error instanceof CaptchaError && this.config.captchaErrorMessage || this.config.requestErrorMessage || FetchIt.defaultRequestErrorMessage;
 			FetchIt.notify("error", message);
-			const errorEvent = new CustomEvent(FetchIt.events.error, {
-				cancelable: true,
-				detail: {
-					form: this.form,
-					formData: this.formData,
-					response: null,
-					error,
-					fetchit: this
-				}
-			});
-			if (!document.dispatchEvent(errorEvent)) return;
+			if (!dispatch("fetchit:error", {
+				form: this.form,
+				formData,
+				response: null,
+				error,
+				fetchit: this
+			})) return;
 			this.setFormMessage("validation", message);
 		}
 		/**
 		* Add the solution of the proof of work and the captcha's answer.
 		*/
-		async protectSubmission() {
+		async protectSubmission(formData) {
 			if (this.config.pow) {
-				const token = String(this.formData.get(FetchIt.tokenField) ?? "");
-				this.formData.set(FetchIt.powField, await this.solution(token));
+				const token = String(formData.get(FetchIt.tokenField) ?? "");
+				formData.set(FetchIt.powField, await this.solution(token));
 			}
-			await this.captcha?.answer(this.formData);
+			await this.captcha?.answer(formData);
 		}
 		/**
 		* The solution of the proof of work for a token, started once; solving
@@ -775,9 +875,13 @@
 			try {
 				(FetchIt.Message?.[hook])?.(message);
 			} catch (error) {
-				console.error(error);
+				console.error(`FetchIt: FetchIt.Message.${hook}() threw; the visitor did not get this notification`, error);
 			}
 		}
+		/**
+		* Whether a value looks like a FetchIt answer: an object with a boolean
+		* success. The message and the data are not checked.
+		*/
 		static isResponse(value) {
 			return typeof value === "object" && value !== null && typeof value.success === "boolean";
 		}
@@ -791,7 +895,11 @@
 			return createNotifier(options);
 		}
 		static create(config) {
-			if (config.defaultNotifier && FetchIt.Message === void 0) FetchIt.Message = createNotifier({ closeLabel: config.notifierCloseLabel });
+			if (config.defaultNotifier) {
+				const message = FetchIt.Message;
+				if (message === void 0) FetchIt.Message = createNotifier({ closeLabel: config.notifierCloseLabel });
+				else if (!message.success && !message.error) Object.assign(message, createNotifier({ closeLabel: config.notifierCloseLabel }));
+			}
 			if (!config.action) throw new Error("FetchIt: the config has no action");
 			const selector = `form[data-fetchit="${FetchIt.escapeAttribute(config.action)}"]`;
 			const forms = document.querySelectorAll(selector);
