@@ -1,0 +1,83 @@
+name: Package
+
+# Builds the transport package on a throwaway MODX 2 site. A package built on
+# MODX 2 installs on MODX 2 and MODX 3; one built on MODX 3 only on MODX 3.
+
+on:
+  workflow_call:
+    outputs:
+      signature:
+        description: Package signature, e.g. fetchit-1.1.3-pl
+        value: ${{ jobs.build.outputs.signature }}
+
+env:
+  MODX_VERSION: 2.8.6-pl
+  MODX_ROOT: /tmp/modx
+
+jobs:
+  build:
+    name: Build on MODX 2.8.6
+    runs-on: ubuntu-latest
+    outputs:
+      signature: ${{ steps.version.outputs.signature }}
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: modx
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=30
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '7.4'
+          extensions: curl, gd, mbstring, pdo_mysql, simplexml, zip
+          coverage: none
+          tools: none
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+
+      - name: Build the frontend
+        run: |
+          npm ci
+          npm run build
+
+      - id: version
+        run: php _build/ci/version.php >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/modx-${{ env.MODX_VERSION }}.zip
+          key: modx-${{ env.MODX_VERSION }}
+
+      - name: Install MODX
+        run: |
+          _build/ci/modx-download.sh "$MODX_VERSION" "$MODX_ROOT" ~/modx-"$MODX_VERSION".zip
+          _build/ci/modx-setup.sh
+
+      - name: Build the package
+        env:
+          MODX_CORE_PATH: ${{ env.MODX_ROOT }}/core/
+          PKG_DIST: 1
+        run: |
+          php _build/build.php
+          test -f "_packages/${{ steps.version.outputs.signature }}.transport.zip"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: package
+          path: _packages/*.transport.zip
+          if-no-files-found: error
