@@ -23,7 +23,7 @@
   },
   "license": "GPL-2.0-only",
   "engines": {
-    "node": ">=22.12"
+    "node": "^22.22.2 || ^24.15.0 || >=26"
   },
   "browserslist": "defaults and supports es6-module",
   "dependencies": {

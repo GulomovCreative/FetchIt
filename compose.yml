@@ -2,17 +2,20 @@ name: fetchit
 
 # Local development: MODX 2 and MODX 3 side by side, each on the PHP version
 # it is meant to run on, sharing one MySQL. The component directories of this
-# repository are mounted into both sites, so edits apply without a rebuild.
+# repository are mounted into both sites, so PHP and built JS changes apply
+# without rebuilding the images (src/ still needs npm run build).
 #
 #   docker compose up -d --build
 #   (HOST_UID/HOST_GID default to 1000; export them if your ids differ)
 #   MODX 2: http://localhost:8052/   MODX 3: http://localhost:8053/
 #   Manager: /manager/, admin / FetchItDev2026
 #
-# Build the package on MODX 2 and install it on both sites:
+# Build the package on MODX 2 and install it on both sites, as CI does
+# (see README.md, "Разработка"):
 #
-#   docker compose exec -u www-data modx2 php /extra/_build/build.php
-#   docker compose exec -u www-data modx3 php /extra/_build/ci/install.php /extra/_packages/fetchit-<version>.transport.zip
+#   docker compose exec -u www-data -e PKG_DIST=1 modx2 php /extra/_build/build.php
+#   docker compose exec -u www-data modx2 php /extra/_build/ci/install.php /extra/_packages/fetchit-<version>-pl.transport.zip
+#   docker compose exec -u www-data modx3 php /extra/_build/ci/install.php /extra/_packages/fetchit-<version>-pl.transport.zip
 
 x-modx: &modx
   restart: unless-stopped
