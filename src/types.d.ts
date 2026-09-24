@@ -6,6 +6,7 @@ interface FetchItConfig {
   customInvalidClass?: string;
   clearFieldsOnSuccess?: boolean;
   defaultNotifier?: boolean;
+  requestErrorMessage?: string;
   pageId: number | string;
 }
 
