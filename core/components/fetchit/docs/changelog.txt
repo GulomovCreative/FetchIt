@@ -11,8 +11,9 @@ FetchIt 4 is one package for MODX 2.8 and MODX 3. It replaces the 1.x and 3.x li
 
 ### Added
 
-- Types for sites written in TypeScript: `assets/components/fetchit/js/fetchit.d.ts` describes `window.FetchIt`, the config, `FetchIt.Message`, the instances and the `fetchit:*` events with their `detail`, so `document.addEventListener('fetchit:success', …)` knows `event.detail.response`. The script is built against it.
-- `FetchIt.createNotifier()`, the built-in notifier for sites that set `FetchIt.Message` themselves.
+- Types for sites written in TypeScript: `assets/components/fetchit/js/fetchit.d.ts` describes `FetchIt`, the config, `FetchIt.Message`, the instances and the `fetchit:*` events with their `detail`, so `document.addEventListener('fetchit:success', …)` knows `event.detail.response`. The script is type-checked against it, the detail of every event included.
+- `FetchIt.createNotifier()`, the built-in notifier for sites that set `FetchIt.Message` themselves; `duration: 0` keeps a toast until it is closed.
+- An upgrade with `fetchit.frontend.default.notifier` on says in its log that Notyf is no longer loaded, and warns when `fetchit.frontend.js` is a script of the site.
 - Spam protection, on by default, for the AJAX path and forms sent without JavaScript:
   - a signed single-use token in every form (`fetchit_token`, no session needed). Only a request with a well-signed token of the form gets the next one, in the `X-FetchIt-Token` header; the script uses it for the next submission and, when the page's token was stale (a cached page, a page open for long, a new key), sends the form once more by itself;
   - a minimum fill time (`fetchit.protection.min_time`), counted from the first render of the page, retries included;
@@ -35,7 +36,9 @@ FetchIt 4 is one package for MODX 2.8 and MODX 3. It replaces the 1.x and 3.x li
 
 ### Changed
 
-- The built-in notifier (`fetchit.frontend.default.notifier`) is FetchIt's own instead of Notyf: part of `fetchit.js`, no other files, accessible (`role="alert"` for errors, `role="status"` for successes, a close button labelled from the lexicon, `fetchit_notifier_close`), paused while hovered or focused, at most three at a time. Its styles have zero specificity and take CSS variables (`--fetchit-toast-color`, `--fetchit-toast-success`, `--fetchit-toast-error`). Sites that styled `.notyf__toast` need to style `.fetchit-toast` instead. `lib/notyf.min.js` and `lib/notyf.min.css` are no longer shipped; an upgrade leaves the old copies in place.
+- The built-in notifier (`fetchit.frontend.default.notifier`) is FetchIt's own instead of Notyf, part of `fetchit.js` with no other files. Screen readers hear it through live regions that are on the page from the start (errors at once, successes politely); the close button is labelled from the lexicon (`fetchit_notifier_close`), the focus moves on when a focused toast closes, and a toast stays while hovered or focused. At most three are shown. Its styles use single class selectors, come first in `<head>` and take CSS variables (`--fetchit-toast-color`, `--fetchit-toast-success`, `--fetchit-toast-error`); under a Content-Security-Policy they take the nonce of the FetchIt script. A `FetchIt.Message` of the site with neither `success` nor `error` gets the built-in ones.
+- With `fetchit.frontend.default.notifier` on, `window.Notyf` is no longer loaded: styles for `.notyf__toast` and scripts that call `new Notyf()` need to change, or link Notyf themselves. `lib/notyf.min.js` and `lib/notyf.min.css` are no longer shipped; an upgrade leaves the old copies in place.
+- The hooks and events get a string `message` and an object `data` even when the processing snippet left them out; `FetchIt.isResponse()` checks only the boolean `success`. An exception in a `FetchIt.Message` hook is logged with the name of the hook.
 - Forms get the service fields of the protection right after the form tag: a hidden input and an off-screen `div` with the trap. They are removed from `$_POST` and `$_REQUEST` before FormIt reads them.
 - Scripts other than the bundled one must send `fetchit_token` and take the next token from the `X-FetchIt-Token` header of every answer (see README).
 - With the protection on, the snippet still runs FormIt on every page view (for its preHooks), but only a POST that carries a token of its form counts as a submission; any other POST is hidden from FormIt. A POST to the page URL used to reach FormIt directly.

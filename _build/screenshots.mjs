@@ -97,7 +97,7 @@ async function open (browser, t, { dark = false, device = { viewport: { width: 1
 }
 
 async function toast (page, t, type) {
-  await page.evaluate(({ type, message }) => window.FetchIt.Message[type](message), { type, message: t[type] })
+  await page.evaluate(({ hook, message }) => window.FetchIt.Message[hook](message), { hook: type, message: t[type] })
   return page.locator(`.fetchit-toast[data-type="${type}"]`).last()
 }
 
