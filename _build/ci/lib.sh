@@ -2,6 +2,8 @@
 # Helpers of smoke.sh and protection.sh: set base, then source this file.
 # The pages are opened and the forms sent with one cookie jar, and the
 # protection token of the form is kept in $jar.token between requests.
+# Every submission carries a fetchit_probe cookie: the handler of the test
+# pages reports whether cookies reached the form fields.
 
 # shellcheck disable=SC2154 # base is set by the script that sources this
 jar="$(mktemp)"
@@ -51,6 +53,12 @@ submit() {
 
 # Succeeds when a file does not match a pattern.
 lacks() { ! grep -q "$1" "$2"; }
+
+# The value of a header of the last answer of submit(), or nothing.
+header() { { grep -i "^$1:" "$jar.headers" || true; } | head -n1 | cut -d' ' -f2 | tr -d '\r'; }
+
+# The name of the trap field of the page last opened.
+trap_name() { { grep -o 'name="fetchit_[0-9a-f]\{8\}"' "$jar.html" || true; } | head -n1 | cut -d'"' -f2; }
 
 # Checks an answer with jq; shows the start of the answer when it fails.
 json() {
