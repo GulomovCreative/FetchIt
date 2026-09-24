@@ -1,20 +1,28 @@
 name: Release
 
-# Publishing a GitHub release builds the package, checks it on MODX 2 and
-# MODX 3, and attaches it to the release together with notes from the commit
-# history. Started by hand, it only builds and checks the package; the zip is
-# kept in the run's artifacts.
+# Pushing a tag vX.Y.Z builds the package, checks it on MODX 2 and MODX 3,
+# and only then creates the GitHub release with the package and notes from
+# the commit history. Started by hand, it only builds and checks the
+# package; the zip is kept in the run's artifacts.
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 concurrency:
   group: release-${{ github.ref }}
 
+# Everything but the publish job runs third-party code (npm packages, the
+# MODX release), so it gets a read-only token.
 permissions:
-  contents: write
+  contents: read
+
+defaults:
+  run:
+    # bash -eo pipefail: a failing command in a pipe fails the step.
+    shell: bash
 
 jobs:
   version:
@@ -22,6 +30,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: shivammathur/setup-php@v2
         with:
@@ -30,7 +40,9 @@ jobs:
           tools: none
 
       - name: The tag names the version
-        run: php _build/ci/version.php "${{ github.event_name == 'release' && github.ref_name || '' }}"
+        env:
+          TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: php _build/ci/version.php "$TAG"
 
   package:
     needs: version
@@ -43,13 +55,16 @@ jobs:
   publish:
     name: Publish
     needs: [package, integration]
-    if: github.event_name == 'release'
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v7
         with:
           # The notes need the history back to the previous tag.
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/download-artifact@v8
         with:
@@ -64,20 +79,32 @@ jobs:
         env:
           OUTPUT: _packages/notes.md
 
-      - name: Attach to the release
+      - name: Fall back to the changelog
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          # A release of only chore, ci or docs commits has no notes.
+          if ! grep -q '[^[:space:]]' _packages/notes.md; then
+            version="${TAG#v}"
+            version="${version%-pl}"
+            awk -v heading="## [$version]" '
+              index($0, heading) == 1 { show = 1; next }
+              show && /^## \[/ { exit }
+              show { print }
+            ' core/components/fetchit/docs/changelog.txt > _packages/notes.md
+          fi
+          grep -q '[^[:space:]]' _packages/notes.md
+
+      - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
           SIGNATURE: ${{ needs.package.outputs.signature }}
         run: |
-          body="$(gh release view "$TAG" --json body --jq .body)"
-          # A rerun must not add the notes twice.
-          if ! grep -q '<!-- changelog -->' <<< "$body"; then
-            {
-              if [ -n "$body" ]; then printf '%s\n\n' "$body"; fi
-              echo '<!-- changelog -->'
-              cat _packages/notes.md
-            } > _packages/release.md
-            gh release edit "$TAG" --notes-file _packages/release.md
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            # A rerun: refresh the notes and the package.
+            gh release edit "$TAG" --notes-file _packages/notes.md
+          else
+            gh release create "$TAG" --verify-tag --title "$TAG" --notes-file _packages/notes.md
           fi
           gh release upload "$TAG" "_packages/$SIGNATURE.transport.zip" --clobber
