@@ -51,6 +51,12 @@ $installPackage = function ($packageName, $options = []) use ($modx, $downloadPa
     if (empty($provider)) {
         $provider = $modx->getObject('transport.modTransportProvider', 1);
     }
+    if (empty($provider)) {
+        return [
+            'success' => 0,
+            'message' => "No package provider to download <b>{$packageName}</b> from. Install it from the Package Manager.",
+        ];
+    }
     $modx->getVersionData();
     $productVersion = $modx->version['code_name'] . '-' . $modx->version['full_version'];
 
@@ -59,8 +65,16 @@ $installPackage = function ($packageName, $options = []) use ($modx, $downloadPa
         'query' => $packageName,
     ]);
 
-    if (!empty($response)) {
-        $foundPackages = simplexml_load_string($response->response);
+    // MODX 2 answers with modRestResponse, MODX 3 with a PSR-7 response.
+    $body = '';
+    if (is_object($response) && method_exists($response, 'getBody')) {
+        $body = (string)$response->getBody();
+    } elseif (is_object($response) && isset($response->response)) {
+        $body = $response->response;
+    }
+    $foundPackages = $body !== '' ? @simplexml_load_string($body) : false;
+
+    if ($foundPackages !== false) {
         foreach ($foundPackages as $foundPackage) {
             /** @var modTransportPackage $foundPackage */
             /** @noinspection PhpUndefinedFieldInspection */
@@ -119,14 +133,12 @@ $installPackage = function ($packageName, $options = []) use ($modx, $downloadPa
                 break;
             }
         }
-    } else {
-        return [
-            'success' => 0,
-            'message' => "Could not find <b>{$packageName}</b> in MODX repository",
-        ];
     }
 
-    return true;
+    return [
+        'success' => 0,
+        'message' => "Could not find <b>{$packageName}</b> in MODX repository",
+    ];
 };
 
 $success = false;

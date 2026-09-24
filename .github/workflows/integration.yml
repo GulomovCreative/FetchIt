@@ -16,13 +16,8 @@ jobs:
         include:
           - modx: 2.8.6-pl
             php: '7.4'
-            formit: 1
-          # The setup resolver cannot download FormIt on MODX 3 yet: the
-          # provider there answers with a PSR-7 response. Until that is fixed,
-          # the FormIt checks are skipped on MODX 3.
           - modx: 3.2.4-pl
             php: '8.3'
-            formit: 0
 
     env:
       MODX_ROOT: /tmp/modx
@@ -85,7 +80,8 @@ jobs:
 
       - name: HTTP checks
         env:
-          REQUIRE_FORMIT: ${{ matrix.formit }}
+          # The setup resolver installs FormIt together with FetchIt.
+          REQUIRE_FORMIT: 1
         run: _build/ci/smoke.sh "$BASE_URL" "$(cat fixtures.json)"
 
       - uses: actions/setup-node@v7
