@@ -1,0 +1,13 @@
+{
+  // The public types as a site gets them: only the shipped fetchit.d.ts, the
+  // DOM, and every check on, the declaration file included.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": false,
+    "types": []
+  },
+  "files": ["../../assets/components/fetchit/js/fetchit.d.ts", "usage.ts"]
+}

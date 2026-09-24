@@ -5,6 +5,7 @@
   "description": "MODX Revolution extra for submitting forms with the Fetch API",
   "type": "module",
   "main": "assets/components/fetchit/js/fetchit.js",
+  "types": "assets/components/fetchit/js/fetchit.d.ts",
   "scripts": {
     "build": "rolldown -c",
     "build:check": "npm run build && git diff --exit-code -- assets/components/fetchit/js",
@@ -12,7 +13,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p . && tsc -p tests/types"
   },
   "keywords": [
     "MODX Extra"
@@ -26,9 +27,6 @@
     "node": "^22.22.2 || ^24.15.0 || >=26"
   },
   "browserslist": "defaults and supports es6-module",
-  "dependencies": {
-    "notyf": "^3.10.0"
-  },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
     "@types/node": "^26.6.2",

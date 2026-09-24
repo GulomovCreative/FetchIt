@@ -3,21 +3,18 @@ import { defineConfig } from 'rolldown'
 
 const assets = 'assets/components/fetchit'
 
-// Notyf is not bundled: the plugin links it separately when
-// fetchit.frontend.default.notifier is on.
-const copyNotyf = {
-  name: 'copy-notyf',
+// The public types ship next to the script, for sites written in TypeScript.
+const copyTypes = {
+  name: 'copy-types',
   buildEnd() {
-    mkdirSync(`${assets}/lib`, { recursive: true })
-    for (const file of ['notyf.min.js', 'notyf.min.css']) {
-      cpSync(`node_modules/notyf/${file}`, `${assets}/lib/${file}`)
-    }
+    mkdirSync(`${assets}/js`, { recursive: true })
+    cpSync('src/fetchit.d.ts', `${assets}/js/fetchit.d.ts`)
   },
 }
 
 export default defineConfig({
   input: 'src/index.ts',
-  plugins: [copyNotyf],
+  plugins: [copyTypes],
   output: [
     {
       file: `${assets}/js/fetchit.js`,

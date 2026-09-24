@@ -95,7 +95,8 @@ describe('FetchIt.create', () => {
   })
 
   it('rejects anything but a form', () => {
-    expect(() => new FetchIt(document.createElement('div'), config())).toThrow()
+    // For scripts without types: the types allow only a form.
+    expect(() => new FetchIt(document.createElement('div') as unknown as HTMLFormElement, config())).toThrow()
   })
 })
 
