@@ -567,10 +567,10 @@ class FetchIt
             $snippet->_processed = false;
 
             $formit = strtolower($snippet->name) == 'formit';
-            $scripts = $formit ? $this->scripts() : null;
+            $before = $formit ? $this->pageBeforeFormIt($scriptProperties) : null;
             $response = $snippet->process($scriptProperties);
             if ($formit) {
-                $this->disableFormItAjax($scriptProperties, $scripts);
+                $this->disableFormItAjax($scriptProperties, $before);
                 $response = $this->handleFormIt($scriptProperties);
             }
 
@@ -615,17 +615,38 @@ class FetchIt
 
 
     /**
-     * The scripts registered on the page so far.
+     * What disableFormItAjax() compares with: the scripts registered on the
+     * page so far and the AJAX token of another FormIt form with the same
+     * placeholder prefix, if any.
+     *
+     * @param array $properties The FormIt properties
      *
      * @return array
      */
-    protected function scripts()
+    protected function pageBeforeFormIt(array $properties)
     {
+        $placeholder = $this->formItTokenPlaceholder($properties);
+
         return array(
             'jscripts' => (array)$this->modx->jscripts,
             'sjscripts' => (array)$this->modx->sjscripts,
             'loadedjscripts' => (array)$this->modx->loadedjscripts,
+            'hasToken' => array_key_exists($placeholder, $this->modx->placeholders),
+            'token' => isset($this->modx->placeholders[$placeholder]) ? $this->modx->placeholders[$placeholder] : null,
         );
+    }
+
+
+    /**
+     * @param array $properties The FormIt properties
+     *
+     * @return string
+     */
+    protected function formItTokenPlaceholder(array $properties)
+    {
+        $prefix = isset($properties['placeholderPrefix']) ? $properties['placeholderPrefix'] : 'fi.';
+
+        return $prefix . 'ajaxToken';
     }
 
 
@@ -635,25 +656,29 @@ class FetchIt
      * session and the cache under a token for its own action.php, which
      * processes the form without the protection of FetchIt, and links
      * formit.js, which takes over the submission of a form with that token.
-     * FetchIt sends the form itself, so all of it is undone: the stored
-     * properties, the fi.ajaxToken placeholder and the scripts FormIt has
-     * just added. Older FormIt versions do none of it.
+     * FetchIt sends the form itself, so what this run of FormIt added is
+     * undone: the stored properties, the ajaxToken placeholder (back to the
+     * token of another FormIt form on the page, if there was one) and the
+     * scripts. Forms of FormIt itself on the same page keep their AJAX mode.
+     * Older FormIt versions do none of it.
      *
      * @param array $properties The FormIt properties
-     * @param array $before The scripts of the page before FormIt ran, from scripts()
+     * @param array $before From pageBeforeFormIt()
      */
     protected function disableFormItAjax(array $properties, array $before)
     {
-        $prefix = isset($properties['placeholderPrefix']) ? $properties['placeholderPrefix'] : 'fi.';
-        $token = isset($this->modx->placeholders[$prefix . 'ajaxToken'])
-            ? (string)$this->modx->placeholders[$prefix . 'ajaxToken']
-            : '';
-        if (preg_match('/^[a-f0-9]{32}$/', $token)) {
+        $placeholder = $this->formItTokenPlaceholder($properties);
+        $token = isset($this->modx->placeholders[$placeholder]) ? (string)$this->modx->placeholders[$placeholder] : '';
+        if ($token !== (string)$before['token'] && preg_match('/^[a-f0-9]{32}$/', $token)) {
             if (isset($_SESSION['formit'][$token])) {
                 unset($_SESSION['formit'][$token]);
             }
             $this->modx->cacheManager->delete('formit/props_' . $token);
-            $this->modx->unsetPlaceholder($prefix . 'ajaxToken');
+            if ($before['hasToken']) {
+                $this->modx->setPlaceholder($placeholder, $before['token']);
+            } else {
+                $this->modx->unsetPlaceholder($placeholder);
+            }
         }
 
         $script = trim((string)$this->modx->getOption('formit.frontend_js', null, ''));

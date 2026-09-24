@@ -630,4 +630,57 @@ class FetchItTest extends TestCase
         $this->assertSame('Ann', $this->modx->placeholders['fi.name']);
         $this->assertSame(['<script src="/assets/site.js"></script>'], $this->modx->jscripts);
     }
+
+    public function testAFormItFormOnTheSamePageKeepsItsAjaxMode()
+    {
+        // [[!FormIt]] of its own before the FetchIt call, with the same prefix.
+        $theirs = str_repeat('ef', 16);
+        $_SESSION['formit'][$theirs] = ['hooks' => 'email'];
+        $this->modx->cacheManager->items['formit/props_' . $theirs] = ['hooks' => 'email'];
+        $this->modx->setPlaceholder('fi.ajaxToken', $theirs);
+        $this->formItWithAjax(str_repeat('01', 16));
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'FormIt']);
+
+        $fetchit->process('abc', []);
+
+        $this->assertSame($theirs, $this->modx->placeholders['fi.ajaxToken'], 'Their form still gets its token');
+        $this->assertSame(['hooks' => 'email'], $_SESSION['formit'][$theirs]);
+        $this->assertSame(['hooks' => 'email'], $this->modx->cacheManager->items['formit/props_' . $theirs]);
+        $this->assertSame([$theirs], array_keys($_SESSION['formit']), 'Only theirs is kept');
+    }
+
+    public function testASubmissionLeavesTheTokenOfAnotherFormItFormAlone()
+    {
+        // On a submission FormIt stores nothing and sets no token: the
+        // placeholder still holds the token of the other form.
+        $theirs = str_repeat('ef', 16);
+        $_SESSION['formit'][$theirs] = ['hooks' => 'email'];
+        $this->modx->cacheManager->items['formit/props_' . $theirs] = ['hooks' => 'email'];
+        $this->modx->setPlaceholder('fi.ajaxToken', $theirs);
+        $this->addSnippet('FormIt', function () {
+            return '';
+        });
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'FormIt']);
+
+        $fetchit->process('abc', ['email' => 'ann@example.com']);
+
+        $this->assertSame($theirs, $this->modx->placeholders['fi.ajaxToken']);
+        $this->assertArrayHasKey($theirs, $_SESSION['formit']);
+        $this->assertArrayHasKey('formit/props_' . $theirs, $this->modx->cacheManager->items);
+    }
+
+    public function testFormItJsIsLinkedAgainByAFormItFormAfterFetchIt()
+    {
+        $this->formItWithAjax(str_repeat('ab', 16));
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'FormIt']);
+        $fetchit->process('abc', []);
+
+        // [[!FormIt]] of its own further down the page.
+        $this->modx->regClientScript('/assets/components/formit/js/web/formit.js');
+
+        $this->assertSame(['<script src="/assets/components/formit/js/web/formit.js"></script>'], $this->modx->jscripts);
+    }
 }
