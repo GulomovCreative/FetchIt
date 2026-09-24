@@ -40,6 +40,20 @@ function fixture_element($modx, $class, $name, $field, $content)
     }
 }
 
+function fixture_plugin($modx, $name, $event, $code)
+{
+    fixture_element($modx, 'modPlugin', $name, 'plugincode', $code);
+    $plugin = $modx->getObject(modx_class('modPlugin'), ['name' => $name]);
+    $criteria = ['pluginid' => $plugin->get('id'), 'event' => $event];
+    if (!$modx->getObject(modx_class('modPluginEvent'), $criteria)) {
+        $binding = $modx->newObject(modx_class('modPluginEvent'));
+        $binding->fromArray($criteria + ['priority' => 0, 'propertyset' => 0], '', true, true);
+        if (!$binding->save()) {
+            fixture_fail("Could not bind the plugin {$name} to {$event}.");
+        }
+    }
+}
+
 function fixture_page($modx, $alias, $content)
 {
     $class = modx_class('modResource');
@@ -130,6 +144,15 @@ return $FetchIt->success('API ' . $api, [
     'same' => $FetchIt === FetchIt::service($modx) && $FetchIt === $legacy,
     'props' => $FetchIt->getActionProperties('fetchit-api-probe') === ['probe' => 1],
 ]);
+PHP
+);
+
+// Refuses addresses that start with "blocked", as a plugin of a site would.
+fixture_plugin($modx, 'FetchItTestGate', 'OnFetchItBeforeProcess', <<<'PHP'
+$email = isset($fields['email']) ? (string)$fields['email'] : '';
+if (strpos($email, 'blocked') === 0) {
+    $modx->event->output('Blocked by a plugin');
+}
 PHP
 );
 

@@ -1,5 +1,7 @@
 <?php
 
+require_once dirname(__FILE__) . '/fetchitguard.class.php';
+
 class FetchIt
 {
     public $version = '4.0.0';
@@ -7,6 +9,9 @@ class FetchIt
     public $modx;
     /** @var array $config */
     public $config;
+
+    /** @var FetchItGuard|null */
+    protected $guard;
 
     /**
      * Set by loadScript() when the snippet puts a form on the page, so the
@@ -140,7 +145,8 @@ class FetchIt
      *
      * The form tag loses any method and data-fetchit of its own, and gets
      * method="post" and data-fetchit="$action" as its last attributes. The
-     * rest of the tag and everything inside the form stay as they are.
+     * rest of the tag and everything inside the form stay as they are, apart
+     * from the service fields of the protection right after the tag.
      *
      * @param string $html
      * @param string $action
@@ -166,7 +172,8 @@ class FetchIt
             }
 
             return substr($match[0], 0, 5) . rtrim($attributes)
-                . ' method="post" data-fetchit="' . htmlspecialchars($action, ENT_QUOTES) . '">';
+                . ' method="post" data-fetchit="' . htmlspecialchars($action, ENT_QUOTES) . '">'
+                . $this->guard()->fields($action);
         }, $html);
 
         if ($result === null) {
@@ -176,6 +183,116 @@ class FetchIt
         }
 
         return $result;
+    }
+
+
+    /**
+     * The protection against spam.
+     *
+     * @return FetchItGuard
+     */
+    public function guard()
+    {
+        if ($this->guard === null) {
+            $this->guard = new FetchItGuard($this);
+        }
+
+        return $this->guard;
+    }
+
+
+    /**
+     * Check a submission of the form with this action (see FetchItGuard):
+     * null to process it, or the response to send instead. The service
+     * fields are removed from $post, $_POST and $_REQUEST.
+     *
+     * @param string $action
+     * @param array $post
+     *
+     * @return array|string|null
+     */
+    public function protect($action, array &$post)
+    {
+        $refused = $this->guard()->check($action, $post);
+        if ($refused === null) {
+            return null;
+        }
+
+        $method = $refused['status'] === 'success' ? 'success' : 'error';
+
+        return $this->$method($refused['message']);
+    }
+
+
+    /**
+     * The snippet's run of FormIt or the processing snippet when the page
+     * renders. FormIt runs its preHooks on every page view, so it always
+     * runs; a POST counts as a submission of this form only when it carries
+     * a token of it (a form sent without JavaScript) and passes the
+     * protection. Otherwise FormIt does not see the POST, and a refusal is
+     * shown through the FormIt placeholders of the form, with the values
+     * kept.
+     *
+     * @param string $action
+     * @param array $properties The snippet properties
+     */
+    public function processPage($action, array $properties)
+    {
+        if (empty($_POST)) {
+            $this->process($action, []);
+
+            return;
+        }
+
+        if ($this->guard()->enabled() && !$this->guard()->isSubmission($action, $_POST)) {
+            $this->processWithoutPost($action);
+
+            return;
+        }
+
+        $post = $_POST;
+        $refused = $this->guard()->check($action, $post);
+        if ($refused === null) {
+            $this->process($action, $post);
+
+            return;
+        }
+
+        $prefix = isset($properties['placeholderPrefix']) ? $properties['placeholderPrefix'] : 'fi.';
+        $message = $this->modx->lexicon($refused['message']);
+        if ($refused['status'] === 'success') {
+            $this->modx->setPlaceholder($prefix . 'success', 1);
+            $this->modx->setPlaceholder($prefix . 'successMessage', $message);
+        } else {
+            $this->modx->setPlaceholder($prefix . 'validation_error', 1);
+            $this->modx->setPlaceholder($prefix . 'validation_error_message', $message);
+            foreach ($post as $field => $value) {
+                if (is_string($value)) {
+                    $this->modx->setPlaceholder($prefix . $field, htmlspecialchars($value, ENT_QUOTES, 'UTF-8'));
+                }
+            }
+        }
+        $this->processWithoutPost($action);
+    }
+
+
+    /**
+     * Run FormIt for its preHooks only: it does not see the POST.
+     *
+     * @param string $action
+     */
+    protected function processWithoutPost($action)
+    {
+        $post = $_POST;
+        $request = $_REQUEST;
+        $_POST = [];
+        $_REQUEST = array_diff_key($_REQUEST, $post);
+        try {
+            $this->process($action, []);
+        } finally {
+            $_POST = $post;
+            $_REQUEST = $request;
+        }
     }
 
 

@@ -32,11 +32,12 @@ $FetchIt->loadScript($action);
 // Save snippet properties
 $FetchIt->storeActionProperties($action, $scriptProperties);
 
-// Call snippet for preparation of form
+// Run FormIt or the processing snippet: its preHooks on every view, and a
+// form sent without JavaScript when it passes the protection
 $action = !empty($_SERVER['HTTP_X_FETCHIT_ACTION'])
     ? $_SERVER['HTTP_X_FETCHIT_ACTION']
     : $action;
 
-$FetchIt->process($action, $_POST);
+$FetchIt->processPage($action, $scriptProperties);
 
 return $content;

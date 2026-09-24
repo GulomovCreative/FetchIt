@@ -60,6 +60,35 @@ test.describe('form with its own handler', () => {
   })
 })
 
+test.describe('spam protection', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(`/index.php?id=${fixtures.custom}`)
+  })
+
+  test('hides the trap from people', async ({ page }) => {
+    const trap = page.locator('input[name="fetchit_website"]')
+
+    await expect(trap).toHaveCount(1)
+    await expect(trap).not.toBeInViewport()
+    // aria-hidden keeps it from screen readers too.
+    await expect(page.getByRole('textbox', { name: 'Leave this field empty' })).toHaveCount(0)
+  })
+
+  test('sends the form again without a reload', async ({ page }) => {
+    // Every token is single-use: the second send needs the one from the answer.
+    const email = page.locator('input[name="email"]')
+    const send = page.getByRole('button', { name: 'Send' })
+
+    await email.fill('first@example.com')
+    await send.click()
+    await expect(page.locator('[data-success]')).toHaveText('Thanks, first@example.com')
+
+    await email.fill('second@example.com')
+    await send.click()
+    await expect(page.locator('[data-success]')).toHaveText('Thanks, second@example.com')
+  })
+})
+
 test.describe('broken server', () => {
   test('tells the visitor when the answer is not JSON', async ({ page }) => {
     await page.route('**/action.php', route => route.fulfill({

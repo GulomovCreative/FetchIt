@@ -5,6 +5,11 @@
 #
 # Usage: smoke.sh <base url> <fixtures json from fixtures.php>
 #
+# The spam protection has to let these checks through: CI sets
+# fetchit.protection.min_time and fetchit.protection.rate_limit to 0 (the
+# time and the limit are checked by protection.sh), and every submission
+# carries the token of the form, the next one coming from the answer.
+#
 # REQUIRE_FORMIT=1 / REQUIRE_PDOTOOLS=1 fail the run when FormIt / pdoTools
 # did not get installed. EXPECT_PACKAGE=<signature> checks that it is the
 # newest FetchIt package installed.
@@ -17,46 +22,8 @@ set -euo pipefail
 
 base="${1:?base URL is required}"
 fixtures="${2:?fixtures JSON is required}"
-jar="$(mktemp)"
-trap 'rm -f "$jar" "$jar.html" "$jar.upload"' EXIT
-failures=0
-
-pass() { echo "ok   - $*"; }
-fail() { echo "FAIL - $*"; failures=$((failures + 1)); }
-
-check() {
-    local description="$1"; shift
-    if "$@"; then pass "$description"; else fail "$description"; fi
-}
-
-# Saves a page to $jar.html and prints the action key of its form, keeping
-# the session cookie. Prints nothing when the page does not load or has no
-# form.
-open_page() {
-    if ! curl -fsS -c "$jar" -b "$jar" -o "$jar.html" "$base/index.php?id=$1"; then
-        : > "$jar.html"
-        return 0
-    fi
-    grep -o 'data-fetchit="[0-9a-f]\{32\}"' "$jar.html" | head -n1 | cut -d'"' -f2 || true
-}
-
-# Prints the answer of action.php, or nothing when the request fails.
-submit() {
-    local action="$1"; shift
-    curl -fsS -c "$jar" -b "$jar" -b "fetchit_probe=1" \
-        -H "Accept: application/json" \
-        -H "X-FetchIt-Action: $action" \
-        "$@" "$base/assets/components/fetchit/action.php" || true
-}
-
-# Checks an answer with jq; shows the start of the answer when it fails.
-json() {
-    if jq -e "$1" > /dev/null 2>&1 <<< "$2"; then
-        return 0
-    fi
-    echo "       answer: $(printf '%s' "${2:-<empty>}" | head -c 300)"
-    return 1
-}
+# shellcheck source=_build/ci/lib.sh
+. "$(dirname "$0")/lib.sh"
 
 modx="$(jq -r '.modx' <<< "$fixtures")"
 custom="$(jq -r '.custom' <<< "$fixtures")"
@@ -132,6 +99,26 @@ elif [ "${REQUIRE_PDOTOOLS:-}" = 1 ]; then
     fail "pdoTools is installed"
 fi
 
+echo "# Spam protection (id $custom)"
+action="$(open_page "$custom")"
+check "the form carries a token" test -s "$jar.token"
+check "the form carries the trap" grep -q 'name="fetchit_website"' "$jar.html"
+used="$(cat "$jar.token")"
+response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom")"
+check "a token passes once" json '.success == true' "$response"
+check "the answer brings the next token" test "$(cat "$jar.token")" != "$used"
+printf '%s' "$used" > "$jar.token"
+response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom")"
+check "a used token is refused" json '.success == false' "$response"
+: > "$jar.token"
+response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom")"
+check "a submission without a token is refused" json '.success == false' "$response"
+check "a refusal brings a token to try again" test -s "$jar.token"
+response="$(submit "$action" -F email=ann@example.com -F "fetchit_website=http://spam.example" -F "pageId=$custom")"
+check "the trap gets a success that sends nothing" json '.success == true and (.message | startswith("Thanks") | not)' "$response"
+response="$(submit "$action" -F email=blocked@example.com -F "pageId=$custom")"
+check "a plugin on OnFetchItBeforeProcess refuses" json '.success == false and .message == "Blocked by a plugin"' "$response"
+
 if [ -n "$formit" ]; then
     echo "# Page processed by FormIt (id $formit)"
     action="$(open_page "$formit")"
@@ -142,14 +129,18 @@ if [ -n "$formit" ]; then
 
     response="$(submit "$action" -F name=Ann -F email=ann@example.com -F "pageId=$formit")"
     check "FormIt accepts a valid email" json '.success == true and .message == "Sent"' "$response"
+
+    echo "# A form sent without JavaScript (id $formit)"
+    open_page "$formit" > /dev/null
+    curl -fsS -c "$jar" -b "$jar" -o "$jar.html" -F name=Ann -F email=not-an-email "$base/index.php?id=$formit" || : > "$jar.html"
+    check "a POST without a token does not reach FormIt" lacks 'data-error="email">[^<]' "$jar.html"
+    curl -fsS -c "$jar" -b "$jar" -o "$jar.html" -F "fetchit_token=$(cat "$jar.token")" \
+        -F name=Ann -F email=not-an-email "$base/index.php?id=$formit" || : > "$jar.html"
+    check "a POST with the token of the form reaches FormIt" grep -q 'data-error="email">[^<]' "$jar.html"
 elif [ "${REQUIRE_FORMIT:-}" = 1 ]; then
     fail "FormIt is installed together with FetchIt"
 else
     echo "# FormIt is not installed, its checks are skipped"
 fi
 
-if [ "$failures" -gt 0 ]; then
-    echo "$failures check(s) failed"
-    exit 1
-fi
-echo "All checks passed"
+finish

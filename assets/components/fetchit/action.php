@@ -37,9 +37,16 @@ if (empty($_POST)) {
 } elseif (empty($_SERVER['HTTP_X_FETCHIT_ACTION'])) {
     echo $FetchIt->error('fetchit_err_action_ns');
 } else {
+    $action = $_SERVER['HTTP_X_FETCHIT_ACTION'];
     // Only the posted form: $_REQUEST may also hold GET values and, with
     // request_order allowing it, cookies.
-    echo $FetchIt->process($_SERVER['HTTP_X_FETCHIT_ACTION'], array_merge($_FILES, $_POST));
+    $post = $_POST;
+    $refused = $FetchIt->protect($action, $post);
+    if ($FetchIt->guard()->enabled()) {
+        // Every token is single-use: the script sends this one next time.
+        header('X-FetchIt-Token: ' . $FetchIt->guard()->issue($action));
+    }
+    echo $refused !== null ? $refused : $FetchIt->process($action, array_merge($_FILES, $post));
 }
 
 @session_write_close();
