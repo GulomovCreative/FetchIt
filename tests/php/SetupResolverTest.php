@@ -118,6 +118,27 @@ class SetupResolverTest extends TestCase
         $this->assertSame('zip', file_get_contents($this->dir . '/target.zip'));
     }
 
+    public function testDownloadErrorSaysWhy()
+    {
+        $error = call_user_func($this->downloadPackage, $this->dir . '/missing.zip', $this->dir . '/a.zip');
+
+        $this->assertStringContainsString('No such file', $error);
+    }
+
+    public function testOldLibxmlErrorsAreNotReported()
+    {
+        $internal = libxml_use_internal_errors(true);
+        simplexml_load_string('<earlier');
+        try {
+            list(, $error) = call_user_func($this->readAnswer, $this->psr7(200, 'plain text'));
+        } finally {
+            libxml_clear_errors();
+            libxml_use_internal_errors($internal);
+        }
+
+        $this->assertStringNotContainsString('earlier', $error);
+    }
+
     public function testMissingOrEmptyDownloadIsAnError()
     {
         file_put_contents($this->dir . '/empty.zip', '');
