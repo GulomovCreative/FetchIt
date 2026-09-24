@@ -56,4 +56,19 @@ return [
         'value' => 600,
         'area' => 'fetchit_protection',
     ],
+    'protection.log' => [
+        'xtype' => 'numberfield',
+        'value' => 1,
+        'area' => 'fetchit_protection',
+    ],
+    'protection.proxies' => [
+        'xtype' => 'textfield',
+        'value' => '',
+        'area' => 'fetchit_protection',
+    ],
+    'protection.ip_header' => [
+        'xtype' => 'textfield',
+        'value' => 'X-Forwarded-For',
+        'area' => 'fetchit_protection',
+    ],
 ];

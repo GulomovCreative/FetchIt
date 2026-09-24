@@ -42,9 +42,14 @@ if (empty($_POST)) {
     // request_order allowing it, cookies.
     $post = $_POST;
     $refused = $FetchIt->protect($action, $post);
-    if ($FetchIt->guard()->enabled()) {
-        // Every token is single-use: the script sends this one next time.
-        header('X-FetchIt-Token: ' . $FetchIt->guard()->issue($action));
+    // Every token is single-use: the script sends this one next time. Only a
+    // request with a well-signed token of the form gets one.
+    if ($next = $FetchIt->guard()->nextToken()) {
+        header('X-FetchIt-Token: ' . $next);
+    }
+    // The script retries once by itself when the page's token was stale.
+    if ($reason = $FetchIt->guard()->reason()) {
+        header('X-FetchIt-Refused: ' . $reason);
     }
     echo $refused !== null ? $refused : $FetchIt->process($action, array_merge($_FILES, $post));
 }

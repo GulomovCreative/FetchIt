@@ -32,7 +32,7 @@ class LexiconTest extends TestCase
         }
 
         // Field names that look like keys.
-        $fields = [FetchItGuard::TOKEN, FetchItGuard::TRAP];
+        $fields = [FetchItGuard::TOKEN];
 
         return array_values(array_diff(array_unique($keys), $fields));
     }

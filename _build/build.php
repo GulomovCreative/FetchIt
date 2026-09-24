@@ -78,16 +78,16 @@ class FetchItPackage
 
 
     /**
-     * Add the system events of FetchIt
+     * Add the system events of FetchIt. process() calls it for
+     * _build/elements/events.php, by the file name.
      */
     protected function events()
     {
         /** @noinspection PhpIncludeInspection */
         $events = include($this->config['elements'] . 'events.php');
         if (!is_array($events)) {
-            $this->modx->log(modX::LOG_LEVEL_ERROR, 'Could not package in System Events');
-
-            return;
+            // Plugins on the events would silently never run.
+            $this->fail('Could not package in System Events: _build/elements/events.php must return an array');
         }
         $attributes = [
             xPDOTransport::UNIQUE_KEY => 'name',
