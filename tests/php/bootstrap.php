@@ -47,6 +47,15 @@ class modX
     /** @var FakeSnippet[] */
     public $snippets = [];
 
+    /** @var array|FakeContainer An array on MODX 2, a container on MODX 3 */
+    public $services = [];
+
+    /** @var array Objects getService() returns, by name */
+    public $legacyServices = [];
+
+    /** @var FakeLoader */
+    public static $loader;
+
     public function __construct()
     {
         $this->lexicon = new FakeLexicon();
@@ -79,6 +88,28 @@ class modX
         return $value;
     }
 
+    /**
+     * As xPDO 2 getService(): one shared instance per name.
+     */
+    public function getService($name, $class = '', $path = '', $params = [])
+    {
+        $key = strtolower($name);
+        if (!isset($this->legacyServices[$key])) {
+            if (!class_exists($class ?: $name)) {
+                return null;
+            }
+            $class = $class ?: $name;
+            $this->legacyServices[$key] = new $class($this, $params);
+        }
+
+        return $this->legacyServices[$key];
+    }
+
+    public static function getLoader()
+    {
+        return self::$loader = self::$loader ?: new FakeLoader();
+    }
+
     public function toJSON($data)
     {
         return json_encode($data);
@@ -101,6 +132,46 @@ class modX
         }
 
         return null;
+    }
+}
+
+/**
+ * The MODX 3 service container: add() takes an object or a factory closure,
+ * and get() always returns the same instance.
+ */
+class FakeContainer
+{
+    /** @var array */
+    private $entries = [];
+
+    public function has($id)
+    {
+        return array_key_exists($id, $this->entries);
+    }
+
+    public function add($id, $value)
+    {
+        $this->entries[$id] = $value;
+    }
+
+    public function get($id)
+    {
+        if ($this->entries[$id] instanceof Closure) {
+            $this->entries[$id] = call_user_func($this->entries[$id]);
+        }
+
+        return $this->entries[$id];
+    }
+}
+
+class FakeLoader
+{
+    /** @var array prefix => path */
+    public $psr4 = [];
+
+    public function addPsr4($prefix, $path)
+    {
+        $this->psr4[$prefix] = $path;
     }
 }
 

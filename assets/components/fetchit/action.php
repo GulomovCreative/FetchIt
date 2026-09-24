@@ -3,7 +3,18 @@
 /** @var modX $modx */
 define('MODX_API_MODE', true);
 require_once dirname(dirname(dirname(dirname(__FILE__)))) . '/index.php';
-$modx->getService('error', 'error.modError');
+require_once $modx->getOption('fetchit.core_path', null, $modx->getOption('core_path') . 'components/fetchit/')
+    . 'model/fetchit.class.php';
+
+if (is_object($modx->services)) {
+    // MODX 3: getService() is deprecated there.
+    if (!$modx->services->has('error')) {
+        $modx->services->add('error', new \MODX\Revolution\Error\modError($modx));
+    }
+    $modx->error = $modx->services->get('error');
+} else {
+    $modx->getService('error', 'error.modError');
+}
 $modx->setLogLevel(modX::LOG_LEVEL_ERROR);
 $modx->setLogTarget('FILE');
 
@@ -17,9 +28,7 @@ if (!empty($_REQUEST['pageId'])) {
     }
 }
 
-/** @var FetchIt $FetchIt */
-$FetchIt = $modx->getService('fetchit', 'FetchIt', $modx->getOption('fetchit.core_path', null,
-        $modx->getOption('core_path') . 'components/fetchit/') . 'model/', []);
+$FetchIt = FetchIt::service($modx);
 
 if (empty($_POST)) {
     $modx->sendRedirect($modx->makeUrl($modx->getOption('site_start'), '', '', 'full'));
