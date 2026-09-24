@@ -13,7 +13,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "typecheck": "tsc -p . && tsc -p tests/types"
+    "typecheck": "tsc -p . && tsc -p tests/types",
+    "screenshots": "npm run build && node _build/screenshots.mjs"
   },
   "keywords": [
     "MODX Extra"
