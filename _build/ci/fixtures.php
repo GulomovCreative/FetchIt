@@ -68,7 +68,8 @@ if ($email === '') {
     ]);
 }
 
-// Cookies must not reach the fields of the form.
+// Cookies must not reach the fields of the form; smoke.sh sends a
+// fetchit_probe cookie with every submission.
 $leaked = array_values(array_intersect(array_keys($fields), array_keys($_COOKIE)));
 
 return json_encode(['success' => true, 'message' => 'Thanks, ' . $email, 'data' => ['cookies' => $leaked]]);
