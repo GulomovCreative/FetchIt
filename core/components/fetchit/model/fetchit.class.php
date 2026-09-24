@@ -20,6 +20,64 @@ class FetchIt
 
 
     /**
+     * The shared instance: from the service container on MODX 3 (bootstrap.php
+     * registers it), from getService() on MODX 2.
+     *
+     * @param modX $modx
+     *
+     * @return FetchIt
+     */
+    public static function service($modx)
+    {
+        $container = self::container($modx);
+        if ($container === null) {
+            return $modx->getService('fetchit', 'FetchIt', dirname(__FILE__) . '/');
+        }
+
+        if (!$container->has('FetchIt')) {
+            $container->add('FetchIt', function () use ($modx) {
+                return new FetchIt($modx);
+            });
+        }
+
+        return $container->get('FetchIt');
+    }
+
+
+    /**
+     * pdoTools, if it is installed: pdoTools 3 on MODX 3 is only a service in
+     * the container, pdoTools 2 on MODX 2 is the pdoTools class.
+     *
+     * @param modX $modx
+     *
+     * @return object|null
+     */
+    public static function pdoTools($modx)
+    {
+        $container = self::container($modx);
+        if ($container !== null) {
+            return $container->has('pdoTools') ? $container->get('pdoTools') : null;
+        }
+
+        return class_exists('pdoTools') ? $modx->getService('pdoTools') : null;
+    }
+
+
+    /**
+     * The MODX 3 service container, or null on MODX 2, where
+     * $modx->services is a plain array.
+     *
+     * @param modX $modx
+     *
+     * @return object|null
+     */
+    protected static function container($modx)
+    {
+        return isset($modx->services) && is_object($modx->services) ? $modx->services : null;
+    }
+
+
+    /**
      * @param modX $modx
      * @param array $config
      */
@@ -268,6 +326,31 @@ class FetchIt
         }
 
         return $stored;
+    }
+
+
+    /**
+     * The FetchIt 3.x name of storeActionProperties().
+     *
+     * @param string $action
+     * @param array $scriptProperties
+     */
+    public function saveActionProperties($action, array $scriptProperties)
+    {
+        $this->storeActionProperties($action, $scriptProperties);
+    }
+
+
+    /**
+     * The FetchIt 3.x name of loadActionProperties().
+     *
+     * @param string $action
+     *
+     * @return array|null
+     */
+    public function getActionProperties($action)
+    {
+        return $this->loadActionProperties($action);
     }
 
 

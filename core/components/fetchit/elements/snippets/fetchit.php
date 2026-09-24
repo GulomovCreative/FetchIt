@@ -10,8 +10,8 @@ $FetchIt = new FetchIt($modx, $scriptProperties);
 $snippet = $modx->getOption('snippet', $scriptProperties, 'FormIt', true);
 $tpl = $modx->getOption('form', $scriptProperties, 'tpl.FetchIt.example', true);
 
-/** @var pdoTools $pdo */
-if (class_exists('pdoTools') && $pdo = $modx->getService('pdoTools')) {
+// pdoTools for Fenom and @FILE chunks, on MODX 2 and MODX 3
+if ($pdo = FetchIt::pdoTools($modx)) {
     $content = $pdo->getChunk($tpl, $scriptProperties);
 } else {
     $content = $modx->getChunk($tpl, $scriptProperties);
