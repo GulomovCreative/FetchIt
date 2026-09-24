@@ -124,6 +124,32 @@ test.describe('fill time @timing', () => {
   })
 })
 
+test.describe('proof of work @pow', () => {
+  test('the browser solves it and the form is sent', async ({ page }) => {
+    await page.goto(`/index.php?id=${fixtures.custom}`)
+    const request = page.waitForRequest('**/action.php')
+
+    await page.locator('input[name="email"]').fill('ann@example.com')
+    await page.getByRole('button', { name: 'Send' }).click()
+
+    await expect(page.locator('[data-success]')).toHaveText('Thanks, ann@example.com')
+    expect((await request).postData()).toContain('name="fetchit_pow"')
+  })
+})
+
+test.describe('Turnstile @captcha', () => {
+  test('the widget answers and the form is sent', async ({ page }) => {
+    await page.goto(`/index.php?id=${fixtures.custom}`)
+    // The test site key of Cloudflare: a widget that always passes.
+    await expect(page.locator('form .fetchit-captcha iframe')).toHaveCount(1, { timeout: 15_000 })
+
+    await page.locator('input[name="email"]').fill('ann@example.com')
+    await page.getByRole('button', { name: 'Send' }).click()
+
+    await expect(page.locator('[data-success]')).toHaveText('Thanks, ann@example.com', { timeout: 30_000 })
+  })
+})
+
 test.describe('broken server', () => {
   test('tells the visitor when the answer is not JSON', async ({ page }) => {
     await page.route('**/action.php', route => route.fulfill({

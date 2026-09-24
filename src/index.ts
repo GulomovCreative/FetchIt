@@ -1,3 +1,6 @@
+import { createCaptcha, type Captcha } from './captcha'
+import { solve } from './pow'
+
 class FetchIt {
   declare static Message?: FetchItMessage;
   static forms: HTMLFormElement[] = [];
@@ -6,6 +9,8 @@ class FetchIt {
   static defaultRequestErrorMessage = 'Could not send the form. Please try again.';
   // The hidden field of the spam protection (FetchItGuard::TOKEN).
   static tokenField = 'fetchit_token';
+  // The field with the solution of the proof of work (FetchItGuard::POW).
+  static powField = 'fetchit_pow';
   static events = {
     before: 'fetchit:before',
     success: 'fetchit:success',
@@ -21,6 +26,9 @@ class FetchIt {
   declare preserveFormMessagesOnReset: boolean;
   declare disabledBefore: Element[];
   declare pending: boolean;
+  declare captcha: Captcha | null;
+  // Solutions of the proof of work, by token: one is started ahead.
+  solutions = new Map<string, Promise<string>>();
 
   constructor (form: unknown, config: FetchItConfig) {
     if (!(form instanceof HTMLFormElement)) {
@@ -39,6 +47,7 @@ class FetchIt {
       },
     });
 
+    this.captcha = createCaptcha(this.form, this.config.captcha);
     this.prepareEvents();
 
     FetchIt.forms.push(this.form);
@@ -84,6 +93,7 @@ class FetchIt {
 
       try {
         try {
+          await this.protectSubmission();
           let query = await fetch(this.request, { method: 'post', body: this.formData });
           let next = query.headers?.get('X-FetchIt-Token');
           this.updateToken(next);
@@ -91,6 +101,9 @@ class FetchIt {
           // token: send once more with the new one instead of showing it.
           if (next && query.headers?.get('X-FetchIt-Refused') === 'token') {
             this.formData.set(FetchIt.tokenField, next);
+            if (this.config.pow) {
+              this.formData.set(FetchIt.powField, await this.solution(next));
+            }
             query = await fetch(this.request, { method: 'post', body: this.formData });
             next = query.headers?.get('X-FetchIt-Token');
             this.updateToken(next);
@@ -172,8 +185,13 @@ class FetchIt {
           return;
         }
 
-        if (typeof window.grecaptcha !== 'undefined') {
-          window.grecaptcha.reset();
+        // A reCAPTCHA v2 widget of FormIt; FetchIt's own captcha resets below.
+        if (this.config.captcha?.provider !== 'recaptcha') {
+          try {
+            window.grecaptcha?.reset?.();
+          } catch (error) {
+            console.error(error);
+          }
         }
 
         if (this.config.clearFieldsOnSuccess) {
@@ -190,6 +208,8 @@ class FetchIt {
           this.failRequest(error);
         }
       } finally {
+        // A captcha answer is good for one check.
+        this.captcha?.reset();
         this.enableFields();
         this.pending = false;
       }
@@ -216,6 +236,9 @@ class FetchIt {
         this.clearError((target as Element).getAttribute('name'));
       });
     });
+
+    // The visitor started on the form: solve the proof of work meanwhile.
+    this.form.addEventListener('focusin', () => this.solveAhead(), { once: true });
   }
 
   /**
@@ -249,6 +272,40 @@ class FetchIt {
   }
 
   /**
+   * Add the solution of the proof of work and the captcha's answer.
+   */
+  async protectSubmission () {
+    if (this.config.pow) {
+      const token = String(this.formData.get(FetchIt.tokenField) ?? '');
+      this.formData.set(FetchIt.powField, await this.solution(token));
+    }
+    await this.captcha?.answer(this.formData);
+  }
+
+  /**
+   * The solution of the proof of work for a token, started once.
+   */
+  solution (token: string): Promise<string> {
+    let solution = this.solutions.get(token);
+    if (!solution) {
+      solution = solve(token, this.config.pow ?? 0);
+      this.solutions.set(token, solution);
+    }
+    return solution;
+  }
+
+  /**
+   * Start solving for the token of the form, so the solution is ready by the
+   * time the visitor sends it.
+   */
+  solveAhead () {
+    const token = this.form.querySelector<HTMLInputElement>(`input[name="${FetchIt.tokenField}"]`)?.value;
+    if (this.config.pow && token) {
+      this.solution(token).catch(error => console.error(error));
+    }
+  }
+
+  /**
    * The protection token is single-use: every answer brings the next one.
    * The value attribute changes too, so a form reset keeps it.
    */
@@ -260,6 +317,7 @@ class FetchIt {
       input.value = token;
       input.defaultValue = token;
     });
+    this.solveAhead();
   }
 
   clearErrors () {

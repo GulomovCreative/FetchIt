@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { createHash } from 'node:crypto'
 import '../../src/index'
 
 // Node's Request, which the class uses, needs an absolute URL.
@@ -635,5 +636,133 @@ describe('spam protection', () => {
     await submit(form)
 
     expect(field(form, 'fetchit_token').value).toBe('old-token')
+  })
+})
+
+function zeroBitsOf(input: string) {
+  const digest = createHash('sha256').update(input).digest()
+  let bits = 0
+  for (const byte of digest) {
+    if (byte === 0) {
+      bits += 8
+      continue
+    }
+    return bits + Math.clz32(byte) - 24
+  }
+  return bits
+}
+
+describe('proof of work', () => {
+  it('sends a solution for the token of the form', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config({ pow: 8 }))
+    const fetch = answerWithToken({ success: true, message: 'Sent', data: [] }, 'next-token')
+    vi.stubGlobal('fetch', fetch)
+
+    await submit(form)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalled())
+
+    const body = fetch.mock.calls[0]![1]!.body as FormData
+    expect(zeroBitsOf(`old-token:${body.get('fetchit_pow')}`)).toBeGreaterThanOrEqual(8)
+  })
+
+  it('solves again for the new token when it sends once more', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config({ pow: 8 }))
+    const fetch = answerSequence(
+      { body: { success: false, message: 'Expired', data: [] }, headers: { 'X-FetchIt-Token': 'fresh', 'X-FetchIt-Refused': 'token' } },
+      { body: { success: true, message: 'Sent', data: [] }, headers: {} },
+    )
+
+    await submit(form)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+
+    const body = fetch.mock.calls[1]![1]!.body as FormData
+    expect(body.get('fetchit_token')).toBe('fresh')
+    expect(zeroBitsOf(`fresh:${body.get('fetchit_pow')}`)).toBeGreaterThanOrEqual(8)
+  })
+
+  it('sends nothing extra without a proof of work', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config())
+    const fetch = answerWithToken({ success: true, message: 'Sent', data: [] }, null)
+    vi.stubGlobal('fetch', fetch)
+
+    await submit(form)
+
+    expect((fetch.mock.calls[0]![1]!.body as FormData).has('fetchit_pow')).toBe(false)
+  })
+})
+
+describe('captchas', () => {
+  afterEach(() => {
+    delete window.turnstile
+    delete window.smartCaptcha
+    delete window.grecaptcha
+  })
+
+  it('reCAPTCHA v3: asks for an answer with the action the server expects', async () => {
+    const execute = vi.fn(async () => 'recaptcha-answer')
+    window.grecaptcha = { ready: callback => callback(), execute, reset: vi.fn() }
+    const form = mountProtectedForm()
+    FetchIt.create(config({ captcha: { provider: 'recaptcha', siteKey: 'site-key' } }))
+    const fetch = answerWithToken({ success: true, message: 'Sent', data: [] }, null)
+    vi.stubGlobal('fetch', fetch)
+
+    await submit(form)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalled())
+
+    expect(execute).toHaveBeenCalledWith('site-key', { action: 'fetchit' })
+    expect((fetch.mock.calls[0]![1]!.body as FormData).get('g-recaptcha-response')).toBe('recaptcha-answer')
+    expect(window.grecaptcha.reset).not.toHaveBeenCalled()
+  })
+
+  it('Turnstile: renders a widget in the form, sends its answer and resets it', async () => {
+    const turnstile = {
+      render: vi.fn(() => 'widget-1'),
+      getResponse: vi.fn(() => 'turnstile-answer'),
+      reset: vi.fn(),
+    }
+    window.turnstile = turnstile
+    const form = mountProtectedForm()
+    FetchIt.create(config({ captcha: { provider: 'turnstile', siteKey: 'site-key' } }))
+    await vi.waitFor(() => expect(turnstile.render).toHaveBeenCalled())
+    const fetch = answerWithToken({ success: true, message: 'Sent', data: [] }, null)
+    vi.stubGlobal('fetch', fetch)
+
+    await submit(form)
+    await vi.waitFor(() => expect(turnstile.reset).toHaveBeenCalledWith('widget-1'))
+
+    const [widget, options] = turnstile.render.mock.calls[0] as unknown as [HTMLElement, { sitekey: string }]
+    expect(form.contains(widget)).toBe(true)
+    expect(options.sitekey).toBe('site-key')
+    expect((fetch.mock.calls[0]![1]!.body as FormData).get('cf-turnstile-response')).toBe('turnstile-answer')
+  })
+
+  it('SmartCaptcha: executes the invisible widget and sends its answer', async () => {
+    let callback: ((token: string) => void) | undefined
+    const smartCaptcha = {
+      render: vi.fn((_element: HTMLElement, options: { callback?: (token: string) => void }) => {
+        callback = options.callback
+        return 7
+      }),
+      getResponse: vi.fn(() => ''),
+      execute: vi.fn(() => setTimeout(() => callback?.('smart-answer'), 0)),
+      reset: vi.fn(),
+    }
+    window.smartCaptcha = smartCaptcha
+    const form = mountProtectedForm()
+    FetchIt.create(config({ captcha: { provider: 'smartcaptcha', siteKey: 'site-key' } }))
+    await vi.waitFor(() => expect(smartCaptcha.render).toHaveBeenCalled())
+    const fetch = answerWithToken({ success: true, message: 'Sent', data: [] }, null)
+    vi.stubGlobal('fetch', fetch)
+
+    await submit(form)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalled())
+
+    expect(smartCaptcha.render.mock.calls[0]![1]).toMatchObject({ sitekey: 'site-key', invisible: true })
+    expect(smartCaptcha.execute).toHaveBeenCalledWith(7)
+    expect((fetch.mock.calls[0]![1]!.body as FormData).get('smart-token')).toBe('smart-answer')
+    await vi.waitFor(() => expect(smartCaptcha.reset).toHaveBeenCalledWith(7))
   })
 })

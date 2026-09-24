@@ -6,6 +6,8 @@ import { defineConfig, devices } from '@playwright/test'
 // Tagged tests need other settings and run alone with E2E_TAG:
 //   E2E_TAG=notifier  fetchit.frontend.default.notifier 1
 //   E2E_TAG=timing    fetchit.protection.min_time 3
+//   E2E_TAG=pow       fetchit.protection.pow 16
+//   E2E_TAG=captcha   fetchit.captcha turnstile with the test keys of Cloudflare
 const tag = process.env.E2E_TAG
 
 export default defineConfig({
@@ -15,7 +17,7 @@ export default defineConfig({
   // A test that passes only on retry still fails the run.
   failOnFlakyTests: !!process.env.CI,
   grep: tag ? new RegExp(`@${tag}\\b`) : undefined,
-  grepInvert: tag ? undefined : /@(notifier|timing)\b/,
+  grepInvert: tag ? undefined : /@(notifier|timing|pow|captcha)\b/,
   reporter: process.env.CI ? [['list'], ['html', { open: 'never' }]] : 'list',
   use: {
     baseURL: process.env.BASE_URL ?? 'http://localhost:8052',
