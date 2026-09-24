@@ -148,6 +148,24 @@ class FetchItTest extends TestCase
         $this->assertSame('<form class=f method="post" data-fetchit="abc">', $html);
     }
 
+    public function testPcreFailureLeavesTheChunkAsItWasAndIsLogged()
+    {
+        $limit = ini_get('pcre.backtrack_limit');
+        $jit = ini_get('pcre.jit');
+        ini_set('pcre.jit', '0');
+        ini_set('pcre.backtrack_limit', '1');
+        try {
+            $chunk = '<form class="f" id="x"><input></form>';
+            $html = $this->fetchit()->prepareForm($chunk, 'abc');
+        } finally {
+            ini_set('pcre.backtrack_limit', $limit);
+            ini_set('pcre.jit', $jit);
+        }
+
+        $this->assertSame($chunk, $html);
+        $this->assertLogged('Could not prepare the form');
+    }
+
     public function testEveryFormInTheChunkIsPrepared()
     {
         $html = $this->fetchit()->prepareForm('<form></form><form></form>', 'abc');
@@ -373,8 +391,8 @@ class FetchItTest extends TestCase
         $fetchit->loadScript('abc');
 
         $this->assertCount(1, $this->modx->htmlBlocks);
-        $this->assertMatchesRegularExpression('/FetchIt\.create\((\{.*\})\)/', $this->modx->htmlBlocks[0]);
-        preg_match('/FetchIt\.create\((\{.*\})\)/', $this->modx->htmlBlocks[0], $match);
+        $this->assertMatchesRegularExpression('/\.create\((\{.*?\})\);/', $this->modx->htmlBlocks[0]);
+        preg_match('/\.create\((\{.*?\})\);/', $this->modx->htmlBlocks[0], $match);
         $config = $this->decode($match[1]);
         $this->assertSame('abc', $config['action']);
         $this->assertSame('/assets/components/fetchit/action.php', $config['actionUrl']);
@@ -390,7 +408,7 @@ class FetchItTest extends TestCase
 
         $this->fetchit()->loadScript('abc');
 
-        $this->assertStringContainsString('MyForms.create(', $this->modx->htmlBlocks[0]);
+        $this->assertStringContainsString('FetchItClass = MyForms;', $this->modx->htmlBlocks[0]);
     }
 
     private function render($html, array $options = [], $requested = true)
@@ -491,20 +509,24 @@ class FetchItTest extends TestCase
         $this->assertLogged('fetchit.frontend.js');
     }
 
-    public function testModuleScriptIsAccepted()
+    public function testVersionKeepsTheQueryStringAndFragment()
     {
-        $html = $this->render('<html><head></head></html>', ['fetchit.frontend.js' => '/assets/forms.mjs?x=1']);
+        $html = $this->render('<html><head></head></html>', ['fetchit.frontend.js' => '/assets/forms.js?x=1#top']);
 
-        $this->assertStringContainsString('src="/assets/forms.mjs?x=1?v=', $html);
+        $this->assertMatchesRegularExpression('#src="/assets/forms\.js\?x=1&v=[^"\#]+\#top"#', $html);
     }
 
     public function testInitialisationWaitsForTheScript()
     {
-        // Without the script (a cached call, a missing <head>) the page must
-        // not throw a ReferenceError.
+        $this->modx->options['fetchit.frontend.js.classname'] = 'App.Forms';
         $this->fetchit()->loadScript('abc');
 
-        $this->assertStringContainsString('window.FetchIt ? FetchIt.create(', $this->modx->htmlBlocks[0]);
+        // The inline code finds the class whether it is a window property,
+        // a top-level "class" declaration or a dotted name, and does not
+        // throw when the script is missing (a cached call, no <head>).
+        $block = $this->modx->htmlBlocks[0];
+        $this->assertStringContainsString('try { FetchItClass = App.Forms; } catch (e) {}', $block);
+        $this->assertStringContainsString('FetchItClass.create({', $block);
     }
 
     private function assertLogged($needle)
