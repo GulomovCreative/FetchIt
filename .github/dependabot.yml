@@ -1,7 +1,11 @@
 version: 2
+# Dependabot reads this file from master only. FetchIt 4 is developed on
+# 4.x, so updates go there; when 4.x becomes master at the 4.0 release,
+# its own copy of this file (without target-branch) takes over.
 updates:
   - package-ecosystem: npm
     directory: /
+    target-branch: 4.x
     schedule:
       interval: weekly
     groups:
@@ -10,11 +14,13 @@ updates:
 
   - package-ecosystem: composer
     directory: /
+    target-branch: 4.x
     schedule:
       interval: weekly
 
   - package-ecosystem: github-actions
     directory: /
+    target-branch: 4.x
     schedule:
       interval: weekly
     groups:
