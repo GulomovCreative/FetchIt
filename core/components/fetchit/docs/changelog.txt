@@ -7,25 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.1.4] - 2026-09-24
 
+### Added
+
+- Lexicon entry `fetchit_err_request`, passed to the script as `requestErrorMessage`: the text a visitor sees when a submission fails (see Fixed).
+- `detail.error` in `fetchit:error` for failed requests.
+- `FetchIt::prepareForm()`, which gives the form tags of a chunk the POST method and the action key.
+- Errors in the MODX log when the plugin cannot add the script to a page with a form: no `<head>`, or `fetchit.frontend.js` not pointing at a `.js`/`.mjs` file.
+
+### Changed
+
+- `fetchit:error` also fires for failed requests, with `detail.response` set to `null`. Handlers that read `detail.response` must allow for it.
+- The processing snippet gets only posted values in `fields`: `$_POST` (and `$_FILES` from `action.php`). Before it got `$_REQUEST`, which also holds GET values and, depending on `request_order`, cookies.
+- `method` and `data-fetchit` now come last among the attributes of the form tag.
+- The inline `create()` call checks that the script is loaded, so a page without it falls back to a normal submit instead of a `ReferenceError`.
+- `FetchIt.create()` warns in the console when no form matches the action; it used to do nothing.
+- A second submit while a request is running is ignored.
+
 ### Fixed
 
-- A form that already had a `data-fetchit` attribute came out broken: `<form\data-fetchit="$action" ...>`, with the attributes before it lost. The snippet also rewrote `formmethod` and `data-fetchit` of elements inside the form. Form tags are now rewritten one by one, and only their own attributes change.
-- No scripts were added on sites without anonymous sessions. Whether a page has a form is now remembered for the current request only, not in the session.
-- No scripts were added when `<head>` was written in capitals.
-- `action.php` and the snippet passed cookies to the processing snippet as form fields (`$_REQUEST`). Only `$_POST` and `$_FILES` are passed now.
-- FormIt was not installed together with FetchIt on MODX 3: the package provider there answers in a different format. The installer no longer fails without a provider or on a broken answer.
+- A form that already had a `data-fetchit` attribute came out broken: `<form\data-fetchit="$action" ...>`, with the attributes before it lost. The snippet also changed look-alike tags such as `<form-field>` and the `formmethod` or `data-fetchit` of elements inside the form. Form tags are now parsed one by one, values in quotes included (so `@submit="step > 1"` stays intact), and only their own `method` and `data-fetchit` are replaced.
+- No scripts were added on sites without anonymous sessions. Whether a page has a form is now remembered for the current request, not in the session.
+- No scripts were added when `<head>` was written in capitals; with attributes on `<head>` they went to its end instead of before the first script.
+- FormIt was not installed together with FetchIt on MODX 3: the package provider there answers in a different format. The installer also reports a missing provider, an unreachable provider, an HTTP error, a failed download and a failed install separately, and removes a package it could not install.
 - A FormIt error placeholder holding only `&nbsp;` marked the field as invalid.
 - Without the `fetchit.frontend.js` setting the plugin linked the missing `js/default.js`.
 - Two identical snippet calls on one page bound the form twice, and it was sent twice.
 - Fields disabled in the markup became enabled after a submission.
-- A failed request or an answer that is not JSON (a PHP error page, a redirect) was only logged to the console. The visitor now sees the `fetchit_err_request` message, and `fetchit:error` fires with `response: null` and the `error`.
+- A network error or an answer that is not a FetchIt answer (a PHP error page, HTML after a redirect, JSON from a firewall) was only logged to the console. The visitor now sees the `fetchit_err_request` message.
 - Field names with quotes broke the error selectors.
-- `FetchIt.create()` no longer throws when no form matches; it warns in the console.
-
-### Changed
-
-- `fetchit:error` handlers must allow `detail.response` to be `null` (see above).
-- `method` and `data-fetchit` now come last among the attributes of the form tag.
 
 ## [1.1.3] - 2026-08-12
 
