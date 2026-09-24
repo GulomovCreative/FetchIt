@@ -145,7 +145,9 @@ class FetchIt {
         shown = true;
         FetchIt.notify('success', response.message);
 
+        // Cancelling it keeps the fields and skips the reCAPTCHA reset.
         const successEvent = new CustomEvent(FetchIt.events.success, {
+          cancelable: true,
           detail: {
             form: this.form,
             formData: this.formData,
