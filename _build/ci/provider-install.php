@@ -18,7 +18,8 @@ if (!class_exists('xPDOTransport')) {
     $modx->loadClass('transport.xPDOTransport', XPDO_CORE_PATH, true, true);
 }
 
-// Loaded for uninstall, the resolver only defines its helpers.
+// Run the resolver as for an uninstall: it then only defines $installPackage
+// and installs nothing.
 $transport = new xPDOTransport($modx, 'provider-install', sys_get_temp_dir() . '/');
 $options = [xPDOTransport::PACKAGE_ACTION => xPDOTransport::ACTION_UNINSTALL];
 require dirname(__DIR__) . '/resolvers/setup.php';
@@ -27,5 +28,5 @@ require dirname(__DIR__) . '/resolvers/setup.php';
 $response = $installPackage($argv[1], ['service_url' => 'modx.com']);
 $modx->cacheManager->refresh();
 
-echo strip_tags($response['message']), "\n";
+fwrite($response['success'] ? STDOUT : STDERR, strip_tags($response['message']) . "\n");
 exit($response['success'] ? 0 : 1);
