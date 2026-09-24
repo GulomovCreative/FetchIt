@@ -25,6 +25,7 @@ $_lang['fetchit_err_pow'] = 'Не удалось подтвердить отпр
 $_lang['fetchit_err_captcha'] = 'Проверка на спам не пройдена. Обновите страницу и отправьте форму ещё раз.';
 $_lang['fetchit_err_captcha_client'] = 'Не удалось пройти проверку на спам. Убедитесь, что её ничто не блокирует на странице, и попробуйте ещё раз.';
 $_lang['fetchit_err_captcha_unavailable'] = 'Проверка на спам сейчас недоступна. Попробуйте ещё раз через несколько минут.';
+$_lang['fetchit_notifier_close'] = 'Закрыть';
 $_lang['fetchit_trap_label'] = 'Оставьте это поле пустым';
 $_lang['fetchit_err_has_errors'] = 'Форма содержит ошибки';
 $_lang['fetchit_success_submit'] = 'Форма успешно отправлена';

@@ -463,14 +463,26 @@ class FetchItTest extends TestCase
         $this->assertMatchesRegularExpression('#fetchit\.js\?v=[^"]+" defer></script>\n</head>#', $html);
     }
 
-    public function testNotifierAssetsAreAddedWhenEnabled()
+    public function testTheNotifierNeedsNoFilesOfItsOwn()
     {
+        // It is part of fetchit.js; Notyf used to come as two more files.
         $html = $this->render('<html><head></head><body></body></html>', [
             'fetchit.frontend.default.notifier' => true,
         ]);
 
-        $this->assertStringContainsString('lib/notyf.min.css', $html);
-        $this->assertStringContainsString('lib/notyf.min.js', $html);
+        $this->assertSame(1, substr_count($html, '<script'));
+        $this->assertStringNotContainsString('<link', $html);
+    }
+
+    public function testTheScriptGetsTheNotifierAndItsCloseLabel()
+    {
+        $this->modx->options['fetchit.frontend.default.notifier'] = true;
+        $this->fetchit()->loadScript('abc');
+        preg_match('/\.create\((\{.*?\})\);/', $this->modx->htmlBlocks[0], $match);
+        $config = json_decode($match[1], true);
+
+        $this->assertTrue($config['defaultNotifier']);
+        $this->assertSame('fetchit_notifier_close', $config['notifierCloseLabel']);
     }
 
     public function testNothingIsInjectedWhenTheSnippetDidNotRun()

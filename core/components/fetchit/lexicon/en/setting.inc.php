@@ -6,8 +6,8 @@ $_lang['setting_fetchit.frontend.js'] = 'The JavaScript file to include on the f
 $_lang['setting_fetchit.frontend.js.classname'] = 'The JavaScript class name whose instance will be responsible for form processing. The default value is "FetchIt".';
 $_lang['setting_fetchit.frontend.input.invalid.class'] = 'CSS class that will be added to invalid input field.';
 $_lang['setting_fetchit.frontend.custom.invalid.class'] = 'CSS class that will be added to invalid custom element.';
-$_lang['setting_fetchit.frontend.default.notifier'] = 'Load the default notification library.';
-$_lang['setting_fetchit.frontend.default.notifier_desc'] = 'If you select "Yes", FetchIt will load notification library <a href="https://carlosroso.com/notyf/">Notyf</a>.';
+$_lang['setting_fetchit.frontend.default.notifier'] = 'Show the answers as notifications.';
+$_lang['setting_fetchit.frontend.default.notifier_desc'] = 'If "Yes", the answers of the server are also shown as notifications in a corner of the page, unless the site sets its own FetchIt.Message. The notifier is part of the FetchIt script: no other files are loaded.';
 
 $_lang['area_fetchit_protection'] = 'Spam protection';
 $_lang['setting_fetchit.protection'] = 'Spam protection';
