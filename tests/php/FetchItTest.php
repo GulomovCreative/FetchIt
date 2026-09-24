@@ -560,4 +560,74 @@ class FetchItTest extends TestCase
         }
         $this->fail("Nothing logged about \"{$needle}\": " . json_encode($messages));
     }
+
+
+    /**
+     * What FormIt 5.2+ does on a page view: keeps its properties for its
+     * own action.php and links formit.js.
+     */
+    private function formItWithAjax($token)
+    {
+        $this->modx->options['formit.frontend_js'] = 'js/web/formit.js';
+
+        return $this->addSnippet('FormIt', function ($properties) use ($token) {
+            $prefix = isset($properties['placeholderPrefix']) ? $properties['placeholderPrefix'] : 'fi.';
+            $_SESSION['formit'][$token] = $properties;
+            $this->modx->cacheManager->set('formit/props_' . $token, $properties);
+            $this->modx->setPlaceholder($prefix . 'ajaxToken', $token);
+            $this->modx->regClientScript('/assets/components/formit/js/web/formit.js');
+            $this->modx->regClientScript('<script>Object.assign(FormIt,{"actionUrl":"/assets/components/formit/action.php"});</script>', true);
+
+            return '';
+        });
+    }
+
+    public function testTheAjaxModeOfFormItIsTurnedOff()
+    {
+        $token = str_repeat('ab', 16);
+        $this->formItWithAjax($token);
+        $this->modx->regClientScript('/assets/site.js');
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'FormIt', 'placeholderPrefix' => 'form.']);
+
+        $fetchit->process('abc', []);
+
+        $this->assertArrayNotHasKey($token, $_SESSION['formit'], 'No properties for the action.php of FormIt in the session');
+        $this->assertArrayNotHasKey('formit/props_' . $token, $this->modx->cacheManager->items, 'nor in the cache');
+        $this->assertArrayNotHasKey('form.ajaxToken', $this->modx->placeholders);
+        $this->assertSame(['<script src="/assets/site.js"></script>'], $this->modx->jscripts, 'formit.js is not linked; other scripts stay');
+        $this->assertSame(['/assets/site.js' => true], $this->modx->loadedjscripts);
+    }
+
+    public function testFormItJsLinkedBeforeByAnotherFormStays()
+    {
+        // A FormIt form of its own on the same page, called before FetchIt.
+        $this->modx->regClientScript('/assets/components/formit/js/web/formit.js');
+        $this->formItWithAjax(str_repeat('cd', 16));
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'FormIt']);
+
+        $fetchit->process('abc', []);
+
+        $this->assertSame(['<script src="/assets/components/formit/js/web/formit.js"></script>'], $this->modx->jscripts);
+        $this->assertArrayNotHasKey('fi.ajaxToken', $this->modx->placeholders);
+    }
+
+    public function testFormItWithoutAjaxIsLeftAlone()
+    {
+        // FormIt before 5.2.
+        $this->addSnippet('FormIt', function () {
+            $this->modx->setPlaceholder('fi.name', 'Ann');
+
+            return '';
+        });
+        $this->modx->regClientScript('/assets/site.js');
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'FormIt']);
+
+        $fetchit->process('abc', []);
+
+        $this->assertSame('Ann', $this->modx->placeholders['fi.name']);
+        $this->assertSame(['<script src="/assets/site.js"></script>'], $this->modx->jscripts);
+    }
 }
