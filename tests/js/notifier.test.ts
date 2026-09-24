@@ -97,10 +97,10 @@ describe('the built-in notifier', () => {
     expect(document.head.firstElementChild).toBe(styles[0])
     // One class: stronger than button { ... } of the site, weaker than its classes.
     expect(styles[0]!.textContent).toContain('\n.fetchit-toast__close {')
-    // green-700 and red-600 of Tailwind CSS 4, with hex for browsers without oklch().
-    expect(styles[0]!.textContent).toContain('var(--fetchit-toast-success, #008236)')
-    expect(styles[0]!.textContent).toContain('var(--fetchit-toast-success, oklch(52.7% 0.154 150.069))')
-    expect(styles[0]!.textContent).toContain('var(--fetchit-toast-error, oklch(57.7% 0.245 27.325))')
+    // Pastel colours of Tailwind CSS 4, with hex for browsers without oklch().
+    expect(styles[0]!.textContent).toContain('var(--fetchit-toast-success-bg, #dcfce7)')
+    expect(styles[0]!.textContent).toContain('var(--fetchit-toast-success-bg, oklch(96.2% 0.044 156.743))')
+    expect(styles[0]!.textContent).toContain('var(--fetchit-toast-error-text, oklch(44.4% 0.177 26.899))')
   })
 
   it('says so when a Content-Security-Policy blocks its styles', () => {

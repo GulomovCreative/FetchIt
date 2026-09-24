@@ -6,10 +6,10 @@
 // The styles use single class selectors: they win over the site's rules for
 // bare elements (button { ... }) and lose to any class rule of the site that
 // comes later. Rules inside @layer (Tailwind 4) lose to them; the colours
-// are CSS variables for that: --fetchit-toast-color, --fetchit-toast-success,
-// --fetchit-toast-error. By default they are the colours of Tailwind CSS 4
-// with enough contrast for white text: green-700 and red-600, in oklch()
-// where the browser knows it and in hex elsewhere.
+// are CSS variables for that: --fetchit-toast-{success,error}-{bg,text,border}.
+// By default they are pastel colours of Tailwind CSS 4, as in its alerts:
+// the 100 shade for the background, 200 for the border and 800 for the text,
+// green and red, in oklch() where the browser knows it and in hex elsewhere.
 //
 // Screen readers hear a toast through two live regions that exist, empty,
 // from the start, since a region added together with its text is often not
@@ -37,14 +37,26 @@ const CSS = `
 }
 .fetchit-toast {
   display: flex; align-items: flex-start; gap: .75rem; margin: 0; padding: .75rem 1rem; border-radius: .5rem;
-  color: var(--fetchit-toast-color, #fff); background: var(--fetchit-toast-success, #008236);
-  box-shadow: 0 .25rem 1rem rgb(0 0 0 / .2); line-height: 1.4; pointer-events: auto;
+  color: var(--fetchit-toast-success-text, #016630); background: var(--fetchit-toast-success-bg, #dcfce7);
+  border: 1px solid var(--fetchit-toast-success-border, #b9f8cf);
+  box-shadow: 0 .25rem .75rem rgb(0 0 0 / .08); line-height: 1.4; pointer-events: auto;
   animation: fetchit-toast-in .2s ease-out;
 }
-.fetchit-toast:where([data-type="error"]) { background: var(--fetchit-toast-error, #e7000b); }
+.fetchit-toast:where([data-type="error"]) {
+  color: var(--fetchit-toast-error-text, #9f0712); background: var(--fetchit-toast-error-bg, #ffe2e2);
+  border-color: var(--fetchit-toast-error-border, #ffc9c9);
+}
 @supports (color: oklch(0% 0 0)) {
-  .fetchit-toast { background: var(--fetchit-toast-success, oklch(52.7% 0.154 150.069)); }
-  .fetchit-toast:where([data-type="error"]) { background: var(--fetchit-toast-error, oklch(57.7% 0.245 27.325)); }
+  .fetchit-toast {
+    color: var(--fetchit-toast-success-text, oklch(44.8% 0.119 151.328));
+    background: var(--fetchit-toast-success-bg, oklch(96.2% 0.044 156.743));
+    border-color: var(--fetchit-toast-success-border, oklch(92.5% 0.084 155.995));
+  }
+  .fetchit-toast:where([data-type="error"]) {
+    color: var(--fetchit-toast-error-text, oklch(44.4% 0.177 26.899));
+    background: var(--fetchit-toast-error-bg, oklch(93.6% 0.032 17.717));
+    border-color: var(--fetchit-toast-error-border, oklch(88.5% 0.062 18.334));
+  }
 }
 .fetchit-toast__text { flex: 1; overflow-wrap: anywhere; }
 .fetchit-toast__close {
