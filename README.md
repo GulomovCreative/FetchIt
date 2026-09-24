@@ -16,7 +16,7 @@ FetchIt не тянет внешних JS-библиотек. У AjaxForm их �
 
 ## Современный код
 
-Минифицированный скрипт весит около 13 КБ, в gzip около 5 КБ, вместе с proof-of-work и адаптерами капч. Сниппет подключает его с атрибутом `defer`, чтобы не блокировать загрузку страницы. На фронте — нативный Fetch API и `FormData` (включая файлы).
+Минифицированный скрипт весит около 15 КБ, в gzip около 6 КБ, вместе с proof-of-work, адаптерами капч и уведомлениями. Других файлов он не подключает. Сниппет подключает его с атрибутом `defer`, чтобы не блокировать загрузку страницы. На фронте — нативный Fetch API и `FormData` (включая файлы).
 
 ## Удобство
 
@@ -28,11 +28,47 @@ FetchIt не тянет внешних JS-библиотек. У AjaxForm их �
 - **Свой сниппет.** В `&snippet` указываете обработчик, который возвращает JSON (`success`, `message`, `data`).
 - **Ошибки полей.** Элементы с `data-error="fieldName"` получают текст валидации; к полям можно повесить CSS-классы из системных настроек.
 - **События.** `fetchit:before` (можно отменить отправку и дополнить `FormData`), `fetchit:after`, `fetchit:success`, `fetchit:error`, `fetchit:reset`.
-- **Уведомления.** Свой `FetchIt.Message` или встроенный [Notyf](https://carlosroso.com/notyf/) через настройку `fetchit.frontend.default.notifier`.
+- **Уведомления.** Свой `FetchIt.Message` или встроенные уведомления через настройку `fetchit.frontend.default.notifier`, без сторонних библиотек.
+- **Типы для TypeScript.** Рядом со скриптом лежит `fetchit.d.ts`: `window.FetchIt`, конфигурация, `FetchIt.Message` и события с их `detail`.
 - **Несколько форм на странице.** Каждый вызов сниппета получает свой ключ `data-fetchit`, каждая форма свой экземпляр обработчика.
 - **Защита от спама.** Включена по умолчанию: одноразовый подписанный токен, минимальное время заполнения, скрытое поле-ловушка и лимит отправок, и при отправке через FetchIt, и без JavaScript. Свои правила добавляются плагином на событие `OnFetchItBeforeProcess`.
 - **Очистка после успеха.** Параметр `&clearFieldsOnSuccess` (по умолчанию включён).
 - **Fenom.** Вызов через pdoTools/`{'!FetchIt' | snippet}` поддерживается.
+
+## Уведомления
+
+С настройкой `fetchit.frontend.default.notifier` ответы сервера показываются ещё и уведомлениями в углу страницы. Ошибка объявляется программам экранного доступа сразу (`role="alert"`), успех в свою очередь (`role="status"`). Уведомление закрывается кнопкой или само через 6 секунд, но не пока на нём курсор или фокус. Одновременно видно не больше трёх.
+
+Стили встроены с нулевой специфичностью (`:where()`), так что любое правило сайта их перекрывает. Цвета проще поменять переменными:
+
+```css
+.fetchit-toasts {
+  --fetchit-toast-color: #fff;
+  --fetchit-toast-success: #1b6e37;
+  --fetchit-toast-error: #b3261e;
+}
+```
+
+Свой `FetchIt.Message` важнее настройки. Встроенные уведомления можно включить и из своего скрипта, например с другой подписью кнопки или временем показа: `FetchIt.Message = FetchIt.createNotifier({ closeLabel: 'Закрыть', duration: 4000 })`.
+
+## TypeScript
+
+Типы лежат в `assets/components/fetchit/js/fetchit.d.ts`. Скопируйте файл в проект или подключите его:
+
+```ts
+/// <reference path="../assets/components/fetchit/js/fetchit.d.ts" />
+
+document.addEventListener('fetchit:error', event => {
+  // response равен null, если запрос не удался; тогда причина в event.detail.error
+  if (event.detail.response === null) {
+    console.error(event.detail.error)
+  }
+})
+
+FetchIt.instances.get(document.forms[0])?.setError('email', 'Проверьте адрес')
+```
+
+Скрипт собирается по этому же файлу, так что типы и код не расходятся.
 
 Минимальный вызов:
 
@@ -157,14 +193,12 @@ FetchIt 4 это один пакет для MODX 2.8 и MODX 3 вместо ли
 ```sh
 npm ci && composer install
 
-npm run build       # src/index.ts → assets/components/fetchit/js/, Notyf → assets/components/fetchit/lib/
+npm run build       # src/ → assets/components/fetchit/js/: скрипт и fetchit.d.ts
 npm run lint        # oxlint
-npm run typecheck   # tsc
+npm run typecheck   # tsc: код и публичные типы глазами сайта (tests/types)
 npm test            # Vitest
 vendor/bin/phpunit  # PHPUnit
 ```
-
-`npm run build` нужен и перед сборкой пакета: папки `lib/` нет в git, без неё `build.php` остановится с ошибкой.
 
 ## Локальные сайты
 
