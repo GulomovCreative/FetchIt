@@ -12,6 +12,14 @@ require_once dirname(__DIR__, 2) . '/vendor/autoload.php';
 
 class modX
 {
+    const LOG_LEVEL_FATAL = 0;
+    const LOG_LEVEL_ERROR = 1;
+    const LOG_LEVEL_WARN = 2;
+    const LOG_LEVEL_INFO = 3;
+
+    /** @var array[] [level, message] of every log() call */
+    public $logged = [];
+
     /** @var array */
     public $options = [
         'core_path' => '/srv/core/',
@@ -69,6 +77,11 @@ class modX
     public function toJSON($data)
     {
         return json_encode($data);
+    }
+
+    public function log($level, $message)
+    {
+        $this->logged[] = [$level, $message];
     }
 
     public function regClientHTMLBlock($html)
@@ -184,6 +197,17 @@ class FakeSnippet
 
         return call_user_func($this->handler, $properties);
     }
+}
+
+class xPDOTransport
+{
+    const PACKAGE_ACTION = 'package_action';
+    const ACTION_INSTALL = 0;
+    const ACTION_UPGRADE = 1;
+    const ACTION_UNINSTALL = 2;
+
+    /** @var modX */
+    public $xpdo;
 }
 
 require_once MODX_CORE_PATH . 'components/fetchit/model/fetchit.class.php';

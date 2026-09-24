@@ -26,7 +26,8 @@ if (empty($_POST)) {
 } elseif (empty($_SERVER['HTTP_X_FETCHIT_ACTION'])) {
     echo $FetchIt->error('fetchit_err_action_ns');
 } else {
-    // $_REQUEST would also carry cookies into the fields of the form.
+    // Only the posted form: $_REQUEST may also hold GET values and, with
+    // request_order allowing it, cookies.
     echo $FetchIt->process($_SERVER['HTTP_X_FETCHIT_ACTION'], array_merge($_FILES, $_POST));
 }
 

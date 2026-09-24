@@ -9,9 +9,10 @@ class FetchIt
     public $config;
 
     /**
-     * Set by loadScript() when a form is on the page, so the plugin adds the
-     * scripts at OnWebPagePrerender of the same request. Not in the session:
-     * sites without anonymous sessions got no scripts at all.
+     * Set by loadScript() when the snippet puts a form on the page, so the
+     * plugin adds the scripts at OnWebPagePrerender of the same request.
+     * Kept per request, not in the session, which may not exist. Only an
+     * uncached call ([[!FetchIt]]) sets it on every page view.
      *
      * @var bool
      */
@@ -58,6 +59,10 @@ class FetchIt
     /**
      * Give every form in the chunk the POST method and the action key.
      *
+     * The form tag loses any method and data-fetchit of its own, and gets
+     * method="post" and data-fetchit="$action" as its last attributes. The
+     * rest of the tag and everything inside the form stay as they are.
+     *
      * @param string $html
      * @param string $action
      *
@@ -65,21 +70,48 @@ class FetchIt
      */
     public function prepareForm($html, $action)
     {
-        return preg_replace_callback('#<form(?=[\s>])([^>]*)>#i', function ($match) use ($action) {
-            $attributes = preg_replace(
-                '#\s+(?:method|data-fetchit)\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s>]*)#i',
-                '',
-                $match[1]
-            );
+        // A quoted value may hold ">" (Alpine, Vue, inline handlers).
+        $tag = '#<form(?=[\s>/])((?:[^>"\']|"[^"]*"|\'[^\']*\')*)>#i';
+        // One attribute with an optional value; values are taken whole, so
+        // "method=" inside another attribute's value is never matched.
+        $attribute = '#(\s+)([^\s"\'>/=]+)(\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s"\'=<>`]+))?#';
+
+        $result = preg_replace_callback($tag, function ($match) use ($action, $attribute) {
+            $attributes = preg_replace_callback($attribute, function ($pair) {
+                return in_array(strtolower($pair[2]), ['method', 'data-fetchit'], true) ? '' : $pair[0];
+            }, $match[1]);
+            if ($attributes === null) {
+                $attributes = $match[1];
+            }
 
             return substr($match[0], 0, 5) . rtrim($attributes)
                 . ' method="post" data-fetchit="' . htmlspecialchars($action, ENT_QUOTES) . '">';
         }, $html);
+
+        if ($result === null) {
+            $this->modx->log(modX::LOG_LEVEL_ERROR, '[FetchIt] Could not prepare the form: ' . $this->pcreError());
+
+            return $html;
+        }
+
+        return $result;
     }
 
 
     /**
-     * Independent registration of JavaScripts
+     * @return string
+     */
+    protected function pcreError()
+    {
+        return function_exists('preg_last_error_msg') ? preg_last_error_msg() : 'PCRE error ' . preg_last_error();
+    }
+
+
+    /**
+     * Flag this request for registerScript() and add the inline call that
+     * initialises the forms with this action.
+     *
+     * @param string $action
      */
     public function loadScript($action)
     {
@@ -99,14 +131,16 @@ class FetchIt
                 : 0,
         ]);
         $js_classname = trim($this->modx->getOption('fetchit.frontend.js.classname', null, 'FetchIt', true));
-        $this->modx->regClientHTMLBlock("<script>window.addEventListener('DOMContentLoaded', () => {$js_classname}.create($config));</script>");
+        // Without the script (a cached snippet call, a page without <head>)
+        // the form falls back to a normal submit instead of a ReferenceError.
+        $this->modx->regClientHTMLBlock("<script>window.addEventListener('DOMContentLoaded', () => window.{$js_classname} ? {$js_classname}.create($config) : console.error('FetchIt: {$js_classname} is not loaded'));</script>");
     }
 
 
     /**
-     * Registers the main script first
+     * Called by the plugin at OnWebPagePrerender: add the frontend script
+     * (and the notifier) to <head> once, if loadScript() ran in this request.
      */
-
     public function registerScript()
     {
         if (!self::$scriptRequested) {
@@ -115,7 +149,9 @@ class FetchIt
         self::$scriptRequested = false;
 
         $js = trim($this->config['frontend_js']);
-        if (!preg_match('/\.js/i', $js)) {
+        if (!preg_match('/\.m?js(?:[?#]|$)/i', $js)) {
+            $this->modx->log(modX::LOG_LEVEL_ERROR, "[FetchIt] fetchit.frontend.js is not a JavaScript file: \"{$js}\"; no script added");
+
             return;
         }
 
@@ -129,12 +165,16 @@ class FetchIt
         }
 
         $output = &$this->modx->resource->_output;
-        if (!preg_match('#<head\b[^>]*>(.*?)</head>#is', $output, $head, PREG_OFFSET_CAPTURE)) {
+        $found = preg_match('#<head\b[^>]*>(.*?)</head>#is', $output, $head, PREG_OFFSET_CAPTURE);
+        if (!$found) {
+            $reason = $found === false ? $this->pcreError() : 'the page has no <head>';
+            $this->modx->log(modX::LOG_LEVEL_ERROR, "[FetchIt] Could not add the script to resource {$this->modx->resource->get('id')}: {$reason}");
+
             return;
         }
 
-        // Before the first script of <head>, so page scripts can use FetchIt;
-        // otherwise at the end of <head>.
+        // Before the first script of <head>, so later deferred scripts run
+        // after FetchIt; otherwise at the end of <head>.
         $position = $head[1][1] + strlen($head[1][0]);
         if (preg_match('#<script\b#i', $head[1][0], $script, PREG_OFFSET_CAPTURE)) {
             $position = $head[1][1] + $script[0][1];
@@ -271,7 +311,8 @@ class FetchIt
 
         $value = strip_tags(html_entity_decode((string)$this->modx->placeholders[$key], ENT_QUOTES | ENT_HTML5, 'UTF-8'));
 
-        // &nbsp; decodes to U+00A0, which trim() keeps.
+        // &nbsp; decodes to U+00A0, which trim() keeps. preg_replace()
+        // returns null on invalid UTF-8.
         $trimmed = preg_replace('/^[\s\x{00A0}]+|[\s\x{00A0}]+$/u', '', $value);
 
         return $trimmed === null ? trim($value) : $trimmed;

@@ -121,6 +121,33 @@ class FetchItTest extends TestCase
         $this->assertSame("<FORM\n  action=\"/x\" method=\"post\" data-fetchit=\"abc\"><form-field></form-field></FORM>", $html);
     }
 
+    public function testGreaterThanInsideAValueDoesNotEndTheTag()
+    {
+        $html = $this->fetchit()->prepareForm(
+            '<form x-data="{ step: 1 }" @submit="step > 1 && send()" onsubmit=\'return a>b\' class="f">',
+            'abc'
+        );
+
+        $this->assertSame(
+            '<form x-data="{ step: 1 }" @submit="step > 1 && send()" onsubmit=\'return a>b\' class="f" method="post" data-fetchit="abc">',
+            $html
+        );
+    }
+
+    public function testAttributeNamesInsideValuesAreLeftAlone()
+    {
+        $html = $this->fetchit()->prepareForm('<form class="a method=get" title=\'data-fetchit="x"\'>', 'abc');
+
+        $this->assertSame('<form class="a method=get" title=\'data-fetchit="x"\' method="post" data-fetchit="abc">', $html);
+    }
+
+    public function testBareAndUnquotedAttributesAreReplaced()
+    {
+        $html = $this->fetchit()->prepareForm('<form data-fetchit METHOD=GET class=f>', 'abc');
+
+        $this->assertSame('<form class=f method="post" data-fetchit="abc">', $html);
+    }
+
     public function testEveryFormInTheChunkIsPrepared()
     {
         $html = $this->fetchit()->prepareForm('<form></form><form></form>', 'abc');
@@ -448,10 +475,48 @@ class FetchItTest extends TestCase
         $this->assertMatchesRegularExpression('#fetchit\.js[^"]*" defer></script>\s*</head>#', $html);
     }
 
-    public function testPageWithoutHeadIsLeftAlone()
+    public function testPageWithoutHeadIsLeftAloneAndLogged()
     {
-        $page = '{"json":"response"}';
+        $page = '<div>no head</div>';
 
         $this->assertSame($page, $this->render($page));
+        $this->assertLogged('no <head>');
+    }
+
+    public function testScriptThatIsNotJavaScriptIsLogged()
+    {
+        $page = '<html><head></head><body></body></html>';
+
+        $this->assertSame($page, $this->render($page, ['fetchit.frontend.js' => '/assets/app.css']));
+        $this->assertLogged('fetchit.frontend.js');
+    }
+
+    public function testModuleScriptIsAccepted()
+    {
+        $html = $this->render('<html><head></head></html>', ['fetchit.frontend.js' => '/assets/forms.mjs?x=1']);
+
+        $this->assertStringContainsString('src="/assets/forms.mjs?x=1?v=', $html);
+    }
+
+    public function testInitialisationWaitsForTheScript()
+    {
+        // Without the script (a cached call, a missing <head>) the page must
+        // not throw a ReferenceError.
+        $this->fetchit()->loadScript('abc');
+
+        $this->assertStringContainsString('window.FetchIt ? FetchIt.create(', $this->modx->htmlBlocks[0]);
+    }
+
+    private function assertLogged($needle)
+    {
+        $messages = array_column($this->modx->logged, 1);
+        foreach ($messages as $message) {
+            if (strpos($message, $needle) !== false) {
+                $this->addToAssertionCount(1);
+
+                return;
+            }
+        }
+        $this->fail("Nothing logged about \"{$needle}\": " . json_encode($messages));
     }
 }
