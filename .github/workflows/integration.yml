@@ -74,8 +74,10 @@ jobs:
           cat fixtures.json
 
       - name: Start the web server
+        # request_order=GPC puts cookies into $_REQUEST, as on servers without
+        # a php.ini. The cookie check in smoke.sh only bites with it.
         run: |
-          php -S 127.0.0.1:8080 -t "$MODX_ROOT" > server.log 2>&1 &
+          php -d request_order=GPC -S 127.0.0.1:8080 -t "$MODX_ROOT" > server.log 2>&1 &
           for _ in $(seq 1 30); do curl -s -o /dev/null "$BASE_URL/" && break; sleep 1; done
 
       - name: HTTP checks
@@ -83,6 +85,14 @@ jobs:
           # The setup resolver installs FormIt together with FetchIt.
           REQUIRE_FORMIT: 1
         run: _build/ci/smoke.sh "$BASE_URL" "$(cat fixtures.json)"
+
+      - name: HTTP checks without anonymous sessions
+        env:
+          REQUIRE_FORMIT: 1
+        run: |
+          php _build/ci/setting.php anonymous_sessions 0
+          _build/ci/smoke.sh "$BASE_URL" "$(cat fixtures.json)"
+          php _build/ci/setting.php anonymous_sessions 1
 
       - uses: actions/setup-node@v7
         with:

@@ -6,6 +6,10 @@
 # Usage: smoke.sh <base url> <fixtures json from fixtures.php>
 #
 # REQUIRE_FORMIT=1 fails the run when FormIt did not get installed.
+#
+# Every submission carries a fetchit_probe cookie. Whether cookies reach
+# $_REQUEST depends on request_order, so the server should run with
+# request_order=GPC for the cookie check to mean anything.
 
 set -euo pipefail
 
@@ -23,22 +27,25 @@ check() {
 }
 
 # Prints the action key of the form on a page, keeping the session cookie.
+# Prints nothing when the page does not load or has no form.
 open_page() {
-    local html
-    html="$(curl -fsS -c "$jar" -b "$jar" "$base/index.php?id=$1")"
-    echo "$html" > "$jar.html"
-    grep -o 'data-fetchit="[0-9a-f]\{32\}"' "$jar.html" | head -n1 | cut -d'"' -f2
+    if ! curl -fsS -c "$jar" -b "$jar" -o "$jar.html" "$base/index.php?id=$1"; then
+        : > "$jar.html"
+        return 0
+    fi
+    grep -o 'data-fetchit="[0-9a-f]\{32\}"' "$jar.html" | head -n1 | cut -d'"' -f2 || true
 }
 
+# Prints the answer of action.php, or nothing when the request fails.
 submit() {
     local action="$1"; shift
-    curl -fsS -c "$jar" -b "$jar" \
+    curl -fsS -c "$jar" -b "$jar" -b "fetchit_probe=1" \
         -H "Accept: application/json" \
         -H "X-FetchIt-Action: $action" \
-        "$@" "$base/assets/components/fetchit/action.php"
+        "$@" "$base/assets/components/fetchit/action.php" || true
 }
 
-json() { jq -e "$1" > /dev/null <<< "$2"; }
+json() { jq -e "$1" > /dev/null 2>&1 <<< "$2"; }
 
 custom="$(jq -r '.custom' <<< "$fixtures")"
 formit="$(jq -r '.formit // empty' <<< "$fixtures")"
@@ -63,7 +70,7 @@ check "cookies do not reach the form fields" json '.data.cookies == []' "$respon
 response="$(submit 0123456789abcdef0123456789abcdef -F email=ann@example.com)"
 check "an unknown action is refused" json '.success == false' "$response"
 
-response="$(curl -fsS -H "Accept: application/json" -F email=a "$base/assets/components/fetchit/action.php")"
+response="$(curl -fsS -H "Accept: application/json" -F email=a "$base/assets/components/fetchit/action.php" || true)"
 check "a request without the action header is refused" json '.success == false' "$response"
 
 if [ -n "$formit" ]; then
