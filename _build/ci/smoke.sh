@@ -134,6 +134,9 @@ if [ -n "$formit" ]; then
     echo "# Page processed by FormIt (id $formit)"
     action="$(open_page "$formit")"
     check "the FormIt form gets a data-fetchit key" test -n "$action"
+    # FormIt 5.2+ links its own AJAX script, whose action.php would process
+    # the form without the protection; FetchIt turns it off.
+    check "the AJAX script of FormIt is not linked" lacks 'formit/js/web/formit\.js\|Object\.assign(FormIt' "$jar.html"
 
     response="$(submit "$action" -F name=Ann -F email=not-an-email -F "pageId=$formit")"
     check "FormIt rejects an invalid email" json '.success == false and (.data.email | length > 0)' "$response"
