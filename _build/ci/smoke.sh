@@ -101,23 +101,33 @@ fi
 
 echo "# Spam protection (id $custom)"
 action="$(open_page "$custom")"
+trap="$(trap_name)"
 check "the form carries a token" test -s "$jar.token"
-check "the form carries the trap" grep -q 'name="fetchit_website"' "$jar.html"
+check "the form carries the trap" test -n "$trap"
+check "the trap has no name autofill knows" lacks 'name="fetchit_website"' "$jar.html"
 used="$(cat "$jar.token")"
 response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom")"
 check "a token passes once" json '.success == true' "$response"
+check "the service fields do not reach the snippet or \$_POST" json '.data.service == []' "$response"
 check "the answer brings the next token" test "$(cat "$jar.token")" != "$used"
 printf '%s' "$used" > "$jar.token"
 response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom")"
 check "a used token is refused" json '.success == false' "$response"
+check "... as a stale token" test "$(header x-fetchit-refused)" = token
+check "... with a new token to send again" test -n "$(header x-fetchit-token)"
 : > "$jar.token"
 response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom")"
 check "a submission without a token is refused" json '.success == false' "$response"
-check "a refusal brings a token to try again" test -s "$jar.token"
-response="$(submit "$action" -F email=ann@example.com -F "fetchit_website=http://spam.example" -F "pageId=$custom")"
-check "the trap gets a success that sends nothing" json '.success == true and (.message | startswith("Thanks") | not)' "$response"
+check "... and gets no token" test -z "$(header x-fetchit-token)"
+printf '%s' "${used%.*}.$(printf '0%.0s' $(seq 1 64))" > "$jar.token"
+response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom")"
+check "a forged signature is refused and gets no token" test -z "$(header x-fetchit-token)"
+action="$(open_page "$custom")"
+response="$(submit "$action" -F email=ann@example.com -F "$trap=http://spam.example" -F "pageId=$custom")"
+check "the trap gets a success that does not reach the snippet" json '.success == true and (.message | startswith("Thanks") | not)' "$response"
 response="$(submit "$action" -F email=blocked@example.com -F "pageId=$custom")"
 check "a plugin on OnFetchItBeforeProcess refuses" json '.success == false and .message == "Blocked by a plugin"' "$response"
+check "... as a plugin" test "$(header x-fetchit-refused)" = plugin
 
 if [ -n "$formit" ]; then
     echo "# Page processed by FormIt (id $formit)"
@@ -133,6 +143,7 @@ if [ -n "$formit" ]; then
     echo "# A form sent without JavaScript (id $formit)"
     open_page "$formit" > /dev/null
     curl -fsS -c "$jar" -b "$jar" -o "$jar.html" -F name=Ann -F email=not-an-email "$base/index.php?id=$formit" || : > "$jar.html"
+    check "the page renders after a POST without a token" grep -q 'data-fetchit="' "$jar.html"
     check "a POST without a token does not reach FormIt" lacks 'data-error="email">[^<]' "$jar.html"
     curl -fsS -c "$jar" -b "$jar" -o "$jar.html" -F "fetchit_token=$(cat "$jar.token")" \
         -F name=Ann -F email=not-an-email "$base/index.php?id=$formit" || : > "$jar.html"

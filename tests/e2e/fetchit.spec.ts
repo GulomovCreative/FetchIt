@@ -66,7 +66,8 @@ test.describe('spam protection', () => {
   })
 
   test('hides the trap from people', async ({ page }) => {
-    const trap = page.locator('input[name="fetchit_website"]')
+    // Its name is random per installation.
+    const trap = page.locator('input[name^="fetchit_"]:not([name="fetchit_token"])')
 
     await expect(trap).toHaveCount(1)
     await expect(trap).not.toBeInViewport()
@@ -86,6 +87,40 @@ test.describe('spam protection', () => {
     await email.fill('second@example.com')
     await send.click()
     await expect(page.locator('[data-success]')).toHaveText('Thanks, second@example.com')
+  })
+})
+
+test.describe('stale token', () => {
+  test('a used token is replaced without the visitor noticing', async ({ page }) => {
+    // As on a page from a full-page cache: its token was used by someone else.
+    await page.goto(`/index.php?id=${fixtures.custom}`)
+    const token = page.locator('input[name="fetchit_token"]')
+    const stale = await token.inputValue()
+    await page.locator('input[name="email"]').fill('first@example.com')
+    await page.getByRole('button', { name: 'Send' }).click()
+    await expect(page.locator('[data-success]')).toHaveText('Thanks, first@example.com')
+
+    await token.evaluate((input, value) => { (input as HTMLInputElement).value = value }, stale)
+    await page.locator('input[name="email"]').fill('second@example.com')
+    await page.getByRole('button', { name: 'Send' }).click()
+
+    await expect(page.locator('[data-success]')).toHaveText('Thanks, second@example.com')
+  })
+})
+
+test.describe('fill time @timing', () => {
+  test('a visitor fixing a field right after an error is not refused', async ({ page }) => {
+    await page.goto(`/index.php?id=${fixtures.custom}`)
+    await page.waitForTimeout(3500)
+
+    await page.getByRole('button', { name: 'Send' }).click()
+    await expect(page.locator('[data-error="email"]')).toHaveText('Email is required')
+
+    // Right away: the next token keeps the time the page was loaded.
+    await page.locator('input[name="email"]').fill('ann@example.com')
+    await page.getByRole('button', { name: 'Send' }).click()
+
+    await expect(page.locator('[data-success]')).toHaveText('Thanks, ann@example.com')
   })
 })
 

@@ -87,8 +87,8 @@ fixture_element($modx, 'modChunk', 'tpl.FetchIt.test', 'snippet', <<<'HTML'
   <span data-error="topics"></span>
   <input type="file" name="attachment">
   <button type="submit">Send</button>
-  <div data-success style="display: none"></div>
-  <div data-validation-error style="display: none"></div>
+  <div data-success style="display: [[+fi.success:is=`1`:then=``:else=`none`]]">[[+fi.successMessage]]</div>
+  <div data-validation-error style="display: [[+fi.validation_error:is=`1`:then=``:else=`none`]]">[[+fi.validation_error_message]]</div>
 </form>
 HTML
 );
@@ -115,10 +115,22 @@ $file = isset($fields['attachment']['name']) && $fields['attachment']['name'] !=
     ? $fields['attachment']['name'] . ':' . (int)$fields['attachment']['size']
     : null;
 
+// The service fields of the protection must not reach the snippet, nor
+// $_POST, which FormIt reads for its e-mails.
+// ($_REQUEST may also hold the cookies; those are checked above.)
+$service = [];
+foreach ([$fields, $_POST, array_diff_key($_REQUEST, $_COOKIE)] as $source) {
+    foreach (array_keys($source) as $key) {
+        if (strpos($key, 'fetchit_') === 0) {
+            $service[] = $key;
+        }
+    }
+}
+
 return json_encode([
     'success' => true,
     'message' => 'Thanks, ' . $email,
-    'data' => ['cookies' => $leaked, 'topics' => $topics, 'file' => $file],
+    'data' => ['cookies' => $leaked, 'topics' => $topics, 'file' => $file, 'service' => $service],
 ]);
 PHP
 );
