@@ -18,6 +18,8 @@
 #               (the secret that always passes): the page links the script of
 #               Turnstile, a form without an answer is refused, and one with
 #               the test answer passes. Needs access to Cloudflare.
+#   captcha-refused  the same with the secret that always fails: the answer
+#               is refused by Cloudflare itself, not taken for an outage.
 #
 # Refusals are recognised by the X-FetchIt-Refused header, whatever the
 # language of the site.
@@ -28,7 +30,7 @@ set -euo pipefail
 
 base="${1:?base URL is required}"
 fixtures="${2:?fixtures JSON is required}"
-what="${3:?too-fast, rate-limit, pow or captcha}"
+what="${3:?too-fast, rate-limit, pow, captcha or captcha-refused}"
 # shellcheck source=_build/ci/lib.sh
 . "$(dirname "$0")/lib.sh"
 
@@ -73,7 +75,8 @@ case "$what" in
         check "the page asks for 12 bits" grep -q '"pow":12' "$jar.html"
         response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom")"
         check "sent without a solution, it is refused" test "$(header x-fetchit-refused)" = pow
-        response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom" -F fetchit_pow=1)"
+        check "the refusal tells the script the difficulty" test "$(header x-fetchit-pow)" = 12
+        response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom" -F fetchit_pow=x)"
         check "sent with a wrong solution, it is refused" test "$(header x-fetchit-refused)" = pow
         solution="$(solve_pow "$(cat "$jar.token")" 12)"
         response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom" -F "fetchit_pow=$solution")"
@@ -88,6 +91,12 @@ case "$what" in
         check "sent without an answer, it is refused" test "$(header x-fetchit-refused)" = captcha
         response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom" -F cf-turnstile-response=XXXX.DUMMY.TOKEN.XXXX)"
         check "sent with the test answer, it passes" json '.success == true' "$response"
+        ;;
+    captcha-refused)
+        echo "# A form behind Turnstile that refuses every answer (id $custom)"
+        action="$(open_page "$custom")"
+        response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom" -F cf-turnstile-response=XXXX.DUMMY.TOKEN.XXXX)"
+        check "the answer is refused by the provider" test "$(header x-fetchit-refused)" = captcha
         ;;
     *)
         echo "Unknown check: $what" >&2

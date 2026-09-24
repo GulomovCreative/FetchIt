@@ -3,13 +3,16 @@
  * Create the pages the integration tests submit, and write their ids as JSON
  * to <output> (or print them):
  * {"modx": 2|3, "custom": <id>, "api": <id>, "probe": <id>, "formit": <id|null>,
- *  "pdotools": <id|null>, "installed": {"package": <signature>, "elements": <bool>}}
+ *  "mixed": <id|null>, "pdotools": <id|null>,
+ *  "installed": {"package": <signature>, "elements": <bool>}}
  *
  * "custom" is processed by a snippet of its own; "api" by a snippet that
  * gets FetchIt the way custom snippets did in 1.x (MODX 2) or 3.x (MODX 3);
  * "probe" shows what bootstrap.php set up before anything loaded FetchIt;
  * "formit" by FormIt and "pdotools" with a Fenom @FILE chunk, when FormIt
- * and pdoTools are installed. "installed" is the newest FetchIt package
+ * and pdoTools are installed. "mixed", when FormIt has an AJAX mode of its
+ * own (5.2 and later), has a form of FormIt itself in that mode next to a
+ * FetchIt form with FormIt, both with the placeholder prefix fi. "installed" is the newest FetchIt package
  * installed and whether the snippet and plugin in the database are the
  * FetchIt 4 ones (an upgrade replaced them). Exits non-zero when anything
  * cannot be saved.
@@ -192,6 +195,7 @@ $pages = [
     ),
     'probe' => fixture_page($modx, 'fetchit-probe', '[[!FetchItTestProbe]]'),
     'formit' => null,
+    'mixed' => null,
     'pdotools' => null,
 ];
 
@@ -245,6 +249,21 @@ if ($modx->getObject(modx_class('modSnippet'), ['name' => 'FormIt'])) {
         $modx,
         'fetchit-formit',
         '[[!FetchIt? &snippet=`FormIt` &form=`tpl.FetchIt.test` &validate=`email:email:required` &successMessage=`Sent`]]'
+    );
+}
+
+if ($pages['formit'] && trim((string)$modx->getOption('formit.frontend_js', null, '')) !== '') {
+    // The markup of the FormIt form comes after the FetchIt call, so its
+    // token placeholder is read after FetchIt ran FormIt too.
+    $pages['mixed'] = fixture_page(
+        $modx,
+        'fetchit-mixed',
+        '[[!FormIt? &validate=`own:required` &successMessage=`Own sent`]]'
+        . '[[!FetchIt? &snippet=`FormIt` &form=`tpl.FetchIt.test` &validate=`email:email:required` &successMessage=`Sent`]]'
+        . '<form id="own" method="post" data-formit-ajax-token="[[!+fi.ajaxToken]]">'
+        . '<input type="text" name="own" aria-label="Own"><button type="submit">Own</button>'
+        . '<div data-formit-success-message></div><div data-formit-error-message></div>'
+        . '</form>'
     );
 }
 

@@ -31,6 +31,7 @@ custom="$(jq -r '.custom' <<< "$fixtures")"
 api="$(jq -r '.api' <<< "$fixtures")"
 probe="$(jq -r '.probe' <<< "$fixtures")"
 formit="$(jq -r '.formit // empty' <<< "$fixtures")"
+mixed="$(jq -r '.mixed // empty' <<< "$fixtures")"
 pdotools="$(jq -r '.pdotools // empty' <<< "$fixtures")"
 
 echo "# Page with its own handler (id $custom)"
@@ -136,13 +137,20 @@ if [ -n "$formit" ]; then
     check "the FormIt form gets a data-fetchit key" test -n "$action"
     # FormIt 5.2+ links its own AJAX script, whose action.php would process
     # the form without the protection; FetchIt turns it off.
-    check "the AJAX script of FormIt is not linked" lacks 'formit/js/web/formit\.js\|Object\.assign(FormIt' "$jar.html"
+    check "the AJAX script of FormIt is not linked" page_lacks 'formit/js/web/formit\.js\|Object\.assign(FormIt'
 
     response="$(submit "$action" -F name=Ann -F email=not-an-email -F "pageId=$formit")"
     check "FormIt rejects an invalid email" json '.success == false and (.data.email | length > 0)' "$response"
 
     response="$(submit "$action" -F name=Ann -F email=ann@example.com -F "pageId=$formit")"
     check "FormIt accepts a valid email" json '.success == true and .message == "Sent"' "$response"
+
+    if [ -n "$mixed" ]; then
+        echo "# A form of FormIt in its AJAX mode next to a FetchIt form (id $mixed)"
+        open_page "$mixed" > /dev/null
+        check "the AJAX script of FormIt is linked for its own form" grep -q 'formit/js/web/formit\.js' "$jar.html"
+        check "the form of FormIt gets its own AJAX token" grep -q 'id="own" method="post" data-formit-ajax-token="[0-9a-f]\{32\}"' "$jar.html"
+    fi
 
     echo "# A form sent without JavaScript (id $formit)"
     open_page "$formit" > /dev/null
