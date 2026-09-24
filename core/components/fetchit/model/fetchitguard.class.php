@@ -13,14 +13,16 @@
  * keeps the time of the first render, so the fill time goes on counting.
  *
  * The checks, in this order, with protection on:
- * - the token belongs to the form, is well signed and not expired
- *   (fetchit.protection.token_ttl; 0 means 30 days) and not used;
+ * - the token belongs to the form and is well signed;
+ * - at most fetchit.protection.rate_limit submissions of a form per client
+ *   address within fetchit.protection.rate_window seconds, every attempt
+ *   with a well-signed token counted (in the MODX cache: approximate, and
+ *   reset by "Clear cache");
+ * - the token is not expired (fetchit.protection.token_ttl; 0 means 30
+ *   days) and not used;
  * - the trap, a hidden field only bots fill, gets a fake success;
  * - a form sent sooner than fetchit.protection.min_time seconds after it was
- *   rendered is refused;
- * - at most fetchit.protection.rate_limit submissions of a form per client
- *   address within fetchit.protection.rate_window seconds (counted in the
- *   MODX cache: approximate, and reset by "Clear cache").
+ *   rendered is refused.
  * Then plugins on OnFetchItBeforeProcess may refuse, also with protection off.
  *
  * Only a request that brought a well-signed token of the form gets the next
@@ -248,6 +250,15 @@ class FetchItGuard
             return $this->refuse('token', 'fetchit_err_token');
         }
 
+        // Every attempt with a well-signed token counts, used and expired ones
+        // too, before a next token or a mark: past the limit a replayed token
+        // mints nothing and writes nothing.
+        if (!$this->withinRateLimit($action)) {
+            $this->log(self::LOG_PROBLEMS, 'rate limit reached', $action);
+
+            return $this->refuse('rate', 'fetchit_err_rate');
+        }
+
         $age = $this->now() - $token['time'];
         $ttl = $this->ttl();
         $minTime = max(0, (int)$this->modx->getOption('fetchit.protection.min_time', null, 3));
@@ -288,12 +299,6 @@ class FetchItGuard
             $this->log(self::LOG_ALL, "sent {$age} s after the page was rendered", $action);
 
             return $this->refuse('too_fast', 'fetchit_err_too_fast');
-        }
-
-        if (!$this->withinRateLimit($action)) {
-            $this->log(self::LOG_PROBLEMS, 'rate limit reached', $action);
-
-            return $this->refuse('rate', 'fetchit_err_rate');
         }
 
         return null;
@@ -353,16 +358,27 @@ class FetchItGuard
 
 
     /**
-     * Delete the marks older than the token lifetime.
+     * Delete the marks older than the token lifetime from one of the 256
+     * shard directories (a random one by default), so that one run stays
+     * small however many marks there are.
+     *
+     * @param string|null $shard Two hex characters
      */
-    public function prune()
+    public function prune($shard = null)
     {
+        $shard = $shard === null ? sprintf('%02x', mt_rand(0, 255)) : $shard;
+        $dir = $this->marksPath() . $shard . '/';
+        $handle = @opendir($dir);
+        if ($handle === false) {
+            return;
+        }
         $before = time() - $this->ttl() - 60;
-        foreach (glob($this->marksPath() . '*/*') ?: [] as $file) {
-            if (@filemtime($file) < $before) {
-                @unlink($file);
+        while (($file = readdir($handle)) !== false) {
+            if ($file[0] !== '.' && @filemtime($dir . $file) < $before) {
+                @unlink($dir . $file);
             }
         }
+        closedir($handle);
     }
 
 
