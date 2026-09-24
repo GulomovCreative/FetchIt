@@ -14,7 +14,8 @@
     "test:watch": "vitest",
     "e2e": "playwright test",
     "typecheck": "tsc -p . && tsc -p tests/types",
-    "screenshots": "npm run build && node _build/screenshots.mjs"
+    "screenshots": "npm run build && node _build/screenshots.mjs",
+    "logo": "node _build/logo.mjs"
   },
   "keywords": [
     "MODX Extra"
