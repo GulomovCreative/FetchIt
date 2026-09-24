@@ -14,6 +14,27 @@ test.describe('form with its own handler', () => {
     await expect(page.locator('input[name="email"]')).toHaveAttribute('aria-invalid', 'true')
     await expect(page.locator('input[name="email"]')).toHaveClass(/is-invalid/)
     await expect(page.locator('[data-validation-error]')).toHaveText('Check the form')
+    await expect(page.locator('[data-error="topics"]')).toHaveText('Pick a topic')
+    await expect(page.locator('input[name="topics[]"]').first()).toHaveAttribute('aria-invalid', 'true')
+  })
+
+  test('sends checkboxes as an array and uploads a file', async ({ page }) => {
+    await page.locator('input[name="email"]').fill('ann@example.com')
+    await page.getByLabel('News').check()
+    await page.getByLabel('Events').check()
+    await page.locator('input[name="attachment"]').setInputFiles({
+      name: 'hello.txt',
+      mimeType: 'text/plain',
+      buffer: Buffer.from('hello'),
+    })
+
+    const answer = page.waitForResponse('**/action.php')
+    await page.getByRole('button', { name: 'Send' }).click()
+    const body = await (await answer).json()
+
+    expect(body.data.topics).toEqual(['news', 'events'])
+    expect(body.data.file).toBe('hello.txt:5')
+    await expect(page.locator('[data-success]')).toHaveText('Thanks, ann@example.com')
   })
 
   test('clears the error once the field changes', async ({ page }) => {
@@ -76,5 +97,22 @@ test.describe('form processed by FormIt', () => {
     await page.getByRole('button', { name: 'Send' }).click()
 
     await expect(page.locator('[data-success]')).toHaveText('Sent')
+  })
+})
+
+test.describe('default notifier @notifier', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto(`/index.php?id=${fixtures.custom}`)
+  })
+
+  test('links Notyf and shows the answers as toasts', async ({ page }) => {
+    await expect(page.locator('link[href*="lib/notyf.min.css"]')).toHaveCount(1)
+
+    await page.getByRole('button', { name: 'Send' }).click()
+    await expect(page.locator('.notyf__toast', { hasText: 'Check the form' })).toBeVisible()
+
+    await page.locator('input[name="email"]').fill('ann@example.com')
+    await page.getByRole('button', { name: 'Send' }).click()
+    await expect(page.locator('.notyf__toast', { hasText: 'Thanks, ann@example.com' })).toBeVisible()
   })
 })
