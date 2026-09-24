@@ -190,7 +190,3 @@ CI проверяет каждый PR: синтаксис PHP 7.4–8.4, PHPUnit
 3. Слить это в `master` и запушить тег: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 
 Workflow проверит версию, соберёт пакет, прогонит его на MODX 2 и 3 и только потом создаст GitHub-релиз с пакетом. Заметки к релизу собираются из коммитов `feat`, `fix`, `perf` и `refactor` ([conventional commits](https://www.conventionalcommits.org/ru/)); если таких нет, берётся раздел из changelog.
-
----
-
-💗 Угостить автора чашкой кофе: [cloudtips.ru](https://pay.cloudtips.ru/p/d4668b6e)
