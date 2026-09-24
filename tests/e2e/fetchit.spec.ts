@@ -140,8 +140,10 @@ test.describe('proof of work @pow', () => {
 test.describe('Turnstile @captcha', () => {
   test('the widget answers and the form is sent', async ({ page }) => {
     await page.goto(`/index.php?id=${fixtures.custom}`)
-    // The test site key of Cloudflare: a widget that always passes.
-    await expect(page.locator('form .fetchit-captcha iframe')).toHaveCount(1, { timeout: 15_000 })
+    // The test site key of Cloudflare: a widget that always passes. Its
+    // iframe is in a closed shadow root; its answer lands in the form.
+    await expect(page.locator('form .fetchit-captcha input[name="cf-turnstile-response"]'))
+      .not.toHaveValue('', { timeout: 15_000 })
 
     await page.locator('input[name="email"]').fill('ann@example.com')
     await page.getByRole('button', { name: 'Send' }).click()
