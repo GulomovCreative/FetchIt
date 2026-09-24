@@ -60,6 +60,26 @@ header() { { grep -i "^$1:" "$jar.headers" || true; } | head -n1 | cut -d' ' -f2
 # The name of the trap field of the page last opened.
 trap_name() { { grep -o 'name="fetchit_[0-9a-f]\{8\}"' "$jar.html" || true; } | head -n1 | cut -d'"' -f2; }
 
+# Prints the n for which sha256("<token>:<n>") starts with <bits> zero bits:
+# the proof of work the script of FetchIt sends as fetchit_pow.
+solve_pow() {
+    # shellcheck disable=SC2016 # PHP code, not shell
+    php -r '
+        [, $token, $bits] = $argv;
+        for ($n = 0; ; $n++) {
+            $hash = hash("sha256", "$token:$n", true);
+            $zero = 0;
+            foreach (str_split($hash) as $byte) {
+                $byte = ord($byte);
+                if ($byte === 0) { $zero += 8; continue; }
+                $zero += 8 - strlen(decbin($byte));
+                break;
+            }
+            if ($zero >= $bits) { echo $n; exit; }
+        }
+    ' "$1" "$2"
+}
+
 # Checks an answer with jq; shows the start of the answer when it fails.
 json() {
     if jq -e "$1" > /dev/null 2>&1 <<< "$2"; then

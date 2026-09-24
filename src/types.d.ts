@@ -7,6 +7,8 @@ interface FetchItConfig {
   clearFieldsOnSuccess?: boolean;
   defaultNotifier?: boolean;
   requestErrorMessage?: string;
+  pow?: number;
+  captcha?: { provider: 'turnstile' | 'recaptcha' | 'smartcaptcha'; siteKey: string } | null;
   pageId: number | string;
 }
 
@@ -26,7 +28,22 @@ interface FetchItMessage {
 
 interface Window {
   FetchIt: typeof FetchIt;
-  grecaptcha?: { reset(): void };
+  grecaptcha?: {
+    reset?(): void;
+    ready?(callback: () => void): void;
+    execute?(siteKey: string, options: { action: string }): Promise<string>;
+  };
+  turnstile?: {
+    render(element: HTMLElement, options: { sitekey: string }): string;
+    getResponse(widget: string): string | undefined;
+    reset(widget: string): void;
+  };
+  smartCaptcha?: {
+    render(element: HTMLElement, options: { sitekey: string; invisible?: boolean; callback?: (token: string) => void }): number;
+    execute(widget: number): void;
+    getResponse(widget: number): string;
+    reset(widget: number): void;
+  };
   Notyf?: unknown;
 }
 

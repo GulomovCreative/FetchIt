@@ -11,6 +11,13 @@
 #               JavaScript that fast shows the refusal and keeps the values.
 #   rate-limit  fetchit.protection.rate_limit 2: the third submission of the
 #               form from this address is refused.
+#   pow         fetchit.protection.pow 12: the page asks for the proof of
+#               work, a form sent without it or with a wrong one is refused,
+#               and one with a solution for its token passes.
+#   captcha     fetchit.captcha turnstile with the test keys of Cloudflare
+#               (the secret that always passes): the page links the script of
+#               Turnstile, a form without an answer is refused, and one with
+#               the test answer passes. Needs access to Cloudflare.
 #
 # Refusals are recognised by the X-FetchIt-Refused header, whatever the
 # language of the site.
@@ -21,7 +28,7 @@ set -euo pipefail
 
 base="${1:?base URL is required}"
 fixtures="${2:?fixtures JSON is required}"
-what="${3:?too-fast or rate-limit}"
+what="${3:?too-fast, rate-limit, pow or captcha}"
 # shellcheck source=_build/ci/lib.sh
 . "$(dirname "$0")/lib.sh"
 
@@ -59,6 +66,28 @@ case "$what" in
         response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom")"
         check "submission 3 is refused" json '.success == false' "$response"
         check "... for the rate limit" test "$(header x-fetchit-refused)" = rate
+        ;;
+    pow)
+        echo "# A form that asks for a proof of work (id $custom)"
+        action="$(open_page "$custom")"
+        check "the page asks for 12 bits" grep -q '"pow":12' "$jar.html"
+        response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom")"
+        check "sent without a solution, it is refused" test "$(header x-fetchit-refused)" = pow
+        response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom" -F fetchit_pow=1)"
+        check "sent with a wrong solution, it is refused" test "$(header x-fetchit-refused)" = pow
+        solution="$(solve_pow "$(cat "$jar.token")" 12)"
+        response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom" -F "fetchit_pow=$solution")"
+        check "sent with a solution for its token, it passes" json '.success == true' "$response"
+        ;;
+    captcha)
+        echo "# A form behind Turnstile (id $custom)"
+        action="$(open_page "$custom")"
+        check "the page links the script of Turnstile" grep -q 'challenges\.cloudflare\.com/turnstile/v0/api\.js' "$jar.html"
+        check "the page passes the site key" grep -q '"captcha":{"provider":"turnstile","siteKey":"1x00000000000000000000AA"}' "$jar.html"
+        response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom")"
+        check "sent without an answer, it is refused" test "$(header x-fetchit-refused)" = captcha
+        response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom" -F cf-turnstile-response=XXXX.DUMMY.TOKEN.XXXX)"
+        check "sent with the test answer, it passes" json '.success == true' "$response"
         ;;
     *)
         echo "Unknown check: $what" >&2
