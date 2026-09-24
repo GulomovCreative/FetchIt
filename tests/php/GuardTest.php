@@ -333,6 +333,39 @@ class GuardTest extends TestCase
         $this->assertNull($this->submit(), 'The window has passed');
     }
 
+    public function testReplayedTokensCountAndStopGettingNewOnes()
+    {
+        // Replaying a used or expired token must not mint tokens without end.
+        $this->modx->options['fetchit.protection.rate_limit'] = 2;
+        $_SERVER['REMOTE_ADDR'] = '203.0.113.7';
+        $token = $this->token();
+
+        $this->assertNull($this->submit([], 10, $token));
+        $this->assertRefused('token', 'fetchit_err_token', $this->submit([], 0, $token));
+        $this->assertNotNull($this->guard()->nextToken(), 'A stale page still gets one to send again');
+
+        $this->assertRefused('rate', 'fetchit_err_rate', $this->submit([], 0, $token));
+        $this->assertNull($this->guard()->nextToken(), 'Past the limit, no more tokens');
+        $this->assertCount(1, glob($this->modx->getCachePath() . 'fetchit/tokens/*/*'), 'and no more marks');
+    }
+
+    public function testPruneDropsOldMarksOfOneShardAtATime()
+    {
+        $this->modx->options['fetchit.protection.token_ttl'] = 3600;
+        $base = $this->modx->getCachePath() . 'fetchit/tokens/';
+        foreach (['ab', 'cd'] as $shard) {
+            mkdir($base . $shard, 0775, true);
+            touch($base . $shard . '/old', time() - 7200);
+            touch($base . $shard . '/new');
+        }
+
+        $this->guard()->prune('ab');
+
+        $this->assertFileDoesNotExist($base . 'ab/old');
+        $this->assertFileExists($base . 'ab/new');
+        $this->assertFileExists($base . 'cd/old', 'Other shards wait for their turn');
+    }
+
     public function testTheCounterLivesAsLongAsTheWindow()
     {
         $this->modx->options['fetchit.protection.rate_window'] = 900;
