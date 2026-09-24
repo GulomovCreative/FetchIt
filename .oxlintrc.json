@@ -1,0 +1,18 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "env": {
+    "browser": true,
+    "es2022": true
+  },
+  "categories": {
+    "correctness": "error",
+    "suspicious": "warn"
+  },
+  "ignorePatterns": [
+    "assets/**",
+    "node_modules/**",
+    "vendor/**",
+    "playwright-report/**",
+    "test-results/**"
+  ]
+}

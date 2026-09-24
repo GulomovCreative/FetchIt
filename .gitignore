@@ -26,3 +26,12 @@ cache
 
 config.core.php
 assets/components/fetchit/lib
+
+# Tooling
+vendor
+.phpunit.result.cache
+_packages
+test-results
+playwright-report
+fixtures.json
+server.log
