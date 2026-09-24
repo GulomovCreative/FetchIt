@@ -60,19 +60,21 @@ FetchIt 4 будет одним пакетом для MODX 2 и MODX 3 и зам
 
 ## Переход на FetchIt 4
 
-FetchIt 4 это один пакет для MODX 2.8 и MODX 3 вместо линий 1.x и 3.x. Он ставится поверх установленной версии через Менеджер пакетов: системные настройки, чанки и вызовы сниппета остаются как есть.
+FetchIt 4 это один пакет для MODX 2.8 и MODX 3 вместо линий 1.x и 3.x. Он ставится поверх установленной версии через Менеджер пакетов: системные настройки и чанки остаются как есть. Сниппет и плагин FetchIt при обновлении заменяются, так что правки в их коде пропадут; вызовы сниппета на страницах менять не нужно. Обновление проверяется в CI с 1.1.3 на MODX 2 и с 3.1.4 на MODX 3.
 
 Прежний API работает на обеих версиях MODX:
 
-- `$modx->getService('fetchit', 'FetchIt', MODX_CORE_PATH . 'components/fetchit/model/')` из 1.x и `$modx->services->get('FetchIt')` из 3.x (на MODX 3) возвращают один и тот же объект, а класс `FetchIt\FetchIt` из 3.x это тот же класс;
+- в своих сниппетах берите FetchIt так: `$FetchIt = FetchIt::service($modx);`. Вызовы из 1.x (`$modx->getService('fetchit', 'FetchIt', MODX_CORE_PATH . 'components/fetchit/model/')`) и из 3.x (`$modx->services->get('FetchIt')`, только на MODX 3) возвращают тот же объект;
+- класс `FetchIt\FetchIt` из 3.x это тот же класс, `instanceof \FetchIt\FetchIt` работает. `get_class()` теперь возвращает `FetchIt`;
 - `storeActionProperties()`/`loadActionProperties()` и их имена из 3.x `saveActionProperties()`/`getActionProperties()`;
 - чанки через pdoTools (Fenom, `@FILE`) на MODX 2 и MODX 3.
 
 Что может задеть ваш код:
 
 - `fetchit:error` срабатывает и при сбое запроса; тогда `detail.response` равен `null`, а ошибка лежит в `detail.error`;
-- обрабатывающий сниппет получает в `fields` только отправленную форму (`$_POST` и файлы), без GET-параметров и cookies;
+- обрабатывающий сниппет получает в `fields` только отправленную форму: `$_POST` и файлы из `$_FILES` при отправке через FetchIt, только `$_POST` при обычной отправке формы; без GET-параметров и cookies;
 - `fetchit:success` можно отменить: `event.preventDefault()` оставит поля заполненными;
+- повторная отправка, пока идёт запрос, игнорируется;
 - `method` и `data-fetchit` ставятся последними атрибутами тега формы.
 
 Полный список изменений в [changelog](core/components/fetchit/docs/changelog.txt).
@@ -122,8 +124,8 @@ docker compose logs -f modx2 modx3   # дождаться строк «[fetchit]
 
 ```sh
 docker compose exec -u www-data -e PKG_DIST=1 modx2 php /extra/_build/build.php
-docker compose exec -u www-data modx2 php /extra/_build/ci/install.php /extra/_packages/fetchit-<версия>-pl.transport.zip
-docker compose exec -u www-data modx3 php /extra/_build/ci/install.php /extra/_packages/fetchit-<версия>-pl.transport.zip
+docker compose exec -u www-data modx2 php /extra/_build/ci/install.php /extra/_packages/fetchit-<версия>-<релиз>.transport.zip
+docker compose exec -u www-data modx3 php /extra/_build/ci/install.php /extra/_packages/fetchit-<версия>-<релиз>.transport.zip
 ```
 
 Без `PKG_DIST=1` `build.php` сразу ставит пакет на тот сайт, где его собирают.

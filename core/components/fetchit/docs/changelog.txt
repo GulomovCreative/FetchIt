@@ -11,9 +11,10 @@ FetchIt 4 is one package for MODX 2.8 and MODX 3. It replaces the 1.x and 3.x li
 
 ### Added
 
-- MODX 3 support in the same package: it is built on MODX 2.8 and installs, and upgrades FetchIt 1.x and 3.x, on MODX 2.8 and MODX 3.
-- The FetchIt 3.x API on MODX 3: `$modx->services->get('FetchIt')` (registered by `bootstrap.php`), the `FetchIt\FetchIt` class, `saveActionProperties()` and `getActionProperties()`.
-- `FetchIt::service()`, the shared instance on MODX 2 and MODX 3, and `FetchIt::pdoTools()`, which finds pdoTools 2 on MODX 2 and pdoTools 3 on MODX 3 (Fenom and `@FILE` chunks).
+- MODX 3 support in the same package, built on MODX 2.8. It installs fresh on MODX 2.8 and MODX 3, and upgrades FetchIt 1.x on MODX 2 and FetchIt 3.x on MODX 3.
+- The FetchIt 3.x API: `$modx->services->get('FetchIt')` on MODX 3 (registered by `bootstrap.php`), and on both versions the `FetchIt\FetchIt` class, `saveActionProperties()` and `getActionProperties()`.
+- `FetchIt::service()`, the shared instance on MODX 2 and MODX 3. The 1.x call `$modx->getService('fetchit', …)` and the 3.x `$modx->services->get('FetchIt')` return the same instance.
+- `FetchIt::pdoTools()`, which finds pdoTools 2 on MODX 2 and pdoTools 3 on MODX 3 (Fenom and `@FILE` chunks). Without pdoTools, an `@FILE` form is logged as needing it.
 - Lexicon entry `fetchit_err_request`, passed to the script as `requestErrorMessage`: the text a visitor sees when a submission fails (see Fixed).
 - `detail.error` in `fetchit:error` for failed requests.
 - `FetchIt::prepareForm()`, which gives the form tags of a chunk the POST method and the action key.
