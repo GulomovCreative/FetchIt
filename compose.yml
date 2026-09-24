@@ -1,0 +1,94 @@
+name: fetchit
+
+# Local development: MODX 2 and MODX 3 side by side, each on the PHP version
+# it is meant to run on, sharing one MySQL. The component directories of this
+# repository are mounted into both sites, so edits apply without a rebuild.
+#
+#   docker compose up -d --build
+#   (HOST_UID/HOST_GID default to 1000; export them if your ids differ)
+#   MODX 2: http://localhost:8052/   MODX 3: http://localhost:8053/
+#   Manager: /manager/, admin / FetchItDev2026
+#
+# Build the package on MODX 2 and install it on both sites:
+#
+#   docker compose exec -u www-data modx2 php /extra/_build/build.php
+#   docker compose exec -u www-data modx3 php /extra/_build/ci/install.php /extra/_packages/fetchit-<version>.transport.zip
+
+x-modx: &modx
+  restart: unless-stopped
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  db:
+    image: mysql:8.0
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: modx
+      MYSQL_PASSWORD: modx
+      MYSQL_DATABASE: modx3
+    volumes:
+      - db:/var/lib/mysql
+      - ./docker/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "13352:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  modx2:
+    <<: *modx
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      args:
+        PHP_VERSION: "7.4"
+        MODX_VERSION: "2.8.6-pl"
+    environment: &modx-env
+      DB_HOST: db
+      DB_NAME: modx2
+      DB_USER: modx
+      DB_PASSWORD: modx
+      MODX_HTTP_HOST: "localhost:8052"
+      MODX_ADMIN_USER: admin
+      MODX_ADMIN_PASSWORD: FetchItDev2026
+      MODX_CORE_PATH: /var/www/html/core/
+      HOST_UID: ${HOST_UID:-1000}
+      HOST_GID: ${HOST_GID:-1000}
+    ports:
+      - "8052:80"
+    volumes:
+      - modx2:/var/www/html
+      - ./:/extra
+      - ./core/components/fetchit:/var/www/html/core/components/fetchit
+      - ./assets/components/fetchit:/var/www/html/assets/components/fetchit
+
+  modx3:
+    <<: *modx
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      args:
+        PHP_VERSION: "8.3"
+        MODX_VERSION: "3.2.4-pl"
+    environment:
+      <<: *modx-env
+      DB_NAME: modx3
+      MODX_HTTP_HOST: "localhost:8053"
+    ports:
+      - "8053:80"
+    volumes:
+      - modx3:/var/www/html
+      - ./:/extra
+      - ./core/components/fetchit:/var/www/html/core/components/fetchit
+      - ./assets/components/fetchit:/var/www/html/assets/components/fetchit
+
+volumes:
+  db:
+  modx2:
+  modx3:
