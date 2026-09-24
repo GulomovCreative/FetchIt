@@ -5,7 +5,8 @@
 #
 # Usage: smoke.sh <base url> <fixtures json from fixtures.php>
 #
-# REQUIRE_FORMIT=1 fails the run when FormIt did not get installed.
+# REQUIRE_FORMIT=1 / REQUIRE_PDOTOOLS=1 fail the run when FormIt / pdoTools
+# did not get installed.
 #
 # Every submission carries a fetchit_probe cookie. Whether cookies reach
 # $_REQUEST depends on request_order, so the server should run with
@@ -56,8 +57,11 @@ json() {
     return 1
 }
 
+modx="$(jq -r '.modx' <<< "$fixtures")"
 custom="$(jq -r '.custom' <<< "$fixtures")"
+api="$(jq -r '.api' <<< "$fixtures")"
 formit="$(jq -r '.formit // empty' <<< "$fixtures")"
+pdotools="$(jq -r '.pdotools // empty' <<< "$fixtures")"
 
 echo "# Page with its own handler (id $custom)"
 action="$(open_page "$custom")"
@@ -93,6 +97,24 @@ check "an unknown action is refused" json '.success == false' "$response"
 
 response="$(curl -fsS -H "Accept: application/json" -F email=a "$base/assets/components/fetchit/action.php" || true)"
 check "a request without the action header is refused" json '.success == false' "$response"
+
+echo "# The FetchIt API of custom snippets on MODX $modx (id $api)"
+action="$(open_page "$api")"
+response="$(submit "$action" -F email=ann@example.com -F "pageId=$api")"
+expected="1.x"
+[ "$modx" = 3 ] && expected="3.x"
+check "a snippet gets FetchIt as in FetchIt $expected" json ".success == true and .message == \"API $expected\" and .data.class == true" "$response"
+
+if [ -n "$pdotools" ]; then
+    echo "# pdoTools: Fenom in an @FILE chunk (id $pdotools)"
+    action="$(open_page "$pdotools")"
+    check "the Fenom chunk is rendered" grep -q '<h2 class="fenom">Fenom works</h2>' "$jar.html"
+    check "the @FILE form gets a data-fetchit key" test -n "$action"
+    response="$(submit "$action" -F email=ann@example.com -F "pageId=$pdotools")"
+    check "the @FILE form is sent" json '.success == true' "$response"
+elif [ "${REQUIRE_PDOTOOLS:-}" = 1 ]; then
+    fail "pdoTools is installed"
+fi
 
 if [ -n "$formit" ]; then
     echo "# Page processed by FormIt (id $formit)"

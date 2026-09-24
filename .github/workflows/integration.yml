@@ -1,7 +1,8 @@
 name: Integration
 
-# Installs the package from the "package" artifact on MODX 2 and MODX 3, then
-# submits forms over HTTP and from a real browser.
+# Installs the package from the "package" artifact on MODX 2 and MODX 3, on a
+# clean site and over the last release of the old line for that MODX (1.x on
+# MODX 2, 3.x on MODX 3), then submits forms over HTTP and from a real browser.
 
 on:
   workflow_call:
@@ -13,7 +14,7 @@ defaults:
 
 jobs:
   modx:
-    name: MODX ${{ matrix.modx }} / PHP ${{ matrix.php }}
+    name: MODX ${{ matrix.modx }} / PHP ${{ matrix.php }}${{ matrix.from && format(' / from {0}', matrix.from) || '' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -21,8 +22,14 @@ jobs:
         include:
           - modx: 2.8.6-pl
             php: '7.4'
+          - modx: 2.8.6-pl
+            php: '7.4'
+            from: v1.1.3
           - modx: 3.2.4-pl
             php: '8.3'
+          - modx: 3.2.4-pl
+            php: '8.3'
+            from: v3.1.4
 
     env:
       MODX_ROOT: /tmp/modx
@@ -73,8 +80,20 @@ jobs:
           name: package
           path: _packages
 
+      - name: Install the previous release
+        if: matrix.from
+        env:
+          FROM: ${{ matrix.from }}
+        run: |
+          zip="fetchit-${FROM#v}-pl.transport.zip"
+          curl -fsSL -o "/tmp/$zip" "https://github.com/${{ github.repository }}/releases/download/$FROM/$zip"
+          php _build/ci/install.php "/tmp/$zip"
+
       - name: Install the package
         run: php _build/ci/install.php _packages/*.transport.zip
+
+      - name: Install pdoTools
+        run: php _build/ci/provider-install.php pdoTools
 
       - name: Create the test pages
         run: |
@@ -98,11 +117,13 @@ jobs:
         env:
           # The setup resolver installs FormIt together with FetchIt.
           REQUIRE_FORMIT: 1
+          REQUIRE_PDOTOOLS: 1
         run: _build/ci/smoke.sh "$BASE_URL" "$(cat fixtures.json)"
 
       - name: HTTP checks without anonymous sessions
         env:
           REQUIRE_FORMIT: 1
+          REQUIRE_PDOTOOLS: 1
         run: |
           php _build/ci/setting.php anonymous_sessions 0
           _build/ci/smoke.sh "$BASE_URL" "$(cat fixtures.json)"
@@ -135,7 +156,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v7
         with:
-          name: integration-modx-${{ matrix.modx }}
+          name: integration-modx-${{ matrix.modx }}${{ matrix.from && format('-from-{0}', matrix.from) || '' }}
           path: |
             server.log
             playwright-report/
