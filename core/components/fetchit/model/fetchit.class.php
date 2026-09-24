@@ -364,7 +364,7 @@ class FetchIt
             'customInvalidClass' => trim(preg_replace('/\s+/', ' ', (string)$this->modx->getOption('fetchit.frontend.custom.invalid.class'))),
             'clearFieldsOnSuccess' => (bool)$this->modx->getOption('clearFieldsOnSuccess', $this->config, 1, false),
             'defaultNotifier' => $this->config['default_notifier'],
-            'notifierCloseLabel' => $this->config['default_notifier'] ? $this->modx->lexicon('fetchit_notifier_close') : '',
+            'notifierCloseLabel' => $this->config['default_notifier'] ? $this->lexiconOrEmpty('fetchit_notifier_close') : '',
             'requestErrorMessage' => $this->modx->lexicon('fetchit_err_request'),
             'pow' => $this->guard()->pow(),
             'captcha' => $captcha !== null ? ['provider' => $captcha['provider'], 'siteKey' => $captcha['siteKey']] : null,
@@ -379,6 +379,22 @@ class FetchIt
         // snippet call, a page without <head>) the form falls back to a
         // normal submit instead of throwing.
         $this->modx->regClientHTMLBlock("<script>window.addEventListener('DOMContentLoaded', () => { let FetchItClass; try { FetchItClass = {$js_classname}; } catch (e) {} if (FetchItClass && typeof FetchItClass.create === 'function') { FetchItClass.create($config); } else { console.error('FetchIt: {$js_classname} is not loaded'); } });</script>");
+    }
+
+
+    /**
+     * A lexicon entry, or '' when the lexicon does not have it (MODX gives
+     * the key back), so the script uses its own default.
+     *
+     * @param string $key
+     *
+     * @return string
+     */
+    protected function lexiconOrEmpty($key)
+    {
+        $value = $this->modx->lexicon($key);
+
+        return $value === $key ? '' : $value;
     }
 
 

@@ -207,6 +207,32 @@ $installPackage = function ($packageName, $options = []) use ($modx, $downloadPa
     ];
 };
 
+/**
+ * What FetchIt 4 changes for a site with fetchit.frontend.default.notifier
+ * on: it shows toasts of its own and no longer loads Notyf, which styles or
+ * scripts of the site may rely on. [level, message] pairs for the log of the
+ * upgrade.
+ */
+$notifierNotes = function () use ($modx) {
+    if (!$modx->getOption('fetchit.frontend.default.notifier', null, false)) {
+        return [];
+    }
+    $notes = [[
+        modX::LOG_LEVEL_WARN,
+        'FetchIt 4 shows notifications of its own (.fetchit-toast) and no longer loads Notyf: '
+        . 'styles for .notyf__toast and scripts that call new Notyf() need to change, see the changelog.',
+    ]];
+    $js = trim((string)$modx->getOption('fetchit.frontend.js', null, ''));
+    if ($js !== '' && !preg_match('#^\[\[\+assetsUrl\]\]js/fetchit(\.min)?\.js$#', $js)) {
+        $notes[] = [
+            modX::LOG_LEVEL_WARN,
+            "fetchit.frontend.js is \"{$js}\", not the script of the package: the built-in notifications are part of that script.",
+        ];
+    }
+
+    return $notes;
+};
+
 $success = false;
 switch ($options[xPDOTransport::PACKAGE_ACTION]) {
     case xPDOTransport::ACTION_INSTALL:
@@ -228,6 +254,11 @@ switch ($options[xPDOTransport::PACKAGE_ACTION]) {
                 ? modX::LOG_LEVEL_INFO
                 : modX::LOG_LEVEL_ERROR;
             $modx->log($level, $response['message']);
+        }
+        if ($options[xPDOTransport::PACKAGE_ACTION] == xPDOTransport::ACTION_UPGRADE) {
+            foreach ($notifierNotes() as list($level, $message)) {
+                $modx->log($level, $message);
+            }
         }
         $success = true;
         break;
