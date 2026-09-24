@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!--
+  The logo of FetchIt: npm run logo renders it to logo.png and logo@2x.png
+  next to this file, and social.png for the preview of links to the
+  repository. The mark is a form: two fields and the send button, in
+  sky-500 of Tailwind CSS 4.
+-->
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400&family=JetBrains+Mono:wght@200&display=block');
+  html, body { margin: 0; width: 320px; height: 240px; background: #fff; overflow: hidden; }
+  .logo { display: flex; align-items: center; justify-content: center; gap: 13px; height: 240px; box-sizing: border-box; }
+  .word { font-size: 34px; line-height: 1; color: #111; white-space: nowrap; }
+  .sans { font-family: Outfit, 'Segoe UI', sans-serif; font-weight: 400; }
+  .mono { font-family: 'JetBrains Mono', Consolas, monospace; font-weight: 200; letter-spacing: -0.04em; }
+</style>
+</head>
+<body>
+<div class="logo">
+  <svg width="76" height="76" viewBox="0 0 76 76">
+    <rect width="76" height="76" rx="5" fill="#EBEBEB"/>
+    <!-- Two fields and the send button. -->
+    <rect x="8" y="13" width="60" height="13" rx="2" fill="#FFFFFF"/>
+    <rect x="8" y="31.5" width="60" height="13" rx="2" fill="#FFFFFF"/>
+    <rect x="8" y="50" width="30" height="13" rx="2" fill="#00A6F4"/>
+  </svg>
+  <div class="word"><span class="sans">Fetch</span><span class="mono">It</span></div>
+</div>
+<script>
+  // The wordmark fits the space right of the mark.
+  document.fonts.ready.then(() => {
+    const word = document.querySelector('.word')
+    const room = 320 - 76 - 13 - 50
+    let size = 34
+    while (word.scrollWidth > room && size > 12) {
+      size -= 0.5
+      word.style.fontSize = `${size}px`
+    }
+    document.body.dataset.ready = ''
+  })
+</script>
+</body>
+</html>
