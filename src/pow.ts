@@ -1,6 +1,7 @@
 // Proof of work for the spam protection: find a number n such that
 // sha256("token:n") starts with `bits` zero bits (FetchItGuard::solves()).
-// A SHA-256 of its own: crypto.subtle only exists on HTTPS pages.
+// A SHA-256 of its own: crypto.subtle only exists in secure contexts (HTTPS
+// or localhost), and an async digest per attempt would be slow anyway.
 
 const K = new Uint32Array([
   0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
@@ -88,8 +89,9 @@ export function zeroBits (hash: Uint32Array): number {
 }
 
 /**
- * Find the solution for a token. It yields to the page every `batch`
- * attempts, so the page stays responsive; `signal` stops it.
+ * Find the solution for a token: `bits` comes from the server, 0 to 24. It
+ * yields to the page every `batch` attempts, so the page stays responsive;
+ * `signal` stops it.
  */
 export async function solve (token: string, bits: number, signal?: AbortSignal, batch = 2000): Promise<string> {
   for (let n = 0; ; n++) {

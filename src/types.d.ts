@@ -7,8 +7,11 @@ interface FetchItConfig {
   clearFieldsOnSuccess?: boolean;
   defaultNotifier?: boolean;
   requestErrorMessage?: string;
+  // Bits of the proof of work, 0 to FetchItGuard::MAX_POW (24); 0 or none for no proof of work.
   pow?: number;
-  captcha?: { provider: 'turnstile' | 'recaptcha' | 'smartcaptcha'; siteKey: string } | null;
+  captcha?: import('./captcha').CaptchaConfig | null;
+  // Shown when the captcha gave no answer to send (see CaptchaError).
+  captchaErrorMessage?: string;
   pageId: number | string;
 }
 
@@ -34,7 +37,11 @@ interface Window {
     execute?(siteKey: string, options: { action: string }): Promise<string>;
   };
   turnstile?: {
-    render(element: HTMLElement, options: { sitekey: string }): string;
+    render(element: HTMLElement, options: {
+      sitekey: string;
+      callback?: (token: string) => void;
+      'error-callback'?: (code: string | number) => void;
+    }): string;
     getResponse(widget: string): string | undefined;
     reset(widget: string): void;
   };
@@ -43,6 +50,7 @@ interface Window {
     execute(widget: number): void;
     getResponse(widget: number): string;
     reset(widget: number): void;
+    subscribe?(widget: number, event: string, callback: (detail?: unknown) => void): () => void;
   };
   Notyf?: unknown;
 }

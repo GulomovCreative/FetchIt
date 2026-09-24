@@ -1,17 +1,45 @@
 (function() {
 	//#region src/captcha.ts
+	var CaptchaError = class extends Error {
+		name = "CaptchaError";
+	};
 	const RECAPTCHA_ACTION = "fetchit";
+	const SCRIPT_WAIT = 1e4;
+	const ANSWER_WAIT = 3e4;
+	const CHALLENGE_WAIT = 18e4;
 	/**
 	* Wait until read() gives something, such as the global of the provider's
-	* script, checking every 100 ms (10 s by default).
+	* script, checking every 100 ms; undefined after `ms`. What read() throws
+	* ends the wait.
 	*/
-	async function loaded(read, tries = 100) {
-		for (let attempt = 0; attempt < tries; attempt++) {
-			const api = read();
-			if (api) return api;
+	async function waitFor(read, ms = SCRIPT_WAIT) {
+		for (let waited = 0;; waited += 100) {
+			const value = read();
+			if (value !== void 0 || waited >= ms) return value;
 			await new Promise((resolve) => setTimeout(resolve, 100));
 		}
 	}
+	function withTimeout(promise, ms, what) {
+		let timer;
+		const timeout = new Promise((_, reject) => {
+			timer = setTimeout(() => reject(new CaptchaError(`FetchIt: ${what} gave no answer in ${ms / 1e3} s`)), ms);
+		});
+		return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+	}
+	function notLoaded(provider, host) {
+		return new CaptchaError(`FetchIt: the script of ${provider} did not load; is ${host} blocked?`);
+	}
+	function safely(action) {
+		try {
+			action();
+		} catch (error) {
+			console.error(error);
+		}
+	}
+	/**
+	* The block for the widget: before the first submit button, or at the end
+	* of the form.
+	*/
 	function container(form) {
 		const element = document.createElement("div");
 		element.className = "fetchit-captcha";
@@ -21,22 +49,44 @@
 		return element;
 	}
 	/**
-	* Cloudflare Turnstile: a widget in the form; its script puts the answer
-	* into a hidden cf-turnstile-response field of the form.
+	* Cloudflare Turnstile: a widget in the form, rendered as soon as its script
+	* is there (or at the first submission, if the script came late).
 	*/
 	function turnstile(form, siteKey) {
 		let widget;
-		loaded(() => window.turnstile).then((api) => {
-			widget = api?.render(container(form), { sitekey: siteKey });
-		});
+		let failure;
+		const render = (api) => {
+			widget ??= api.render(container(form), {
+				sitekey: siteKey,
+				callback: () => {
+					failure = void 0;
+				},
+				"error-callback": (code) => {
+					failure = String(code);
+					console.error(`FetchIt: Turnstile error ${code}`);
+				}
+			});
+			return widget;
+		};
+		waitFor(() => window.turnstile).then((api) => api && render(api)).catch((error) => console.error(error));
 		return {
 			async answer(formData) {
-				const api = await loaded(() => window.turnstile);
-				const response = api && await loaded(() => widget !== void 0 ? api.getResponse(widget) || void 0 : void 0, 300);
-				if (response) formData.set("cf-turnstile-response", response);
+				const api = await waitFor(() => window.turnstile);
+				if (!api) throw notLoaded("Turnstile", "challenges.cloudflare.com");
+				const id = render(api);
+				const response = await waitFor(() => {
+					const current = api.getResponse(id);
+					if (current) return current;
+					if (failure !== void 0) throw new CaptchaError(`FetchIt: Turnstile failed with error ${failure}`);
+				}, ANSWER_WAIT);
+				if (!response) throw new CaptchaError(`FetchIt: Turnstile gave no answer in ${ANSWER_WAIT / 1e3} s`);
+				formData.set("cf-turnstile-response", response);
 			},
 			reset() {
-				if (widget !== void 0) window.turnstile?.reset(widget);
+				if (widget !== void 0) {
+					const id = widget;
+					safely(() => window.turnstile?.reset(id));
+				}
 			}
 		};
 	}
@@ -47,40 +97,68 @@
 	function recaptcha(siteKey) {
 		return {
 			async answer(formData) {
-				const api = await loaded(() => window.grecaptcha?.execute ? window.grecaptcha : void 0);
-				if (!api?.execute) return;
-				await new Promise((resolve) => api.ready ? api.ready(resolve) : resolve());
-				formData.set("g-recaptcha-response", await api.execute(siteKey, { action: RECAPTCHA_ACTION }));
+				const api = await waitFor(() => window.grecaptcha?.execute ? window.grecaptcha : void 0);
+				const execute = api?.execute;
+				if (!api || !execute) throw notLoaded("reCAPTCHA", "www.google.com");
+				await withTimeout(new Promise((resolve) => api.ready ? api.ready(resolve) : resolve()), SCRIPT_WAIT, "reCAPTCHA");
+				const token = await withTimeout(execute(siteKey, { action: RECAPTCHA_ACTION }), ANSWER_WAIT, "reCAPTCHA").catch((error) => {
+					throw error instanceof CaptchaError ? error : new CaptchaError(`FetchIt: reCAPTCHA failed: ${String(error)}`);
+				});
+				formData.set("g-recaptcha-response", token);
 			},
 			reset() {}
 		};
 	}
 	/**
-	* Yandex SmartCaptcha, invisible: executed on submission, it asks the
-	* visitor only when it has doubts.
+	* Yandex SmartCaptcha, invisible: executed on submission, it shows a puzzle
+	* only when it has doubts.
 	*/
 	function smartcaptcha(form, siteKey) {
 		let widget;
-		let resolveAnswer;
-		loaded(() => window.smartCaptcha).then((api) => {
-			widget = api?.render(container(form), {
-				sitekey: siteKey,
-				invisible: true,
-				callback: (token) => resolveAnswer?.(token)
-			});
-		});
+		let pending;
+		const settle = (token, error) => {
+			const waiting = pending;
+			pending = void 0;
+			if (error) waiting?.reject(error);
+			else if (token) waiting?.resolve(token);
+		};
+		const render = (api) => {
+			if (widget === void 0) {
+				const id = api.render(container(form), {
+					sitekey: siteKey,
+					invisible: true,
+					callback: (token) => settle(token)
+				});
+				widget = id;
+				api.subscribe?.(id, "challenge-hidden", () => setTimeout(() => {
+					if (!api.getResponse(id)) settle(void 0, new CaptchaError("FetchIt: the check of SmartCaptcha was closed"));
+				}, 1e3));
+				api.subscribe?.(id, "network-error", () => settle(void 0, new CaptchaError("FetchIt: SmartCaptcha could not reach its server")));
+				api.subscribe?.(id, "javascript-error", (error) => settle(void 0, new CaptchaError(`FetchIt: SmartCaptcha failed: ${JSON.stringify(error)}`)));
+			}
+			return widget;
+		};
+		waitFor(() => window.smartCaptcha).then((api) => api && render(api)).catch((error) => console.error(error));
 		return {
 			async answer(formData) {
-				const api = await loaded(() => window.smartCaptcha);
-				if (!api || widget === void 0) return;
-				const token = api.getResponse(widget) || await new Promise((resolve) => {
-					resolveAnswer = resolve;
-					api.execute(widget);
-				});
+				const api = await waitFor(() => window.smartCaptcha);
+				if (!api) throw notLoaded("SmartCaptcha", "smartcaptcha.yandexcloud.net");
+				const id = render(api);
+				const token = api.getResponse(id) || await withTimeout(new Promise((resolve, reject) => {
+					pending = {
+						resolve,
+						reject
+					};
+					api.execute(id);
+				}), CHALLENGE_WAIT, "SmartCaptcha");
 				formData.set("smart-token", token);
 			},
 			reset() {
-				if (widget !== void 0) window.smartCaptcha?.reset(widget);
+				pending = void 0;
+				if (widget !== void 0) {
+					const id = widget;
+					safely(() => window.smartCaptcha?.reset(id));
+				}
 			}
 		};
 	}
@@ -232,8 +310,9 @@
 		return bits;
 	}
 	/**
-	* Find the solution for a token. It yields to the page every `batch`
-	* attempts, so the page stays responsive; `signal` stops it.
+	* Find the solution for a token: `bits` comes from the server, 0 to 24. It
+	* yields to the page every `batch` attempts, so the page stays responsive;
+	* `signal` stops it.
 	*/
 	async function solve(token, bits, signal, batch = 2e3) {
 		for (let n = 0;; n++) {
@@ -257,7 +336,6 @@
 			after: "fetchit:after",
 			reset: "fetchit:reset"
 		};
-		solutions = /* @__PURE__ */ new Map();
 		constructor(form, config) {
 			if (!(form instanceof HTMLFormElement)) throw new Error("FetchIt: the element is not a form");
 			this.form = form;
@@ -306,7 +384,10 @@
 						});
 						let next = query.headers?.get("X-FetchIt-Token");
 						this.updateToken(next);
-						if (next && query.headers?.get("X-FetchIt-Refused") === "token") {
+						const refused = query.headers?.get("X-FetchIt-Refused");
+						const bits = Number(query.headers?.get("X-FetchIt-Pow") ?? 0);
+						if (next && (refused === "token" || refused === "pow" && bits > (this.config.pow ?? 0))) {
+							if (refused === "pow") this.config.pow = bits;
 							this.formData.set(FetchIt.tokenField, next);
 							if (this.config.pow) this.formData.set(FetchIt.powField, await this.solution(next));
 							query = await fetch(this.request, {
@@ -316,6 +397,7 @@
 							next = query.headers?.get("X-FetchIt-Token");
 							this.updateToken(next);
 						}
+						if (refused === "captcha" && !this.config.captcha) console.warn("FetchIt: the server asks for a captcha this page does not have; the page may come from a cache made before the captcha was turned on");
 						const body = await query.json();
 						if (!FetchIt.isResponse(body)) throw new Error(`FetchIt: unexpected answer from ${query.url || this.config.actionUrl} (HTTP ${query.status})`);
 						response = body;
@@ -382,9 +464,9 @@
 					if (shown || response?.success) console.error(error);
 					else this.failRequest(error);
 				} finally {
-					this.captcha?.reset();
 					this.enableFields();
 					this.pending = false;
+					this.captcha?.reset();
 				}
 			});
 			this.form.addEventListener("reset", () => {
@@ -406,13 +488,14 @@
 		}
 		/**
 		* fetch() rejected (network error), the body was not a FetchIt answer
-		* (a PHP error page, HTML after a redirect, JSON from a firewall), or
-		* handling the answer threw: tell the visitor instead of failing silently.
-		* An HTTP error status with a FetchIt answer goes the normal way.
+		* (a PHP error page, HTML after a redirect, JSON from a firewall),
+		* handling the answer threw, or the captcha gave no answer to send: tell
+		* the visitor instead of failing silently. An HTTP error status with a
+		* FetchIt answer goes the normal way.
 		*/
 		failRequest(error) {
 			console.error(error);
-			const message = this.config.requestErrorMessage || FetchIt.defaultRequestErrorMessage;
+			const message = error instanceof CaptchaError && this.config.captchaErrorMessage || this.config.requestErrorMessage || FetchIt.defaultRequestErrorMessage;
 			FetchIt.notify("error", message);
 			const errorEvent = new CustomEvent(FetchIt.events.error, {
 				cancelable: true,
@@ -438,15 +521,25 @@
 			await this.captcha?.answer(this.formData);
 		}
 		/**
-		* The solution of the proof of work for a token, started once.
+		* The solution of the proof of work for a token, started once; solving
+		* for another token stops it.
 		*/
 		solution(token) {
-			let solution = this.solutions.get(token);
-			if (!solution) {
-				solution = solve(token, this.config.pow ?? 0);
-				this.solutions.set(token, solution);
+			if (this.work?.token !== token) {
+				this.work?.stop.abort();
+				const stop = new AbortController();
+				const solution = solve(token, this.config.pow ?? 0, stop.signal);
+				const work = {
+					token,
+					solution,
+					stop
+				};
+				this.work = work;
+				solution.catch(() => {
+					if (this.work === work) this.work = void 0;
+				});
 			}
-			return solution;
+			return this.work.solution;
 		}
 		/**
 		* Start solving for the token of the form, so the solution is ready by the
@@ -454,7 +547,9 @@
 		*/
 		solveAhead() {
 			const token = this.form.querySelector(`input[name="${FetchIt.tokenField}"]`)?.value;
-			if (this.config.pow && token) this.solution(token).catch((error) => console.error(error));
+			if (this.config.pow && token) this.solution(token).catch((error) => {
+				if (this.work?.token === token) console.error(error);
+			});
 		}
 		/**
 		* The protection token is single-use: every answer brings the next one.

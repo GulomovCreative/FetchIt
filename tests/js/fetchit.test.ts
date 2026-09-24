@@ -532,6 +532,8 @@ function mountProtectedForm() {
       <input type="hidden" name="fetchit_token" value="old-token">
       <input name="email" value="">
       <div data-success style="display: none"></div>
+      <div data-validation-error style="display: none"></div>
+      <button type="submit">Send</button>
     </form>`
   return document.querySelector('form') as HTMLFormElement
 }
@@ -692,7 +694,83 @@ describe('proof of work', () => {
 
     expect((fetch.mock.calls[0]![1]!.body as FormData).has('fetchit_pow')).toBe(false)
   })
+
+  it('solves and sends again when the server asks for more than the page', async () => {
+    // A page from a cache made before the proof of work was turned on.
+    const form = mountProtectedForm()
+    const settings = config()
+    FetchIt.create(settings)
+    const fetch = answerSequence(
+      { body: { success: false, message: 'Reload', data: [] }, headers: { 'X-FetchIt-Token': 'fresh', 'X-FetchIt-Refused': 'pow', 'X-FetchIt-Pow': '8' } },
+      { body: { success: true, message: 'Sent', data: [] }, headers: {} },
+    )
+
+    await submit(form)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+
+    const body = fetch.mock.calls[1]![1]!.body as FormData
+    expect(zeroBitsOf(`fresh:${body.get('fetchit_pow')}`)).toBeGreaterThanOrEqual(8)
+    await vi.waitFor(() => expect(element(form, '[data-success]').textContent).toBe('Sent'))
+    expect(settings.pow).toBe(8)
+  })
+
+  it('does not send again for a refusal it cannot fix', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config({ pow: 8 }))
+    const fetch = answerSequence(
+      { body: { success: false, message: 'Reload', data: [] }, headers: { 'X-FetchIt-Token': 'fresh', 'X-FetchIt-Refused': 'pow', 'X-FetchIt-Pow': '8' } },
+    )
+
+    await submit(form)
+    await vi.waitFor(() => expect(element(form, '[data-validation-error]').textContent).toBe('Reload'))
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends once while it is still solving', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config({ pow: 12 }))
+    const fetch = answerWithToken({ success: true, message: 'Sent', data: [] }, null)
+    vi.stubGlobal('fetch', fetch)
+
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    await vi.waitFor(() => expect(element(form, '[data-success]').textContent).toBe('Sent'))
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
 })
+
+function captchaConfig(provider: 'turnstile' | 'recaptcha' | 'smartcaptcha') {
+  return config({ captcha: { provider, siteKey: 'site-key' }, captchaErrorMessage: 'The check could not be completed' })
+}
+
+function fakeTurnstile(getResponse: () => string | undefined = () => 'turnstile-answer') {
+  return {
+    render: vi.fn((_element: HTMLElement, _options: { 'error-callback'?: (code: string) => void }) => 'widget-1'),
+    getResponse: vi.fn(getResponse),
+    reset: vi.fn(),
+  }
+}
+
+function fakeSmartCaptcha() {
+  const handlers = new Map<string, () => void>()
+  return {
+    handlers,
+    render: vi.fn((_element: HTMLElement, _options: { callback?: (token: string) => void }) => 7),
+    getResponse: vi.fn(() => ''),
+    execute: vi.fn(),
+    reset: vi.fn(),
+    subscribe: vi.fn((_widget: number, event: string, handler: () => void) => {
+      handlers.set(event, handler)
+      return () => {}
+    }),
+  }
+}
+
+function sendsAgain(form: HTMLFormElement) {
+  expect(field(form, 'email').hasAttribute('disabled')).toBe(false)
+}
 
 describe('captchas', () => {
   afterEach(() => {
@@ -764,5 +842,228 @@ describe('captchas', () => {
     expect(smartCaptcha.execute).toHaveBeenCalledWith(7)
     expect((fetch.mock.calls[0]![1]!.body as FormData).get('smart-token')).toBe('smart-answer')
     await vi.waitFor(() => expect(smartCaptcha.reset).toHaveBeenCalledWith(7))
+  })
+
+  it('Turnstile: waits while the widget is still checking', async () => {
+    const answers = ['', '', 'late-answer']
+    const turnstile = fakeTurnstile(() => answers.shift() ?? 'late-answer')
+    window.turnstile = turnstile
+    const form = mountProtectedForm()
+    FetchIt.create(captchaConfig('turnstile'))
+    const fetch = answerWithToken({ success: true, message: 'Sent', data: [] }, null)
+    vi.stubGlobal('fetch', fetch)
+
+    await submit(form)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalled())
+
+    expect((fetch.mock.calls[0]![1]!.body as FormData).get('cf-turnstile-response')).toBe('late-answer')
+  })
+
+  it('Turnstile: a widget that failed is not waited for', async () => {
+    const turnstile = fakeTurnstile(() => '')
+    window.turnstile = turnstile
+    const form = mountProtectedForm()
+    FetchIt.create(captchaConfig('turnstile'))
+    await vi.waitFor(() => expect(turnstile.render).toHaveBeenCalled())
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    turnstile.render.mock.calls[0]![1]['error-callback']!('110200')
+    const fetch = answerWithToken({ success: true, message: 'Sent', data: [] }, null)
+    vi.stubGlobal('fetch', fetch)
+
+    await submit(form)
+    await vi.waitFor(() => expect(element(form, '[data-validation-error]').textContent).toBe('The check could not be completed'))
+
+    expect(fetch).not.toHaveBeenCalled()
+    expect(console.error).toHaveBeenCalledWith('FetchIt: Turnstile error 110200')
+    sendsAgain(form)
+  })
+
+  it('a script that does not load is reported, not sent to be refused', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      const form = mountProtectedForm()
+      FetchIt.create(captchaConfig('turnstile'))
+      const fetch = answerWithToken({ success: true, message: 'Sent', data: [] }, null)
+      vi.stubGlobal('fetch', fetch)
+
+      form.dispatchEvent(new Event('submit', { cancelable: true }))
+      await vi.advanceTimersByTimeAsync(10_500)
+
+      expect(fetch).not.toHaveBeenCalled()
+      expect(element(form, '[data-validation-error]').textContent).toBe('The check could not be completed')
+      expect(String(vi.mocked(console.error).mock.calls[0]![0])).toContain('challenges.cloudflare.com')
+      sendsAgain(form)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('Turnstile: a script that came late renders the widget at the submission', async () => {
+    vi.useFakeTimers()
+    try {
+      const form = mountProtectedForm()
+      FetchIt.create(captchaConfig('turnstile'))
+      await vi.advanceTimersByTimeAsync(12_000)
+      const turnstile = fakeTurnstile()
+      window.turnstile = turnstile
+      const fetch = answerWithToken({ success: true, message: 'Sent', data: [] }, null)
+      vi.stubGlobal('fetch', fetch)
+
+      form.dispatchEvent(new Event('submit', { cancelable: true }))
+      await vi.advanceTimersByTimeAsync(500)
+
+      expect(turnstile.render).toHaveBeenCalledTimes(1)
+      expect((fetch.mock.calls[0]![1]!.body as FormData).get('cf-turnstile-response')).toBe('turnstile-answer')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('sends the same answer again with a new token', async () => {
+    // The server checks the captcha last: a "token" refusal did not use it.
+    const turnstile = fakeTurnstile()
+    window.turnstile = turnstile
+    const form = mountProtectedForm()
+    FetchIt.create(captchaConfig('turnstile'))
+    await vi.waitFor(() => expect(turnstile.render).toHaveBeenCalled())
+    const fetch = answerSequence(
+      { body: { success: false, message: 'Expired', data: [] }, headers: { 'X-FetchIt-Token': 'fresh', 'X-FetchIt-Refused': 'token' } },
+      { body: { success: true, message: 'Sent', data: [] }, headers: {} },
+    )
+
+    await submit(form)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+
+    expect((fetch.mock.calls[1]![1]!.body as FormData).get('cf-turnstile-response')).toBe('turnstile-answer')
+    expect(turnstile.getResponse).toHaveBeenCalledTimes(1)
+  })
+
+  it('a widget whose reset throws does not lock the form', async () => {
+    const turnstile = fakeTurnstile()
+    turnstile.reset.mockImplementation(() => { throw new Error('widget removed') })
+    window.turnstile = turnstile
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountProtectedForm()
+    FetchIt.create(captchaConfig('turnstile'))
+    await vi.waitFor(() => expect(turnstile.render).toHaveBeenCalled())
+    const fetch = answerWithToken({ success: false, message: 'Check the form', data: [] }, null)
+    vi.stubGlobal('fetch', fetch)
+
+    await submit(form)
+    await vi.waitFor(() => expect(turnstile.reset).toHaveBeenCalled())
+    sendsAgain(form)
+    await submit(form)
+
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2))
+  })
+
+  it('reCAPTCHA v3: a failed request is reported', async () => {
+    window.grecaptcha = { ready: callback => callback(), execute: vi.fn(async () => { throw null }) }
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountProtectedForm()
+    FetchIt.create(captchaConfig('recaptcha'))
+    const fetch = answerWithToken({ success: true, message: 'Sent', data: [] }, null)
+    vi.stubGlobal('fetch', fetch)
+
+    await submit(form)
+    await vi.waitFor(() => expect(element(form, '[data-validation-error]').textContent).toBe('The check could not be completed'))
+
+    expect(fetch).not.toHaveBeenCalled()
+    sendsAgain(form)
+  })
+
+  it('SmartCaptcha: sends an answer it already has without a new check', async () => {
+    const smartCaptcha = fakeSmartCaptcha()
+    smartCaptcha.getResponse.mockReturnValue('ready-answer')
+    window.smartCaptcha = smartCaptcha
+    const form = mountProtectedForm()
+    FetchIt.create(captchaConfig('smartcaptcha'))
+    const fetch = answerWithToken({ success: true, message: 'Sent', data: [] }, null)
+    vi.stubGlobal('fetch', fetch)
+
+    await submit(form)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalled())
+
+    expect(smartCaptcha.execute).not.toHaveBeenCalled()
+    expect((fetch.mock.calls[0]![1]!.body as FormData).get('smart-token')).toBe('ready-answer')
+  })
+
+  it('SmartCaptcha: closing the check gives the form back', async () => {
+    const smartCaptcha = fakeSmartCaptcha()
+    window.smartCaptcha = smartCaptcha
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountProtectedForm()
+    FetchIt.create(captchaConfig('smartcaptcha'))
+    await vi.waitFor(() => expect(smartCaptcha.subscribe).toHaveBeenCalled())
+    const fetch = answerWithToken({ success: true, message: 'Sent', data: [] }, null)
+    vi.stubGlobal('fetch', fetch)
+
+    await submit(form)
+    await vi.waitFor(() => expect(smartCaptcha.execute).toHaveBeenCalledWith(7))
+    smartCaptcha.handlers.get('challenge-hidden')!()
+    await vi.waitFor(() => expect(element(form, '[data-validation-error]').textContent).toBe('The check could not be completed'), { timeout: 3000 })
+
+    expect(fetch).not.toHaveBeenCalled()
+    sendsAgain(form)
+
+    // And the next submission is not swallowed.
+    smartCaptcha.getResponse.mockReturnValue('second-try')
+    await submit(form)
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(1))
+  })
+
+  it('SmartCaptcha: a network error of the check is reported', async () => {
+    const smartCaptcha = fakeSmartCaptcha()
+    window.smartCaptcha = smartCaptcha
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountProtectedForm()
+    FetchIt.create(captchaConfig('smartcaptcha'))
+    await vi.waitFor(() => expect(smartCaptcha.subscribe).toHaveBeenCalled())
+    vi.stubGlobal('fetch', vi.fn())
+
+    await submit(form)
+    await vi.waitFor(() => expect(smartCaptcha.execute).toHaveBeenCalled())
+    smartCaptcha.handlers.get('network-error')!()
+
+    await vi.waitFor(() => expect(element(form, '[data-validation-error]').textContent).toBe('The check could not be completed'))
+    sendsAgain(form)
+  })
+
+  it('warns when the server asks for a captcha the page does not have', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const form = mountProtectedForm()
+    FetchIt.create(config())
+    answerSequence({ body: { success: false, message: 'Reload', data: [] }, headers: { 'X-FetchIt-Token': 'fresh', 'X-FetchIt-Refused': 'captcha' } })
+
+    await submit(form)
+    await vi.waitFor(() => expect(element(form, '[data-validation-error]').textContent).toBe('Reload'))
+
+    expect(String(vi.mocked(console.warn).mock.calls[0]![0])).toContain('made before the captcha was turned on')
+  })
+
+  it('resets a reCAPTCHA v2 widget of the site after a success', async () => {
+    window.grecaptcha = { reset: vi.fn() }
+    const form = mountProtectedForm()
+    FetchIt.create(config())
+    vi.stubGlobal('fetch', answerWithToken({ success: true, message: 'Sent', data: [] }, null))
+
+    await submit(form)
+
+    await vi.waitFor(() => expect(window.grecaptcha!.reset).toHaveBeenCalled())
+  })
+
+  it('a reCAPTCHA v2 widget that throws on reset does not spoil the success', async () => {
+    window.grecaptcha = { reset: vi.fn(() => { throw new Error('no widget') }) }
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountProtectedForm()
+    FetchIt.create(config())
+    vi.stubGlobal('fetch', answerWithToken({ success: true, message: 'Sent', data: [] }, null))
+    field(form, 'email').value = 'ann@example.com'
+
+    await submit(form)
+
+    await vi.waitFor(() => expect(element(form, '[data-success]').textContent).toBe('Sent'))
+    expect(field(form, 'email').value).toBe('')
   })
 })
