@@ -1,120 +1,199 @@
 # Changelog for FetchIt
 
-All notable changes to this project will be documented in this file.
+All notable changes to this project are documented in this file. The format
+is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
+project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+FetchIt 1.x was the package for MODX 2 and FetchIt 3.x the package for MODX 3.
+FetchIt 4 replaces both with one package and installs over either of them.
 
 ## [4.0.0] - 2026-09-25
 
-FetchIt 4 is one package for MODX 2.8 and MODX 3. It replaces the 1.x and 3.x lines and installs over either of them.
+One package for MODX 2.8 and MODX 3, with spam protection on by default. It
+installs over FetchIt 1.x on MODX 2 and FetchIt 3.x on MODX 3; system settings
+and chunks are kept. What may affect your code is marked **Breaking** below and
+explained in the README, [Upgrading to FetchIt 4](https://github.com/GulomovCreative/FetchIt#upgrading-to-fetchit-4).
 
 ### Added
 
-- Types for sites written in TypeScript: `assets/components/fetchit/js/fetchit.d.ts` describes `FetchIt`, the config, `FetchIt.Message`, the instances and the `fetchit:*` events with their `detail`, so `document.addEventListener('fetchit:success', …)` knows `event.detail.response`. The script is type-checked against it, the detail of every event included.
-- `FetchIt.createNotifier()`, the built-in notifier for sites that set `FetchIt.Message` themselves; `duration: 0` keeps a toast until it is closed.
-- An upgrade with `fetchit.frontend.default.notifier` on says in its log that Notyf is no longer loaded, and warns when `fetchit.frontend.js` is a script of the site.
-- Spam protection, on by default, for the AJAX path and forms sent without JavaScript:
-  - a signed single-use token in every form (`fetchit_token`, no session needed). Only a request with a well-signed token of the form gets the next one, in the `X-FetchIt-Token` header; the script uses it for the next submission and, when the page's token was stale (a cached page, a page open for long, a new key), sends the form once more by itself;
-  - a minimum fill time (`fetchit.protection.min_time`), counted from the first render of the page, retries included;
-  - a hidden trap field with a random name per installation that gets a fake success;
-  - a limit per form and client address (`fetchit.protection.rate_limit`, `fetchit.protection.rate_window`), also behind trusted proxies (`fetchit.protection.proxies`, `fetchit.protection.ip_header`);
-  - used tokens are marked atomically under `core/cache/fetchit/tokens/`, which "Clear cache" leaves alone; when the mark cannot be written, forms are refused and it is logged;
-  - `fetchit.protection.log` controls what is logged; the signing key `fetchit.protection.secret` is generated at install.
-  - an optional proof of work (`fetchit.protection.pow`, in bits, off by default): the script finds `n` for which SHA-256 of `token:n` starts with that many zero bits and sends it as `fetchit_pow`, starting as soon as the visitor enters the form. When a page from a cache asks for less than the server, the refusal carries `X-FetchIt-Pow` and the script solves and sends once more;
-  - optional external captchas (`fetchit.captcha`: `turnstile`, `recaptcha` for reCAPTCHA v3, `smartcaptcha`, with `fetchit.captcha.site_key` and `fetchit.captcha.secret_key`). FetchIt links the script of the provider, gets its answer before each submission and verifies it on the server last of the protection checks, before `OnFetchItBeforeProcess`; reCAPTCHA answers below `fetchit.captcha.min_score` or for another action are refused. When the provider cannot be reached, answers with an error or does not accept the secret key, the form is refused with `fetchit_err_captcha_unavailable` (`X-FetchIt-Refused: captcha_unavailable`) and the cause is logged. When there is no answer to send (the script did not load, the visitor closed the check, the widget failed), the form is not sent and the visitor sees `fetchit_err_captcha_client`. A misspelt provider, a missing key and unusable `fetchit.captcha.min_score` or `fetchit.protection.pow` values are logged.
-  `fetchit.protection` turns it all off.
-- The `OnFetchItBeforeProcess` event: plugins get `$action`, `$fields`, `$properties` and `$FetchIt`, and refuse a submission with `$modx->event->output('message')`. It also runs with the protection off.
-- MODX 3 support in the same package, built on MODX 2.8. It installs fresh on MODX 2.8 and MODX 3, and upgrades FetchIt 1.x on MODX 2 and FetchIt 3.x on MODX 3.
-- The FetchIt 3.x API: `$modx->services->get('FetchIt')` on MODX 3 (registered by `bootstrap.php`), and on both versions the `FetchIt\FetchIt` class, `saveActionProperties()` and `getActionProperties()`.
-- `FetchIt::service()`, the shared instance on MODX 2 and MODX 3. The 1.x call `$modx->getService('fetchit', …)` and the 3.x `$modx->services->get('FetchIt')` return the same instance.
-- `FetchIt::pdoTools()`, which finds pdoTools 2 on MODX 2 and pdoTools 3 on MODX 3 (Fenom and `@FILE` chunks). Without pdoTools, an `@FILE` form is logged as needing it.
-- Lexicon entry `fetchit_err_request`, passed to the script as `requestErrorMessage`: the text a visitor sees when a submission fails (see Fixed).
-- `detail.error` in `fetchit:error` for failed requests.
-- `FetchIt::prepareForm()`, which gives the form tags of a chunk the POST method and the action key.
-- Errors in the MODX log when the plugin cannot add the script to a page with a form: no `<head>`, or a `fetchit.frontend.js` that is not a `.js` file.
+- Spam protection for every form, on by default, both for FetchIt submissions and for forms sent without JavaScript. `fetchit.protection` turns it all off.
+  - A signed single-use token in every form (`fetchit_token`), with no session needed. Only a request with a well-signed token of the form gets the next one, in the `X-FetchIt-Token` header. When the token of a page is stale (a cached page, a page open for long, a new key), the script sends the form once more with the new token by itself.
+  - A minimum fill time (`fetchit.protection.min_time`, 3 seconds), counted from the first output of the page, resends included.
+  - A hidden trap field with a random name per installation. A bot that fills it gets a fake success, and the form is not processed.
+  - A limit of submissions per form and client address (`fetchit.protection.rate_limit`, `fetchit.protection.rate_window`), also behind trusted proxies and CDNs (`fetchit.protection.proxies`, `fetchit.protection.ip_header`).
+  - Used tokens are marked atomically in `core/cache/fetchit/tokens/`, which "Clear cache" leaves alone. When a mark cannot be written, the form is refused and the cause is logged.
+  - An optional proof of work (`fetchit.protection.pow`, in bits, off by default): the browser finds `n` such that SHA-256 of `token:n` starts with that many zero bits, starting as soon as the visitor enters the form. When a page from a cache asks for less than the server, the refusal carries `X-FetchIt-Pow`, and the script solves and sends once more.
+  - Optional captchas: Cloudflare Turnstile, Google reCAPTCHA v3 and Yandex SmartCaptcha (`fetchit.captcha`, `fetchit.captcha.site_key`, `fetchit.captcha.secret_key`, `fetchit.captcha.min_score`). FetchIt adds the provider's script, gets its answer before each submission and checks it on the server last. A provider that cannot be reached refuses the form with its own message, `fetchit_err_captcha_unavailable`; a captcha with no answer to send stops the submission with `fetchit_err_captcha_client`.
+  - A log of refusals and problems (`fetchit.protection.log`), and a signing key generated at install (`fetchit.protection.secret`). Mistakes in the settings of the captcha and the proof of work are logged.
+- The `OnFetchItBeforeProcess` event: a plugin gets `$action`, `$fields`, `$properties` and `$FetchIt`, and refuses a submission with `$modx->event->output()`. It fires with the protection off too.
+- MODX 3 support in the same package, built on MODX 2.8: it installs fresh on MODX 2.8 and MODX 3.
+- The API of FetchIt 3.x on both versions: the `FetchIt\FetchIt` class, `saveActionProperties()` and `getActionProperties()`, and `$modx->services->get('FetchIt')` on MODX 3.
+- `FetchIt::service()`, one shared instance on MODX 2 and MODX 3; the 1.x and 3.x ways to get FetchIt return the same instance.
+- `FetchIt::pdoTools()`, which finds pdoTools 2 on MODX 2 and pdoTools 3 on MODX 3, for Fenom and `@FILE` chunks.
+- `FetchIt::prepareForm()`, which gives the form tags of a chunk the POST method and the key of the form.
+- TypeScript types, `assets/components/fetchit/js/fetchit.d.ts`: `FetchIt`, the config, `FetchIt.Message`, the instances of forms and the `fetchit:*` events with their `detail`. The script is type-checked against them.
+- `FetchIt.createNotifier()`: the built-in notifications for a site that sets `FetchIt.Message` itself. `duration: 0` keeps a notification until it is closed.
+- `detail.error` in `fetchit:error` when a request fails, and the `fetchit_err_request` lexicon entry the visitor sees then.
+- MODX log entries when the script cannot be added to a page with a form: no `<head>`, or a `fetchit.frontend.js` that is not a `.js` file.
+- An upgrade with `fetchit.frontend.default.notifier` on says in its log that Notyf is no longer loaded, and warns when `fetchit.frontend.js` points to a script of the site.
 
 ### Changed
 
-- The built-in notifier (`fetchit.frontend.default.notifier`) is FetchIt's own instead of Notyf, part of `fetchit.js` with no other files. Screen readers hear it through live regions that are on the page from the start (errors at once, successes politely); the close button is labelled from the lexicon (`fetchit_notifier_close`), the focus moves on when a focused toast closes, and a toast stays while hovered or focused. At most three are shown. Its styles use single class selectors, come first in `<head>` and take CSS variables (`--fetchit-toast-{success,error}-{bg,text,border}`), by default pastel green and red of Tailwind CSS 4 as in its alerts: shade 100 for the background, 200 for the border, 800 for the text (in `oklch()`, in hex for older browsers); under a Content-Security-Policy they take the nonce of the FetchIt script. A `FetchIt.Message` of the site with neither `success` nor `error` gets the built-in ones.
-- With `fetchit.frontend.default.notifier` on, `window.Notyf` is no longer loaded: styles for `.notyf__toast` and scripts that call `new Notyf()` need to change, or link Notyf themselves. `lib/notyf.min.js` and `lib/notyf.min.css` are no longer shipped; an upgrade leaves the old copies in place.
-- The hooks and events get a string `message` and an object `data` even when the processing snippet left them out; `FetchIt.isResponse()` checks only the boolean `success`. An exception in a `FetchIt.Message` hook is logged with the name of the hook.
-- Forms get the service fields of the protection right after the form tag: a hidden input and an off-screen `div` with the trap. They are removed from `$_POST` and `$_REQUEST` before FormIt reads them.
-- Scripts other than the bundled one must send `fetchit_token` and take the next token from the `X-FetchIt-Token` header of every answer (see README).
-- With the protection on, the snippet still runs FormIt on every page view (for its preHooks), but only a POST that carries a token of its form counts as a submission; any other POST is hidden from FormIt. A POST to the page URL used to reach FormIt directly.
+- **Breaking:** forms get the service fields of the protection right after the form tag; they are removed from `$_POST` before FormIt reads them, so they never reach e-mails. A script of the site used instead of the bundled one must send `fetchit_token` and take the next token from the `X-FetchIt-Token` header of every answer.
+- **Breaking:** the notifications of `fetchit.frontend.default.notifier` are FetchIt's own instead of Notyf, and `window.Notyf` is no longer loaded. Styles for `.notyf__toast` and scripts that call `new Notyf()` need to change. The new notifications are accessible (live regions for screen readers, a labelled close button, focus handling), stay while hovered or focused, and take CSS variables for their colours, by default the pastel green and red of Tailwind CSS 4. Under a Content-Security-Policy they take the nonce of the FetchIt script.
+- **Breaking:** `fetchit:error` also fires when a request fails, with `detail.response` set to `null`.
+- **Breaking:** the processing snippet gets only the form sent in `fields`: `$_POST`, and `$_FILES` for FetchIt submissions. It used to get `$_REQUEST`, with GET values and, depending on `request_order`, cookies.
+- With the protection on, the snippet still runs FormIt on every page view, for its preHooks, but only a POST with a token of its form counts as a submission.
+- The script is built with ES2019 syntax, so it runs in every browser of the project's browserslist.
+- The hooks of `FetchIt.Message` and the events get a string `message` and an object `data` even when the processing snippet left them out. An exception in a hook is logged with its name and no longer keeps the answer from the form.
+- `fetchit:success` can be cancelled: `event.preventDefault()` keeps the fields filled.
+- A second submission while a request is running is ignored.
 - On MODX 3 the plugin and `action.php` take FetchIt from the service container instead of the deprecated `getService()`.
-- `fetchit:error` also fires for failed requests, with `detail.response` set to `null`. Handlers that read `detail.response` must allow for it.
-- The processing snippet gets only posted values in `fields`: `$_POST` (and `$_FILES` from `action.php`). Before it got `$_REQUEST`, which also holds GET values and, depending on `request_order`, cookies.
-- `method` and `data-fetchit` now come last among the attributes of the form tag.
-- The inline `create()` call checks that the class from `fetchit.frontend.js.classname` is loaded, so a page without the script falls back to a normal submit instead of throwing. The class may be a window property, a top-level `class` declaration or a dotted name.
-- An exception in a `FetchIt.Message` hook is logged to the console and no longer stops the form from showing the answer.
-- The `?v=` added to the script URL keeps an existing query string and fragment.
-- `FetchIt.create()` warns in the console when no form matches the action; it used to do nothing.
-- A second submit while a request is running is ignored.
-- `fetchit:success` can be cancelled: `event.preventDefault()` keeps the fields filled and skips the reCAPTCHA reset. It was meant to work this way, but the event was not cancelable.
+- The inline `FetchIt.create()` call checks that the class of `fetchit.frontend.js.classname` is loaded, so a page without the script falls back to a normal submission instead of throwing. `FetchIt.create()` warns in the console when no form matches.
+- `method` and `data-fetchit` come last among the attributes of the form tag, and the `?v=` of the script URL keeps its query string and fragment.
+
+### Removed
+
+- `lib/notyf.min.js` and `lib/notyf.min.css` are no longer shipped. An upgrade leaves the old copies in place.
 
 ### Fixed
 
-- FormIt 5.2 and later has an AJAX mode of its own. For every page view with a FetchIt form it stored the FormIt properties in the session (when there is one) and in a cache file kept for `session_gc_maxlifetime` (a week by default), for its `action.php`, which processes the form without the protection of FetchIt, and linked `formit.js` (with the default `formit.frontend_js`). For the FetchIt form, FetchIt now removes the stored properties, its `ajaxToken` placeholder (restoring the token of another FormIt form with the same prefix) and `formit.js` with its inline config; FormIt forms on the same page keep their AJAX mode. The reCAPTCHA of FormIt 5.2 gets its answer through `formit.js`, so on FetchIt forms use `fetchit.captcha` instead.
-- A form sent without JavaScript never showed its success or error message when the chunk used output filters on the FormIt placeholders, like the example chunk: the chunk rendered before FormIt ran. The snippet now processes first.
-- A form that already had a `data-fetchit` attribute came out broken: `<form\data-fetchit="$action" ...>`, with the attributes before it lost. The snippet also changed look-alike tags such as `<form-field>` and the `formmethod` or `data-fetchit` of elements inside the form. Form tags are now parsed one by one, values in quotes included (so `@submit="step > 1"` stays intact), and only their own `method` and `data-fetchit` are replaced.
-- No scripts were added on sites without anonymous sessions. Whether a page has a form is now remembered for the current request, not in the session.
-- No scripts were added when `<head>` was written in capitals; with attributes on `<head>` they went to its end instead of before the first script.
-- FormIt was not installed together with FetchIt on MODX 3: the package provider there answers in a different format. The installer also reports a missing provider, an unreachable provider, an HTTP error, a failed download and a failed install separately, and removes a package it could not install.
-- A FormIt error placeholder holding only `&nbsp;` marked the field as invalid.
-- Without the `fetchit.frontend.js` setting the plugin linked the missing `js/default.js`.
+- A form sent without JavaScript never showed its success or error message when the chunk used output filters on the FormIt placeholders, like the example chunk: the chunk was rendered before FormIt ran.
+- A form tag with its own `data-fetchit` came out broken, look-alike tags such as `<form-field>` were changed, and so were the `formmethod` and `data-fetchit` of elements inside the form. Form tags are now parsed one by one, quoted values included.
+- The script was not added on sites without anonymous sessions, and when `<head>` was written in capitals or had attributes.
+- FormIt was not installed together with FetchIt on MODX 3. The installer now also reports each way the download or install of FormIt can fail.
 - Two identical snippet calls on one page bound the form twice, and it was sent twice.
 - Fields disabled in the markup became enabled after a submission.
-- A network error or an answer that is not a FetchIt answer (a PHP error page, HTML after a redirect, JSON from a firewall) was only logged to the console. The visitor now sees the `fetchit_err_request` message.
+- A network error, or an answer that is not FetchIt's (a PHP error page, HTML after a redirect, JSON from a firewall), was only logged to the console. The visitor now sees `fetchit_err_request`.
+- A FormIt error placeholder holding only `&nbsp;` marked its field as invalid.
 - Field names with quotes broke the error selectors.
-- A property set that does not exist (`&snippet=`FormIt@typo``) made `action.php` fail with a `TypeError` on PHP 8. The snippet now runs without it, and the MODX log names the missing set.
-- PHP 8.1+ deprecation notices when the invalid-class settings are missing.
+- A snippet property set that does not exist made `action.php` fail on PHP 8. The snippet now runs without it, and the MODX log names the missing set.
+- Without the `fetchit.frontend.js` setting the plugin linked the missing `js/default.js`.
+- PHP 8.1 deprecation notices when the invalid-class settings are missing.
+
+### Security
+
+- A POST straight to the URL of a page with a FetchIt form reached FormIt and its hooks, e-mails included, without any check. It now has to carry a valid token of the form.
+- FormIt 5.2 and later kept the properties of every FetchIt form, hooks included, for its own `action.php`, which processes a form without FetchIt's checks. FetchIt now turns that AJAX mode off for its forms: it removes the stored properties, the `ajaxToken` placeholder and `formit.js`. FormIt forms of their own on the same page keep their AJAX mode.
+
+## [3.1.4] - 2026-09-09
+
+### Fixed
+
+- The success and validation messages of the form were not shown on AJAX submissions. They now go to the `[data-success]` and `[data-validation-error]` elements of the form ([#15]).
+- FormIt field errors of only whitespace marked the form as failed ([#14]).
+- A PHP 8 warning for the undefined `$_SESSION['fetchit_called']` ([#13]), and for the undefined `$_SESSION['FetchIt']`.
+- A GET request to `action.php` was not redirected.
+- The `successMessage` of the snippet call was not used in the AJAX answer of FormIt.
+
+### Changed
+
+- The frontend is built with Rollup 4.
+
+## [3.1.3] - 2026-07-21
+
+### Fixed
+
+- The fatal error `Serialization of 'PDO' is not allowed` on MODX 3.2.2 and PHP 8.3 ([#17], [#18]). The properties of a form no longer hold the FetchIt instance: custom snippets get it with `$modx->services->get('FetchIt')`.
+
+## [3.1.2] - 2023-11-11
+
+### Added
+
+- The reCAPTCHA v3 error of FormIt is returned as the error of the `recaptcha` field ([#6]).
+
+### Fixed
+
+- `action.php` could not find `config.core.php` when the document root is not the root of MODX ([#4]).
+
+## [3.1.1] - 2023-07-14
+
+### Fixed
+
+- A fatal error on PHP 8 when the script was added to the page.
+
+## [3.1.0] - 2023-06-12
+
+### Added
+
+- The `fetchit.frontend.default.notifier` setting: the answers are also shown as Notyf notifications.
+
+## [3.0.0] - 2023-06-06
+
+### Added
+
+- The package for MODX 3, based on FetchIt 1.0.1.
 
 ## [1.1.3] - 2026-08-12
 
 ### Fixed
 
-- Fatal error `Serialization of 'PDO' is not allowed` on frontend with PHP 8.3+ (#17). Action properties are stripped of objects/resources before session/cache write; `$scriptProperties['FetchIt']` is no longer injected — use `$modx->getService('fetchit', 'FetchIt', MODX_CORE_PATH . 'components/fetchit/model/', [])`.
-- Form-level success and validation messages now update in the form on AJAX submit via `[data-success]` and `[data-validation-error]` ([#11]). Custom templates need these attributes instead of `[[+fi.success:…]]` conditionals for AJAX.
-- Whitespace-only FormIt field errors (e.g. `fi.error.email`) no longer mark the form as failed ([#10]). Placeholders are sanitized with `strip_tags` and `html_entity_decode`; blank `validation_error_message` falls back to the lexicon key.
-- PHP 8 warning for undefined `$_SESSION['fetchit_called']` in `registerScript()` ([#7], [#9]).
-- PHP 8 warnings for undefined `$_SESSION['FetchIt']` when saving or reading snippet properties.
-- Dead `!isset($_POST)` check in `action.php` replaced with `empty($_POST)` so GET requests redirect correctly.
-- Session/cache storage for snippet properties moved to `storeActionProperties()` / `loadActionProperties()`.
-- Custom `successMessage` from the FetchIt snippet call is used in the AJAX success response ([#5], [#11]).
+- The fatal error `Serialization of 'PDO' is not allowed` on PHP 8.3 ([#17]). The properties of a form no longer hold the FetchIt instance: custom snippets get it with `$modx->getService('fetchit', 'FetchIt', MODX_CORE_PATH . 'components/fetchit/model/')`.
+- The success and validation messages of the form were not shown on AJAX submissions ([#11], [#15]). They now go to the `[data-success]` and `[data-validation-error]` elements of the form; custom chunks need these attributes instead of `[[+fi.success:…]]` conditions.
+- FormIt field errors of only whitespace marked the form as failed ([#10], [#14]).
+- A PHP 8 warning for the undefined `$_SESSION['fetchit_called']` ([#7], [#9], [#13]), and for the undefined `$_SESSION['FetchIt']`.
+- A GET request to `action.php` was not redirected.
+- The `successMessage` of the snippet call was not used in the AJAX answer of FormIt ([#5]).
 
 ## [1.1.2] - 2023-11-11
 
 ### Added
 
-- Added error for Recaptcha V3.
+- The reCAPTCHA v3 error of FormIt is returned as the error of the `recaptcha` field ([#6]).
 
 ## [1.1.1] - 2023-07-14
 
-### Changed
+### Fixed
 
-- Fixed support in php 8.
+- A fatal error on PHP 8 when the script was added to the page.
 
 ## [1.1.0] - 2023-06-12
 
 ### Added
 
-- Default notifier.
+- The `fetchit.frontend.default.notifier` setting: the answers are also shown as Notyf notifications.
 
-## [1.0.1] - 2023-03-21
+## [1.0.1] - 2023-03-25
 
-### Changed
+### Fixed
 
-- Fixed undefined fetchit bug when snippet calls by fenom.
+- The script was missing when the snippet was called from Fenom. A plugin on `OnWebPagePrerender` now adds it to `<head>`.
 
-## [1.0.0] - 2023-03-10
+## [1.0.0] - 2023-03-20
 
-### Changed
+### Fixed
 
-- Fixed undefined variable $hash.
+- The undefined variable `$hash`.
 
-## [1.0.0-beta] - 2023-02-20
+## [1.0.0-beta] - 2023-02-23
 
 ### Added
 
-- First init.
+- The first release: forms sent with the Fetch API and processed by FormIt or a snippet of your own.
+
+[4.0.0]: https://github.com/GulomovCreative/FetchIt/compare/v1.1.3...v4.0.0
+[3.1.4]: https://github.com/GulomovCreative/FetchIt/compare/a2f6d4d...v3.1.4
+[3.1.3]: https://github.com/GulomovCreative/FetchIt/compare/7ac236f...a2f6d4d
+[3.1.2]: https://github.com/GulomovCreative/FetchIt/compare/730b50d...7ac236f
+[3.1.1]: https://github.com/GulomovCreative/FetchIt/compare/3.1.0-pl...730b50d
+[3.1.0]: https://github.com/GulomovCreative/FetchIt/compare/3.0.0-pl...3.1.0-pl
+[3.0.0]: https://github.com/GulomovCreative/FetchIt/compare/1.0.1-pl...3.0.0-pl
+[1.1.3]: https://github.com/GulomovCreative/FetchIt/compare/c89c7fe...v1.1.3
+[1.1.2]: https://github.com/GulomovCreative/FetchIt/compare/1.1.1-pl...c89c7fe
+[1.1.1]: https://github.com/GulomovCreative/FetchIt/compare/1.1.0-pl...1.1.1-pl
+[1.1.0]: https://github.com/GulomovCreative/FetchIt/compare/1.0.1-pl...1.1.0-pl
+[1.0.1]: https://github.com/GulomovCreative/FetchIt/compare/1.0.0-pl...1.0.1-pl
+[1.0.0]: https://github.com/GulomovCreative/FetchIt/compare/1.0.0-beta...1.0.0-pl
+[1.0.0-beta]: https://github.com/GulomovCreative/FetchIt/releases/tag/1.0.0-beta
+[#4]: https://github.com/GulomovCreative/FetchIt/issues/4
+[#5]: https://github.com/GulomovCreative/FetchIt/issues/5
+[#6]: https://github.com/GulomovCreative/FetchIt/pull/6
+[#7]: https://github.com/GulomovCreative/FetchIt/issues/7
+[#9]: https://github.com/GulomovCreative/FetchIt/issues/9
+[#10]: https://github.com/GulomovCreative/FetchIt/issues/10
+[#11]: https://github.com/GulomovCreative/FetchIt/issues/11
+[#13]: https://github.com/GulomovCreative/FetchIt/pull/13
+[#14]: https://github.com/GulomovCreative/FetchIt/pull/14
+[#15]: https://github.com/GulomovCreative/FetchIt/pull/15
+[#17]: https://github.com/GulomovCreative/FetchIt/issues/17
+[#18]: https://github.com/GulomovCreative/FetchIt/pull/18
