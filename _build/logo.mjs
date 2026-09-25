@@ -2,10 +2,11 @@
 //
 //   npm run logo
 //
-//   logo.png, logo@2x.png            320x240, transparent, for light pages
+//   logo.png, logo@2x.png            260x100, transparent, for light pages
 //   logo-dark.png, logo-dark@2x.png  the same for dark pages (GitHub's dark theme)
-//   social.png                       1280x640, the preview of links to the
-//                                    repository (upload it in Settings >
+//   social-en.png, social-ru.png     1280x640, the preview of links to the
+//                                    repository, with a line in English or
+//                                    Russian (upload one in Settings >
 //                                    General > Social preview)
 //
 // The fonts come from Google Fonts. Without them the script stops before it
@@ -29,7 +30,7 @@ async function requireFonts (page, families) {
 }
 
 async function logo (scale, query = '') {
-  const page = await browser.newPage({ viewport: { width: 320, height: 240 }, deviceScaleFactor: scale })
+  const page = await browser.newPage({ viewport: { width: 260, height: 100 }, deviceScaleFactor: scale })
   await page.goto(url + query)
   await page.waitForSelector('body[data-ready]')
   await requireFonts(page, ['Outfit', 'JetBrains Mono'])
@@ -39,23 +40,23 @@ async function logo (scale, query = '') {
 }
 
 // The logo on white, centred on a 1280x640 card: GitHub's size for the preview.
-async function social () {
+async function social (text) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 640 } })
   await page.goto(url)
   await page.waitForSelector('body[data-ready]')
   // Outfit has no Cyrillic: the line under the logo is set in Onest.
   await page.addStyleTag({ url: 'https://fonts.googleapis.com/css2?family=Onest:wght@400&display=block' })
-  await page.evaluate(async () => {
+  await page.evaluate(async text => {
     document.documentElement.style.cssText = 'width: 1280px; height: 640px'
     document.body.style.cssText = 'width: 1280px; height: 640px; display: grid; place-items: center; background: #fff'
     const mark = document.querySelector('.logo')
     mark.style.cssText = 'height: auto; padding: 0; transform: scale(2.6)'
     const line = document.createElement('div')
-    line.textContent = 'Формы MODX без перезагрузки страницы, с защитой от спама'
+    line.textContent = text
     line.style.cssText = 'position: absolute; bottom: 120px; width: 100%; text-align: center; font: 400 30px Onest, sans-serif; color: #555'
     document.body.append(line)
     await document.fonts.load('400 30px Onest', line.textContent)
-  })
+  }, text)
   await requireFonts(page, ['Outfit', 'JetBrains Mono', 'Onest'])
   const png = await page.screenshot()
   await page.close()
@@ -69,7 +70,8 @@ try {
     'logo@2x.png': await logo(2),
     'logo-dark.png': await logo(1, '?dark'),
     'logo-dark@2x.png': await logo(2, '?dark'),
-    'social.png': await social(),
+    'social-en.png': await social('MODX forms without a page reload, protected from spam'),
+    'social-ru.png': await social('Формы MODX без перезагрузки страницы, с защитой от спама'),
   }
   for (const [name, png] of Object.entries(files)) {
     writeFileSync(`${dir}/${name}`, png)
