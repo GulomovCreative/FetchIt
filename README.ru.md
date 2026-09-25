@@ -338,7 +338,7 @@ npm run typecheck    # tsc: код и собранные публичные ти
 npm test             # Vitest
 vendor/bin/phpunit   # PHPUnit
 npm run screenshots  # снимки уведомлений в docs/images/, после правок их стилей
-npm run logo         # логотип из .github/logo/logo.html (нужна сеть для Google Fonts)
+npm run logo         # логотип, квадратный знак и превью ссылок в .github/logo/ (нужна сеть для Google Fonts)
 ```
 
 ### Локальные сайты
