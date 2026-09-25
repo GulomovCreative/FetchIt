@@ -338,7 +338,7 @@ npm run typecheck    # tsc: the code, and the built public types as a site sees 
 npm test             # Vitest
 vendor/bin/phpunit   # PHPUnit
 npm run screenshots  # screenshots of the notifications in docs/images/, after changing their styles
-npm run logo         # the logo, the square mark and the social previews in .github/logo/ (needs the network for Google Fonts)
+npm run logo         # the logo, the square mark, the pictures for modstore.pro and extras.modx.com and the social previews in .github/logo/ (needs the network for Google Fonts)
 ```
 
 ### Local sites
