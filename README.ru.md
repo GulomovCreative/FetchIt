@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/logo/logo-dark@2x.png">
-    <img src=".github/logo/logo@2x.png" width="320" alt="FetchIt">
+    <img src=".github/logo/logo@2x.png" width="390" alt="FetchIt">
   </picture>
 </p>
 
@@ -181,7 +181,7 @@ if (preg_match('/@(mailinator|tempmail)\./i', $email)) {
 
 ## Уведомления
 
-![Встроенные уведомления FetchIt: ошибка и успешная отправка](docs/images/notifier-desktop-ru.png)
+![Встроенные уведомления FetchIt: ошибка и успешная отправка](docs/images/notifier-readme-ru.png)
 
 С настройкой `fetchit.frontend.default.notifier` ответы сервера и ошибки отправки показываются ещё и уведомлениями в углу страницы. Текст выводится как текст: теги из него убираются, HTML-сущности вроде `&amp;` остаются как есть.
 

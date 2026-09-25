@@ -9,6 +9,9 @@
 //
 //   notifier-{desktop,mobile,dark}-{ru,en}.png  a page with the form after
 //                                               an error and a success
+//   notifier-readme-{ru,en}.png                 the same in a narrower frame,
+//                                               where the toasts read well at
+//                                               the width of the README
 //   toast-{success,error}-{ru,en}.png           one toast, cropped
 
 import { mkdirSync, readFileSync } from 'node:fs'
@@ -44,7 +47,7 @@ const texts = {
   },
 }
 
-function html (t, dark) {
+function html (t, dark, left) {
   const colors = dark
     ? { page: '#111827', card: '#1f2937', text: '#f3f4f6', muted: '#9ca3af', field: '#111827', border: '#374151', accent: '#60a5fa' }
     : { page: '#f3f4f6', card: '#ffffff', text: '#111827', muted: '#6b7280', field: '#ffffff', border: '#d1d5db', accent: '#2563eb' }
@@ -57,7 +60,7 @@ function html (t, dark) {
 <title>FetchIt</title>
 <style>
   * { box-sizing: border-box; }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 2rem 1rem;
+  body { margin: 0; min-height: 100vh; display: grid; place-items: ${left ? 'center start' : 'center'}; padding: 2rem ${left ? '4rem' : '1rem'};
     background: ${colors.page}; color: ${colors.text}; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   form { width: min(28rem, 100%); padding: 2rem; border-radius: 1rem; background: ${colors.card};
     box-shadow: 0 1px 3px rgb(0 0 0 / .08), 0 8px 24px rgb(0 0 0 / .06); }
@@ -84,10 +87,10 @@ function html (t, dark) {
 </html>`
 }
 
-async function open (browser, t, { dark = false, device = { viewport: { width: 1280, height: 800 } } } = {}) {
+async function open (browser, t, { dark = false, left = false, device = { viewport: { width: 1280, height: 800 } } } = {}) {
   const context = await browser.newContext({ ...device, deviceScaleFactor: 2, reducedMotion: 'reduce' })
   const page = await context.newPage()
-  await page.setContent(html(t, dark))
+  await page.setContent(html(t, dark, left))
   await page.addScriptTag({ content: script })
   // Long enough to take the picture; the first message was an error, the second a success.
   await page.evaluate(({ close }) => {
@@ -114,6 +117,8 @@ const browser = await chromium.launch()
 for (const t of Object.values(texts)) {
   for (const [name, options] of [
     ['desktop', {}],
+    // The form on the left, the toasts beside it.
+    ['readme', { left: true, device: { viewport: { width: 1000, height: 620 } } }],
     ['mobile', { device: devices['iPhone 13'] }],
     ['dark', { dark: true }],
   ]) {

@@ -1,7 +1,7 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/logo/logo-dark@2x.png">
-    <img src=".github/logo/logo@2x.png" width="320" alt="FetchIt">
+    <img src=".github/logo/logo@2x.png" width="390" alt="FetchIt">
   </picture>
 </p>
 
@@ -181,7 +181,7 @@ The event also fires with the protection off.
 
 ## Notifications
 
-![The built-in notifications of FetchIt: an error and a successful submission](docs/images/notifier-desktop-en.png)
+![The built-in notifications of FetchIt: an error and a successful submission](docs/images/notifier-readme-en.png)
 
 With `fetchit.frontend.default.notifier`, the answers of the server and failed submissions are also shown as notifications in a corner of the page. The message is shown as text: tags are removed from it, HTML entities such as `&amp;` stay as they are.
 
