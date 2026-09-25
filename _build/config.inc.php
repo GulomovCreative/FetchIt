@@ -16,7 +16,7 @@ return [
     'name' => 'FetchIt',
     'name_lower' => 'fetchit',
     'version' => '4.0.0',
-    'release' => 'alpha',
+    'release' => 'pl',
     // Install package to site right after build; PKG_DIST=1 only builds it
     'install' => !getenv('PKG_DIST'),
     // Which elements should be updated on package upgrade
