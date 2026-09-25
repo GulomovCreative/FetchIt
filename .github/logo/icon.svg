@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="76" height="76" viewBox="0 0 76 76">
+  <!-- The mark of FetchIt: a form with two fields and the send button (sky-500 of Tailwind CSS 4). -->
+  <rect width="76" height="76" rx="5" fill="#EBEBEB"/>
+  <rect x="8" y="13" width="60" height="13" rx="2" fill="#FFFFFF"/>
+  <rect x="8" y="31.5" width="60" height="13" rx="2" fill="#FFFFFF"/>
+  <rect x="8" y="50" width="30" height="13" rx="2" fill="#00A6F4"/>
+</svg>

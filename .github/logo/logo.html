@@ -6,8 +6,8 @@
   The logo of FetchIt: npm run logo renders it next to this file, on a
   transparent background, for light pages (logo.png, logo@2x.png) and dark
   ones (logo-dark.png, logo-dark@2x.png: logo.html?dark), and social-en.png
-  and social-ru.png for the preview of links to the repository. The mark is a form: two fields and
-  the send button, in sky-500 of Tailwind CSS 4.
+  and social-ru.png for the preview of links to the repository. The mark is
+  icon.svg, rendered alone as icon-<size>.png.
 -->
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400&family=JetBrains+Mono:wght@200&display=block');
@@ -21,13 +21,7 @@
 </head>
 <body>
 <div class="logo">
-  <svg width="76" height="76" viewBox="0 0 76 76">
-    <rect width="76" height="76" rx="5" fill="#EBEBEB"/>
-    <!-- Two fields and the send button. -->
-    <rect x="8" y="13" width="60" height="13" rx="2" fill="#FFFFFF"/>
-    <rect x="8" y="31.5" width="60" height="13" rx="2" fill="#FFFFFF"/>
-    <rect x="8" y="50" width="30" height="13" rx="2" fill="#00A6F4"/>
-  </svg>
+  <img src="icon.svg" width="76" height="76" alt="">
   <div class="word"><span class="sans">Fetch</span><span class="mono">It</span></div>
 </div>
 <script>
@@ -35,7 +29,8 @@
     document.body.classList.add('dark')
   }
   // The wordmark fits the space right of the mark.
-  document.fonts.ready.then(() => {
+  // The fonts and the mark first, then the fit and the ready flag.
+  Promise.all([document.fonts.ready, document.querySelector('img').decode()]).then(() => {
     const word = document.querySelector('.word')
     const room = 260 - 76 - 13 - 30
     let size = 34
