@@ -34,6 +34,7 @@ formit="$(jq -r '.formit // empty' <<< "$fixtures")"
 counter="$(jq -r '.counter' <<< "$fixtures")"
 redirect="$(jq -r '.redirect' <<< "$fixtures")"
 redirector="$(jq -r '.redirector' <<< "$fixtures")"
+noisyredirector="$(jq -r '.noisyredirector' <<< "$fixtures")"
 formitredirect="$(jq -r '.formitredirect // empty' <<< "$fixtures")"
 mixed="$(jq -r '.mixed // empty' <<< "$fixtures")"
 pdotools="$(jq -r '.pdotools // empty' <<< "$fixtures")"
@@ -171,6 +172,13 @@ echo "# A snippet that redirects itself (id $redirector)"
 action="$(open_page "$redirector")"
 response="$(submit "$action" -F email=ann@example.com -F "pageId=$redirector")"
 check "the redirect comes as an answer" json ".success == true and (.redirect | test(\"id=$custom([^0-9]|$)|fetchit-custom\"))" "$response"
+check "with status 200" test "$(status)" = 200
+check "without Location" test -z "$(header location)"
+
+echo "# A snippet that prints before it redirects (id $noisyredirector)"
+action="$(open_page "$noisyredirector")"
+response="$(submit "$action" -F email=ann@example.com -F "pageId=$noisyredirector")"
+check "the redirect comes as an answer after the output" json ".success == true and (.redirect | test(\"id=$custom([^0-9]|$)|fetchit-custom\"))" "$response"
 check "with status 200" test "$(status)" = 200
 check "without Location" test -z "$(header location)"
 
