@@ -23,4 +23,9 @@ return [
             ],
         ],
     ],
+    'FetchItScript' => [
+        'file' => 'fetchitscript',
+        'description' => '',
+        'properties' => [],
+    ],
 ];
