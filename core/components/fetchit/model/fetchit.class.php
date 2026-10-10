@@ -151,8 +151,9 @@ class FetchIt
     /**
      * Give every form in the chunk the POST method and the action key.
      *
-     * The form tag loses any method and data-fetchit of its own, and gets
-     * method="post" and data-fetchit="$action" as its last attributes. The
+     * The form tag loses any method, data-fetchit and data-fetchit-config of
+     * its own, and gets method="post", data-fetchit="$action" and
+     * data-fetchit-config (see clientConfig()) as its last attributes. The
      * rest of the tag and everything inside the form stay as they are, apart
      * from the service fields of the protection right after the tag.
      *
@@ -169,10 +170,12 @@ class FetchIt
         // "method=" inside another attribute's value is never matched.
         $attribute = '#(\s+)([^\s"\'>/=]+)(\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s"\'=<>`]+))?#';
 
-        $result = preg_replace_callback($tag, function ($match) use ($action, $attribute) {
+        $config = htmlspecialchars($this->modx->toJSON($this->clientConfig($action)), ENT_QUOTES, 'UTF-8');
+
+        $result = preg_replace_callback($tag, function ($match) use ($action, $attribute, $config) {
             /** @var array $match */
             $attributes = preg_replace_callback($attribute, function ($pair) {
-                return in_array(strtolower($pair[2]), ['method', 'data-fetchit'], true) ? '' : $pair[0];
+                return in_array(strtolower($pair[2]), ['method', 'data-fetchit', 'data-fetchit-config'], true) ? '' : $pair[0];
             }, $match[1]);
             if ($attributes === null) {
                 $this->modx->log(modX::LOG_LEVEL_ERROR, '[FetchIt] Could not read the attributes of a form: ' . $this->pcreError());
@@ -180,7 +183,8 @@ class FetchIt
             }
 
             return substr($match[0], 0, 5) . rtrim($attributes)
-                . ' method="post" data-fetchit="' . htmlspecialchars($action, ENT_QUOTES) . '">'
+                . ' method="post" data-fetchit="' . htmlspecialchars($action, ENT_QUOTES) . '"'
+                . ' data-fetchit-config="' . $config . '">'
                 . $this->guard()->fields($action);
         }, $html);
 
@@ -346,17 +350,19 @@ class FetchIt
 
 
     /**
-     * Flag this request for registerScript() and add the inline call that
-     * initialises the forms with this action.
+     * The config of the script for the forms of an action. The snippet
+     * writes it into data-fetchit-config of every form, so a form inserted
+     * after the page loaded brings it along.
      *
      * @param string $action
+     *
+     * @return array
      */
-    public function loadScript($action)
+    public function clientConfig($action)
     {
-        self::$scriptRequested = true;
-
         $captcha = $this->guard()->activeCaptcha();
-        $config = $this->modx->toJSON([
+
+        return [
             'action' => $action,
             'assetsUrl' => $this->config['assetsUrl'],
             'actionUrl' => str_replace('[[+assetsUrl]]', $this->config['assetsUrl'], $this->config['actionUrl']),
@@ -372,7 +378,21 @@ class FetchIt
             'pageId' => !empty($this->modx->resource)
                 ? $this->modx->resource->get('id')
                 : 0,
-        ]);
+        ];
+    }
+
+
+    /**
+     * Flag this request for registerScript() and add the inline call that
+     * initialises the forms with this action.
+     *
+     * @param string $action
+     */
+    public function loadScript($action)
+    {
+        self::$scriptRequested = true;
+
+        $config = $this->modx->toJSON($this->clientConfig($action));
         $js_classname = trim($this->modx->getOption('fetchit.frontend.js.classname', null, 'FetchIt', true));
         // The class may be a window property, a top-level "class" declaration
         // (no window property) or a dotted name. Without the script (a cached

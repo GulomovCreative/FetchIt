@@ -179,10 +179,7 @@ class PowCaptchaTest extends TestCase
     {
         $this->modx->options['fetchit.protection.pow'] = 16;
 
-        $this->fetchit->loadScript(self::ACTION);
-
-        preg_match('/\.create\((\{.*?\})\);/', $this->modx->htmlBlocks[0], $match);
-        $this->assertSame(16, json_decode($match[1], true)['pow']);
+        $this->assertSame(16, $this->fetchit->clientConfig(self::ACTION)['pow']);
     }
 
     // ------------------------------------------------------------ captchas
@@ -346,7 +343,7 @@ class PowCaptchaTest extends TestCase
         $this->modx->options = array_merge($this->modx->options, $options);
 
         $this->assertNull($this->submit());
-        $this->fetchit->loadScript(self::ACTION);
+        $this->fetchit->clientConfig(self::ACTION);
 
         $this->assertSame([], $this->requests);
         $this->assertCount(1, $this->modx->logged);
@@ -356,7 +353,7 @@ class PowCaptchaTest extends TestCase
     public function testNothingIsLoggedWithoutACaptcha()
     {
         $this->submit();
-        $this->fetchit->loadScript(self::ACTION);
+        $this->fetchit->clientConfig(self::ACTION);
 
         $this->assertSame([], $this->modx->logged);
     }
@@ -465,11 +462,7 @@ class PowCaptchaTest extends TestCase
 
     private function scriptConfig()
     {
-        $this->modx->htmlBlocks = [];
-        $this->fetchit->loadScript(self::ACTION);
-        preg_match('/\.create\((\{.*?\})\);/', $this->modx->htmlBlocks[0], $match);
-
-        return json_decode($match[1], true);
+        return $this->fetchit->clientConfig(self::ACTION);
     }
 
     public function testTheScriptGetsTheProviderAndThePageItsScript()
