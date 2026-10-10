@@ -569,6 +569,18 @@ class FetchItTest extends TestCase
         $this->assertSame($page, $this->render($page, [], false));
     }
 
+    public function testScriptSnippetAsksForTheScriptsAndOutputsNothing()
+    {
+        $modx = $this->modx;
+        $scriptProperties = [];
+        $output = include MODX_CORE_PATH . 'components/fetchit/elements/snippets/fetchitscript.php';
+
+        $this->assertSame('', $output);
+        $html = $this->render('<html><head></head><body></body></html>', [], false);
+        $this->assertStringContainsString('js/fetchit.js', $html);
+        $this->assertStringContainsString('.observe(', $html);
+    }
+
     public function testScriptsAreAddedWithoutASession()
     {
         // Sites with anonymous sessions off got no script at all.

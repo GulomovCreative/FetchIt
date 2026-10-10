@@ -107,6 +107,14 @@ class modX
      * As xPDO getService(): one shared instance per name, keys exactly as
      * given (case matters). xPDO 3 keeps them in the service container.
      */
+    /**
+     * The classes come from the autoloader of the tests.
+     */
+    public function loadClass($fqn, $path = '', $ignorePkg = false, $transient = false)
+    {
+        return class_exists($fqn);
+    }
+
     public function getService($name, $class = '', $path = '', $params = [])
     {
         $class = $class ?: $name;
