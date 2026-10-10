@@ -2509,3 +2509,259 @@ describe('redirect after a success', () => {
     expect(fetchit.navigate('http://[bad')).toBe(false)
   })
 })
+
+describe('timeout and retries', () => {
+  type Step = Error | 'hang' | { status?: number, body?: unknown, headers?: Record<string, string> }
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
+  const sent = { success: true, message: 'Sent', data: [] }
+
+  function server(...steps: Step[]) {
+    const fetch = vi.fn((_request: Request, init?: RequestInit) => {
+      const step = steps.shift() ?? { body: sent }
+      if (step instanceof Error) {
+        return Promise.reject(step)
+      }
+      if (step === 'hang') {
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')))
+        })
+      }
+      return Promise.resolve({
+        status: step.status ?? 200,
+        url: actionUrl,
+        headers: new Headers(step.headers ?? {}),
+        json: async () => {
+          if (typeof step.body === 'string') {
+            throw new SyntaxError('Unexpected token <')
+          }
+          return step.body
+        },
+      })
+    })
+    vi.stubGlobal('fetch', fetch)
+    return fetch
+  }
+
+  const keyOf = (call: unknown[]) => new Headers((call[1] as RequestInit | undefined)?.headers).get('X-FetchIt-Submission')
+  const tokenOf = (call: unknown[]) => ((call[1] as RequestInit).body as FormData).get('fetchit_token')
+
+  async function send(form: HTMLFormElement) {
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    await vi.advanceTimersByTimeAsync(0)
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('sends no submission key without retries, as before', async () => {
+    const form = mountForm()
+    FetchIt.create(config())
+    const fetch = server({ body: sent })
+
+    await send(form)
+
+    expect(fetch.mock.calls[0][1]).toEqual({ method: 'post', body: expect.any(FormData) })
+    expect(keyOf(fetch.mock.calls[0])).toBeNull()
+  })
+
+  it('retries a network error with the same key after a pause', async () => {
+    const form = mountForm()
+    FetchIt.create(config({ retries: 2 }))
+    const fetch = server(new TypeError('Failed to fetch'), { body: sent })
+
+    await send(form)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(form.getAttribute('data-fetchit-state')).toBe('sending')
+    expect(field(form, 'email').disabled).toBe(true)
+    await vi.advanceTimersByTimeAsync(999)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(keyOf(fetch.mock.calls[0])).toMatch(uuid)
+    expect(keyOf(fetch.mock.calls[1])).toBe(keyOf(fetch.mock.calls[0]))
+    expect(new Headers((fetch.mock.calls[0][1] as RequestInit).headers).get('X-FetchIt-Action')).toBe(action)
+    expect(element(form, '[data-success]').textContent).toBe('Sent')
+  })
+
+  it('retries 502, 503 and 504 that are not FetchIt answers, pausing 1, 2 and 4 s', async () => {
+    const form = mountForm()
+    FetchIt.create(config({ retries: 3 }))
+    const fetch = server({ status: 502, body: '<html>' }, { status: 503, body: '<html>' }, { status: 504, body: { error: 'gateway' } }, { body: sent })
+
+    await send(form)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(fetch).toHaveBeenCalledTimes(2)
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(fetch).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(3999)
+    expect(fetch).toHaveBeenCalledTimes(3)
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(fetch).toHaveBeenCalledTimes(4)
+    expect(element(form, '[data-success]').textContent).toBe('Sent')
+  })
+
+  it('waits while the first attempt is still processed, with the next token', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config({ retries: 1 }))
+    const fetch = server(
+      { status: 409, body: { success: false, message: 'Still', data: [] }, headers: { 'X-FetchIt-Refused': 'pending', 'X-FetchIt-Token': 'next' } },
+      { body: sent },
+    )
+
+    await send(form)
+    // The attempts share one FormData: its token is read before the retry sets the next.
+    expect(tokenOf(fetch.mock.calls[0])).toBe('old-token')
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(tokenOf(fetch.mock.calls[1])).toBe('next')
+    expect(element(form, '[data-success]').textContent).toBe('Sent')
+  })
+
+  it('shows the pending answer when no retry is left', async () => {
+    const form = mountForm()
+    FetchIt.create(config({ retries: 1 }))
+    const pending = { status: 409, body: { success: false, message: 'Still', data: [] }, headers: { 'X-FetchIt-Refused': 'pending' } }
+    server(pending, pending)
+
+    await send(form)
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(element(form, '[data-validation-error]').textContent).toBe('Still')
+    expect(form.getAttribute('data-fetchit-state')).toBe('error')
+  })
+
+  it('does not retry a FetchIt answer, nor an HTML 500', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountForm()
+    FetchIt.create(config({ retries: 2, requestErrorMessage: 'Could not send' }))
+    const fetch = server({ status: 500, body: '<html>' }, { body: { success: false, message: 'Check', data: [] } })
+
+    await send(form)
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(element(form, '[data-validation-error]').textContent).toBe('Could not send')
+
+    await send(form)
+    await vi.advanceTimersByTimeAsync(10000)
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(element(form, '[data-validation-error]').textContent).toBe('Check')
+  })
+
+  it('gives up after the retries with the error of the last attempt', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountForm()
+    FetchIt.create(config({ retries: 1, requestErrorMessage: 'Could not send' }))
+    const last = new TypeError('Failed to fetch again')
+    const errors: unknown[] = []
+    on('fetchit:error', event => errors.push((event.detail as FetchItErrorDetail).error))
+    const fetch = server(new TypeError('Failed to fetch'), last)
+
+    await send(form)
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(errors).toEqual([last])
+    expect(element(form, '[data-validation-error]').textContent).toBe('Could not send')
+    expect(field(form, 'email').disabled).toBe(false)
+  })
+
+  it('stops an attempt after the timeout and says the form may have been sent', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountForm()
+    FetchIt.create(config({ timeout: 5, timeoutMessage: 'No answer in time' }))
+    const fetch = server('hang')
+
+    await send(form)
+    expect((fetch.mock.calls[0][1] as RequestInit).signal).toBeInstanceOf(AbortSignal)
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(element(form, '[data-validation-error]').textContent).toBe('')
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(element(form, '[data-validation-error]').textContent).toBe('No answer in time')
+    expect(keyOf(fetch.mock.calls[0])).toBeNull()
+  })
+
+  it('retries after a timeout', async () => {
+    const form = mountForm()
+    FetchIt.create(config({ timeout: 5, retries: 1 }))
+    const fetch = server('hang', { body: sent })
+
+    await send(form)
+    await vi.advanceTimersByTimeAsync(5000 + 1000)
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(element(form, '[data-success]').textContent).toBe('Sent')
+  })
+
+  it('tells each retry in fetchit:retry, which can stop them', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountForm()
+    FetchIt.create(config({ retries: 3, requestErrorMessage: 'Could not send' }))
+    const failure = new TypeError('Failed to fetch')
+    const retries: FetchItRetryDetail[] = []
+    on('fetchit:retry', event => {
+      retries.push(event.detail as FetchItRetryDetail)
+      if (retries.length === 2) {
+        event.preventDefault()
+      }
+    })
+    const fetch = server(failure, failure, failure)
+
+    await send(form)
+    await vi.advanceTimersByTimeAsync(1000)
+    await vi.advanceTimersByTimeAsync(10000)
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(retries.map(retry => retry.attempt)).toEqual([1, 2])
+    expect(retries[0]).toMatchObject({ form, error: failure })
+    expect(element(form, '[data-validation-error]').textContent).toBe('Could not send')
+  })
+
+  it('sends nothing more from a form destroyed during the pause', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountForm()
+    FetchIt.create(config({ retries: 2 }))
+    const fetch = server(new TypeError('Failed to fetch'))
+
+    await send(form)
+    instance(form)!.destroy()
+    await vi.advanceTimersByTimeAsync(10000)
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(element(form, '[data-validation-error]').textContent).toBe('')
+    expect(error).not.toHaveBeenCalled()
+  })
+
+  it('gives every submission a key of its own', async () => {
+    const form = mountForm()
+    FetchIt.create(config({ retries: 1 }))
+    const fetch = server({ body: sent }, { body: sent })
+
+    await send(form)
+    await send(form)
+
+    expect(keyOf(fetch.mock.calls[0])).toMatch(uuid)
+    expect(keyOf(fetch.mock.calls[1])).toMatch(uuid)
+    expect(keyOf(fetch.mock.calls[1])).not.toBe(keyOf(fetch.mock.calls[0]))
+  })
+
+  it('makes a key without crypto.randomUUID (a page over http)', async () => {
+    const getRandomValues = globalThis.crypto.getRandomValues.bind(globalThis.crypto)
+    vi.stubGlobal('crypto', { getRandomValues })
+    const form = mountForm()
+    FetchIt.create(config({ retries: 1 }))
+    const fetch = server({ body: sent })
+
+    await send(form)
+
+    expect(keyOf(fetch.mock.calls[0])).toMatch(uuid)
+  })
+})
