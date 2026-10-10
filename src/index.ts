@@ -161,7 +161,7 @@ class FetchIt implements FetchItInstance {
       try {
         try {
           if (this.config.freshToken) {
-            await this.freshToken();
+            await this.awaitFreshToken();
             const token = this.currentToken();
             if (token) {
               formData.set(FetchIt.tokenField, token);
@@ -298,10 +298,11 @@ class FetchIt implements FetchItInstance {
     });
 
     // The visitor started on the form: get a fresh token when the page comes
-    // from a full-page cache, and solve the proof of work meanwhile.
+    // from a full-page cache (the proof of work is then solved for it),
+    // otherwise solve the proof of work ahead.
     this.form.addEventListener('focusin', () => {
       if (this.config.freshToken) {
-        void this.freshToken();
+        this.awaitFreshToken().catch(error => console.error(error));
       } else {
         this.solveAhead();
       }
@@ -412,7 +413,7 @@ class FetchIt implements FetchItInstance {
    * Exchange the token of the page for a fresh one, once: a page from a
    * full-page cache holds a token many visitors got.
    */
-  freshToken (): Promise<void> {
+  awaitFreshToken (): Promise<void> {
     this.tokenExchange ??= this.exchangeToken();
     return this.tokenExchange;
   }
@@ -422,7 +423,7 @@ class FetchIt implements FetchItInstance {
    * exchange keeps the token of the page: the retry after a refusal still
    * covers it. destroy() stops it quietly.
    */
-  async exchangeToken () {
+  async exchangeToken (): Promise<void> {
     const token = this.currentToken();
     let fresh: string | null | undefined;
     if (token) {
@@ -468,14 +469,14 @@ class FetchIt implements FetchItInstance {
   /**
    * Wait until the fill time of the server has passed since the exchange.
    */
-  async untilReady () {
+  async untilReady (): Promise<void> {
     await until(this.freshTokenReadyAt);
   }
 
   /**
    * The token in the form now.
    */
-  currentToken () {
+  currentToken (): string | undefined {
     return this.form.querySelector<HTMLInputElement>(`input[name="${FetchIt.tokenField}"]`)?.value;
   }
 

@@ -726,7 +726,7 @@
 					try {
 						var _query$headers, _query$headers2, _query$headers$get, _query$headers3, _this$config$pow;
 						if (this.config.freshToken) {
-							await this.freshToken();
+							await this.awaitFreshToken();
 							const token = this.currentToken();
 							if (token) formData.set(FetchIt.tokenField, token);
 							await this.untilReady();
@@ -835,7 +835,7 @@
 				}, { signal });
 			});
 			this.form.addEventListener("focusin", () => {
-				if (this.config.freshToken) this.freshToken();
+				if (this.config.freshToken) this.awaitFreshToken().catch((error) => console.error(error));
 				else this.solveAhead();
 			}, {
 				once: true,
@@ -932,7 +932,7 @@
 		* Exchange the token of the page for a fresh one, once: a page from a
 		* full-page cache holds a token many visitors got.
 		*/
-		freshToken() {
+		awaitFreshToken() {
 			var _this$tokenExchange;
 			(_this$tokenExchange = this.tokenExchange) !== null && _this$tokenExchange !== void 0 || (this.tokenExchange = this.exchangeToken());
 			return this.tokenExchange;
