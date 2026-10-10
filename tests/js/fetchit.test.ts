@@ -11,6 +11,13 @@ const FetchIt = window.FetchIt
 type Config = ConstructorParameters<typeof FetchIt>[1]
 type Handler = (event: CustomEvent) => void
 
+// What the tests look at beyond the public types.
+type InstanceInternals = FetchItInstance & {
+  work?: { stop: AbortController }
+  captcha: { destroy (): void } | null
+}
+const instance = (form: HTMLFormElement) => FetchIt.instances.get(form) as InstanceInternals | undefined
+
 function config(overrides: Partial<Config> = {}): Config {
   return {
     action,
@@ -1216,5 +1223,58 @@ describe('captchas', () => {
 
     await vi.waitFor(() => expect(element(form, '[data-success]').textContent).toBe('Sent'))
     expect(field(form, 'email').value).toBe('')
+  })
+})
+
+describe('destroying a captcha', () => {
+  afterEach(() => {
+    delete window.turnstile
+    delete window.smartCaptcha
+    delete window.grecaptcha
+  })
+
+  it('removes the Turnstile widget', async () => {
+    const turnstile = { ...fakeTurnstile(), remove: vi.fn() }
+    window.turnstile = turnstile
+    const form = mountForm()
+    FetchIt.create(captchaConfig('turnstile'))
+    await vi.waitFor(() => expect(turnstile.render).toHaveBeenCalled())
+
+    instance(form)!.captcha!.destroy()
+
+    expect(turnstile.remove).toHaveBeenCalledWith('widget-1')
+  })
+
+  it('renders no Turnstile widget when its script comes after', async () => {
+    const form = mountForm()
+    FetchIt.create(captchaConfig('turnstile'))
+    instance(form)!.captcha!.destroy()
+
+    const turnstile = fakeTurnstile()
+    window.turnstile = turnstile
+    await new Promise(resolve => setTimeout(resolve, 250))
+
+    expect(turnstile.render).not.toHaveBeenCalled()
+  })
+
+  it('removes the SmartCaptcha widget', async () => {
+    const smartCaptcha = { ...fakeSmartCaptcha(), destroy: vi.fn() }
+    window.smartCaptcha = smartCaptcha
+    const form = mountForm()
+    FetchIt.create(captchaConfig('smartcaptcha'))
+    await vi.waitFor(() => expect(smartCaptcha.render).toHaveBeenCalled())
+
+    instance(form)!.captcha!.destroy()
+
+    expect(smartCaptcha.destroy).toHaveBeenCalledWith(7)
+  })
+
+  it('leaves reCAPTCHA alone', () => {
+    window.grecaptcha = { ready: vi.fn(), execute: vi.fn(), reset: vi.fn() }
+    const form = mountForm()
+    FetchIt.create(captchaConfig('recaptcha'))
+
+    expect(() => instance(form)!.captcha!.destroy()).not.toThrow()
+    expect(window.grecaptcha.reset).not.toHaveBeenCalled()
   })
 })

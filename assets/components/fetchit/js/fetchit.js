@@ -96,6 +96,7 @@
 	function turnstile(form, siteKey) {
 		let widget;
 		let failure;
+		let gone = false;
 		const render = (api) => {
 			var _widget;
 			(_widget = widget) !== null && _widget !== void 0 || (widget = api.render(container(form), {
@@ -110,7 +111,7 @@
 			}));
 			return widget;
 		};
-		waitFor(() => window.turnstile).then((api) => api && render(api)).catch((error) => console.error(error));
+		waitFor(() => gone ? null : window.turnstile).then((api) => api && render(api)).catch((error) => console.error(error));
 		return {
 			async answer(formData) {
 				const api = await waitFor(() => window.turnstile);
@@ -130,6 +131,17 @@
 					safely(() => {
 						var _window$turnstile;
 						return (_window$turnstile = window.turnstile) === null || _window$turnstile === void 0 ? void 0 : _window$turnstile.reset(id);
+					});
+				}
+			},
+			destroy() {
+				gone = true;
+				if (widget !== void 0) {
+					const id = widget;
+					widget = void 0;
+					safely(() => {
+						var _window$turnstile2, _window$turnstile2$re;
+						return (_window$turnstile2 = window.turnstile) === null || _window$turnstile2 === void 0 || (_window$turnstile2$re = _window$turnstile2.remove) === null || _window$turnstile2$re === void 0 ? void 0 : _window$turnstile2$re.call(_window$turnstile2, id);
 					});
 				}
 			}
@@ -154,7 +166,8 @@
 				});
 				formData.set("g-recaptcha-response", token);
 			},
-			reset() {}
+			reset() {},
+			destroy() {}
 		};
 	}
 	/**
@@ -164,6 +177,7 @@
 	function smartcaptcha(form, siteKey) {
 		let widget;
 		let pending;
+		let gone = false;
 		const settle = (token, error) => {
 			const waiting = pending;
 			pending = void 0;
@@ -187,7 +201,7 @@
 			}
 			return widget;
 		};
-		waitFor(() => window.smartCaptcha).then((api) => api && render(api)).catch((error) => console.error(error));
+		waitFor(() => gone ? null : window.smartCaptcha).then((api) => api && render(api)).catch((error) => console.error(error));
 		return {
 			async answer(formData) {
 				const api = await waitFor(() => window.smartCaptcha);
@@ -209,6 +223,18 @@
 					safely(() => {
 						var _window$smartCaptcha;
 						return (_window$smartCaptcha = window.smartCaptcha) === null || _window$smartCaptcha === void 0 ? void 0 : _window$smartCaptcha.reset(id);
+					});
+				}
+			},
+			destroy() {
+				gone = true;
+				pending = void 0;
+				if (widget !== void 0) {
+					const id = widget;
+					widget = void 0;
+					safely(() => {
+						var _window$smartCaptcha2, _window$smartCaptcha3;
+						return (_window$smartCaptcha2 = window.smartCaptcha) === null || _window$smartCaptcha2 === void 0 || (_window$smartCaptcha3 = _window$smartCaptcha2.destroy) === null || _window$smartCaptcha3 === void 0 ? void 0 : _window$smartCaptcha3.call(_window$smartCaptcha2, id);
 					});
 				}
 			}

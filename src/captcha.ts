@@ -12,6 +12,8 @@ export interface Captcha {
   answer (formData: FormData): Promise<void>;
   // Get ready for the next answer; never throws.
   reset (): void;
+  // The form is gone: remove the widget, render none later; never throws.
+  destroy (): void;
 }
 
 export class CaptchaError extends Error {
@@ -89,6 +91,7 @@ type SmartCaptcha = NonNullable<Window['smartCaptcha']>
 function turnstile (form: HTMLFormElement, siteKey: string): Captcha {
   let widget: string | undefined
   let failure: string | undefined
+  let gone = false
 
   const render = (api: Turnstile): string => {
     widget ??= api.render(container(form), {
@@ -102,7 +105,7 @@ function turnstile (form: HTMLFormElement, siteKey: string): Captcha {
     })
     return widget
   }
-  waitFor(() => window.turnstile).then(api => api && render(api)).catch(error => console.error(error))
+  waitFor(() => gone ? null : window.turnstile).then(api => api && render(api)).catch(error => console.error(error))
 
   return {
     async answer (formData) {
@@ -133,6 +136,14 @@ function turnstile (form: HTMLFormElement, siteKey: string): Captcha {
         safely(() => window.turnstile?.reset(id))
       }
     },
+    destroy () {
+      gone = true
+      if (widget !== undefined) {
+        const id = widget
+        widget = undefined
+        safely(() => window.turnstile?.remove?.(id))
+      }
+    },
   }
 }
 
@@ -156,6 +167,7 @@ function recaptcha (siteKey: string): Captcha {
       formData.set('g-recaptcha-response', token)
     },
     reset () {},
+    destroy () {},
   }
 }
 
@@ -166,6 +178,7 @@ function recaptcha (siteKey: string): Captcha {
 function smartcaptcha (form: HTMLFormElement, siteKey: string): Captcha {
   let widget: number | undefined
   let pending: { resolve (token: string): void; reject (error: Error): void } | undefined
+  let gone = false
 
   const settle = (token: string | undefined, error?: Error) => {
     const waiting = pending
@@ -197,7 +210,7 @@ function smartcaptcha (form: HTMLFormElement, siteKey: string): Captcha {
     }
     return widget
   }
-  waitFor(() => window.smartCaptcha).then(api => api && render(api)).catch(error => console.error(error))
+  waitFor(() => gone ? null : window.smartCaptcha).then(api => api && render(api)).catch(error => console.error(error))
 
   return {
     async answer (formData) {
@@ -217,6 +230,15 @@ function smartcaptcha (form: HTMLFormElement, siteKey: string): Captcha {
       if (widget !== undefined) {
         const id = widget
         safely(() => window.smartCaptcha?.reset(id))
+      }
+    },
+    destroy () {
+      gone = true
+      pending = undefined
+      if (widget !== undefined) {
+        const id = widget
+        widget = undefined
+        safely(() => window.smartCaptcha?.destroy?.(id))
       }
     },
   }
