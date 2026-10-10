@@ -57,7 +57,7 @@ function fixture_plugin($modx, $name, $event, $code)
     }
 }
 
-function fixture_page($modx, $alias, $content)
+function fixture_page($modx, $alias, $content, $template = null, $parent = 0)
 {
     $class = modx_class('modResource');
     $resource = $modx->getObject($class, ['alias' => $alias]);
@@ -69,7 +69,8 @@ function fixture_page($modx, $alias, $content)
         'alias' => $alias,
         'content' => $content,
         'published' => 1,
-        'template' => (int)$modx->getOption('default_template'),
+        'template' => $template === null ? (int)$modx->getOption('default_template') : (int)$template,
+        'parent' => (int)$parent,
         'context_key' => 'web',
     ]);
     if (!$resource->save() || (int)$resource->get('id') < 1) {
@@ -197,7 +198,33 @@ $pages = [
     'formit' => null,
     'mixed' => null,
     'pdotools' => null,
+    'pdopage' => null,
 ];
+
+// A form loaded into another page: the fragment has no template, the host
+// page loads it into a modal and can close it.
+$pages['fragment'] = fixture_page(
+    $modx,
+    'fetchit-fragment',
+    '[[!FetchIt? &snippet=`FetchItTestHandler` &form=`tpl.FetchIt.test`]]',
+    0
+);
+$pages['host'] = fixture_page($modx, 'fetchit-host', <<<HTML
+[[!FetchItScript]]
+<button type="button" id="open">Open the form</button>
+<button type="button" id="close">Close the form</button>
+<div id="modal"></div>
+<script>
+document.getElementById('open').addEventListener('click', async () => {
+  const answer = await fetch('index.php?id={$pages['fragment']}')
+  document.getElementById('modal').innerHTML = await answer.text()
+})
+document.getElementById('close').addEventListener('click', () => {
+  document.getElementById('modal').innerHTML = ''
+})
+</script>
+HTML
+);
 
 $snippet = $modx->getObject(modx_class('modSnippet'), ['name' => 'FetchIt']);
 $plugin = $modx->getObject(modx_class('modPlugin'), ['name' => 'FetchIt']);
@@ -242,6 +269,25 @@ HTML;
         'fetchit-pdotools',
         '[[!FetchIt? &snippet=`FetchItTestHandler` &form=`@FILE fetchit-test.tpl` &title=`Fenom works`]]'
     );
+
+    // pdoPage loads the next rows over AJAX; every row has a form.
+    fixture_element(
+        $modx,
+        'modChunk',
+        'tpl.FetchIt.row',
+        'snippet',
+        '<div class="row">[[!FetchIt? &snippet=`FetchItTestHandler` &form=`tpl.FetchIt.test`]]</div>'
+    );
+    $pages['pdopage'] = fixture_page($modx, 'fetchit-pdopage', <<<'HTML'
+<script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+<div id="pdopage">
+  <div class="rows">[[!pdoPage? &element=`pdoResources` &parents=`[[*id]]` &limit=`1` &tpl=`tpl.FetchIt.row` &ajaxMode=`button`]]</div>
+  [[!+page.nav]]
+</div>
+HTML
+    );
+    fixture_page($modx, 'fetchit-pdopage-1', '', null, $pages['pdopage']);
+    fixture_page($modx, 'fetchit-pdopage-2', '', null, $pages['pdopage']);
 }
 
 if ($modx->getObject(modx_class('modSnippet'), ['name' => 'FormIt'])) {

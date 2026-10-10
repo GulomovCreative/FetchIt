@@ -33,6 +33,8 @@ probe="$(jq -r '.probe' <<< "$fixtures")"
 formit="$(jq -r '.formit // empty' <<< "$fixtures")"
 mixed="$(jq -r '.mixed // empty' <<< "$fixtures")"
 pdotools="$(jq -r '.pdotools // empty' <<< "$fixtures")"
+fragment="$(jq -r '.fragment' <<< "$fixtures")"
+host="$(jq -r '.host' <<< "$fixtures")"
 
 echo "# Page with its own handler (id $custom)"
 action="$(open_page "$custom")"
@@ -69,6 +71,16 @@ check "an unknown action is refused" json '.success == false' "$response"
 
 response="$(curl -fsS -H "Accept: application/json" -F email=a "$base/assets/components/fetchit/action.php" || true)"
 check "a request without the action header is refused" json '.success == false' "$response"
+
+echo "# A form loaded into another page (fragment $fragment, host $host)"
+action="$(open_page "$fragment")"
+check "the fragment has the form with its config" grep -q "data-fetchit-config=\"&#123;&quot;action&quot;:&quot;$action&quot;" "$jar.html"
+check "the fragment gets no script" page_lacks '<script'
+response="$(submit "$action" -F email=ann@example.com -F "pageId=$fragment")"
+check "the form of the fragment is sent" json '.success == true and .message == "Thanks, ann@example.com"' "$response"
+open_page "$host" > /dev/null
+check "the host page links the script" grep -q 'components/fetchit/js/fetchit\.js?v=' "$jar.html"
+check "the host page starts the forms" grep -q 'FetchItClass.observe({' "$jar.html"
 
 echo "# The installed package"
 check "the snippet and plugin in the database are FetchIt 4" json '.installed.elements == true' "$fixtures"
