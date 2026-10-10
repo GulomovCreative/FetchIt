@@ -114,11 +114,25 @@ class FetchItDbStore implements FetchItStore
 
 
     /**
+     * Inserted once: the action key is a hash of the properties. A render a
+     * day later keeps it for FORM_TTL more.
+     *
      * {@inheritdoc}
      */
     public function saveForm($action, $json, $now)
     {
-        return false;
+        $row = 'f:' . $action;
+        $expires = $now + self::FORM_TTL;
+        $inserted = $this->run('INSERT INTO ' . $this->table() . ' (k, since, ' . $this->count() . ', expires, v) VALUES (?, 0, 0, ?, ?)', [
+            $row, $expires, $json,
+        ]);
+        if ($inserted !== 'duplicate') {
+            return $inserted instanceof PDOStatement;
+        }
+
+        return $this->run('UPDATE ' . $this->table() . ' SET expires = ? WHERE k = ? AND expires < ?', [
+            $expires, $row, $expires - 86400,
+        ]) instanceof PDOStatement;
     }
 
 
@@ -127,7 +141,10 @@ class FetchItDbStore implements FetchItStore
      */
     public function loadForm($action)
     {
-        return null;
+        $read = $this->run('SELECT v FROM ' . $this->table() . ' WHERE k = ?', ['f:' . $action]);
+        $value = $read instanceof PDOStatement ? $read->fetchColumn() : false;
+
+        return is_string($value) ? $value : null;
     }
 
 

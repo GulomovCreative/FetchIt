@@ -93,4 +93,84 @@ class FileStoreTest extends TestCase
     {
         $this->assertFalse($this->store()->strict());
     }
+
+    const ACTION = '0123456789abcdef0123456789abcdef';
+
+    public function testFormPropertiesAreKeptAndRead()
+    {
+        $store = $this->store();
+
+        $this->assertTrue($store->saveForm(self::ACTION, '{"snippet":"FormIt"}', 1000));
+
+        $this->assertSame('{"snippet":"FormIt"}', $store->loadForm(self::ACTION));
+        $this->assertNull($store->loadForm('fedcba9876543210fedcba9876543210'));
+    }
+
+    public function testFormPropertiesAreHiddenFromTheWeb()
+    {
+        // core/ may be inside the webroot on shared hosting, and the action
+        // key is in the markup: PHP runs the file and outputs nothing.
+        $this->store()->saveForm(self::ACTION, '{"emailTo":"boss@example.com"}', 1000);
+
+        $file = $this->modx->getCachePath() . 'fetchit/forms/01/' . self::ACTION . '.php';
+        $this->assertStringStartsWith("<?php exit; ?>\n", file_get_contents($file));
+        $this->assertSame('', shell_exec(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg($file)) ?? '');
+    }
+
+    public function testAFormIsWrittenOnceAndKeptAliveDaily()
+    {
+        $store = $this->store();
+        $file = $this->modx->getCachePath() . 'fetchit/forms/01/' . self::ACTION . '.php';
+        $store->saveForm(self::ACTION, '{"a":1}', 1000);
+        touch($file, 1000);
+
+        $store->saveForm(self::ACTION, '{"changed":1}', 1000 + 3600);
+        clearstatcache();
+        $this->assertSame(1000, filemtime($file), 'Not within a day');
+        $this->assertSame('{"a":1}', $store->loadForm(self::ACTION), 'Never rewritten: the key is a hash of the content');
+
+        $store->saveForm(self::ACTION, '{"a":1}', 1000 + 86401);
+        clearstatcache();
+        $this->assertSame(1000 + 86401, filemtime($file));
+    }
+
+    public function testAFormFileWithoutTheGuardIsIgnored()
+    {
+        $dir = $this->modx->getCachePath() . 'fetchit/forms/01/';
+        mkdir($dir, 0775, true);
+        file_put_contents($dir . self::ACTION . '.php', '{"snippet":"Evil"}');
+
+        $this->assertNull($this->store()->loadForm(self::ACTION));
+    }
+
+    public function testNoTemporaryFilesAreLeft()
+    {
+        $this->store()->saveForm(self::ACTION, '{"a":1}', 1000);
+
+        $this->assertSame([self::ACTION . '.php'], array_values(array_diff(scandir($this->modx->getCachePath() . 'fetchit/forms/01/'), ['.', '..'])));
+    }
+
+    public function testFormsNotRenderedFor90DaysArePruned()
+    {
+        $store = $this->store();
+        $old = 'ab' . str_repeat('0', 30);
+        $new = 'ab' . str_repeat('1', 30);
+        $store->saveForm($old, '{}', 1000);
+        $store->saveForm($new, '{}', 1000);
+        touch($store->formFile($old), 1000);
+        touch($store->formFile($new), 1000 + FetchItStore::FORM_TTL);
+
+        $store->pruneForms('ab', 1000 + FetchItStore::FORM_TTL + 1);
+
+        $this->assertNull($store->loadForm($old));
+        $this->assertSame('{}', $store->loadForm($new));
+    }
+
+    public function testAFormThatCannotBeWrittenIsLogged()
+    {
+        file_put_contents($this->modx->getCachePath() . 'fetchit', 'a file where the directory should be');
+
+        $this->assertFalse($this->store()->saveForm(self::ACTION, '{}', 1000));
+        $this->assertStringContainsString('could not', $this->logged[0]);
+    }
 }
