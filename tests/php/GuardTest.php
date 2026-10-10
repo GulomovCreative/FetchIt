@@ -987,6 +987,57 @@ class GuardTest extends TestCase
         $this->assertFalse($guard->saveAnswer($key, '{}'));
     }
 
+    public function testARetryOfAProcessedSubmissionGetsTheAnswerAndANewToken()
+    {
+        $runs = 0;
+        $this->modx->snippets['Handler'] = new FakeSnippet('Handler', function () use (&$runs) {
+            $runs++;
+
+            return '{"success":true,"message":"Sent","data":[]}';
+        });
+        $this->fetchit->storeActionProperties(self::ACTION, ['snippet' => 'Handler']);
+        $token = $this->token();
+        $this->now += 10;
+        $post = [FetchItGuard::TOKEN => $token, $this->guard()->trapName() => '', 'email' => 'a@b.c'];
+        $headers = [];
+        $header = function ($line) use (&$headers) {
+            $headers[] = $line;
+        };
+
+        $first = $this->fetchit->submit(self::ACTION, $post, self::UUID, $header);
+        $headers = [];
+        $retry = $this->fetchit()->submit(self::ACTION, $post, self::UUID, $header);
+
+        $this->assertSame(1, $runs);
+        $this->assertSame($first['body'], $retry['body']);
+        $this->assertCount(1, $headers);
+        $this->assertStringStartsWith('X-FetchIt-Token: 01234567.', $headers[0]);
+    }
+
+    public function testATokenRefusedIsAnsweredAsBefore()
+    {
+        $this->fetchit->storeActionProperties(self::ACTION, ['snippet' => 'Handler']);
+        $token = $this->token();
+        $this->now += 10;
+        $post = [FetchItGuard::TOKEN => $token, $this->guard()->trapName() => ''];
+        $headers = [];
+        $header = function ($line) use (&$headers) {
+            $headers[] = $line;
+        };
+        $this->modx->snippets['Handler'] = new FakeSnippet('Handler', function () {
+            return '{"success":true,"message":"Sent","data":[]}';
+        });
+        $this->fetchit->submit(self::ACTION, $post, '', $header);
+        $headers = [];
+
+        $answer = $this->fetchit()->submit(self::ACTION, $post, '', $header);
+
+        $this->assertSame(200, $answer['status']);
+        $this->assertFalse(json_decode($answer['body'], true)['success']);
+        $this->assertContains('X-FetchIt-Refused: token', $headers);
+        $this->assertStringStartsWith('X-FetchIt-Token: ', $headers[0]);
+    }
+
     private function assertNotLogged($needle)
     {
         foreach (array_column($this->modx->logged, 1) as $message) {

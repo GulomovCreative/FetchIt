@@ -51,31 +51,17 @@ if (empty($_POST)) {
     }
     http_response_code(204);
 } else {
-    $action = $_SERVER['HTTP_X_FETCHIT_ACTION'];
     // Only the posted form: $_REQUEST may also hold GET values and, with
     // request_order allowing it, cookies.
-    $post = $_POST;
-    $refused = $FetchIt->protect($action, $post);
-    // Every token is single-use: the script sends this one next time. Only a
-    // request with a well-signed token of the form gets one.
-    if ($next = $FetchIt->guard()->nextToken()) {
-        header('X-FetchIt-Token: ' . $next);
+    $answer = $FetchIt->submit(
+        $_SERVER['HTTP_X_FETCHIT_ACTION'],
+        $_POST,
+        isset($_SERVER['HTTP_X_FETCHIT_SUBMISSION']) ? (string)$_SERVER['HTTP_X_FETCHIT_SUBMISSION'] : ''
+    );
+    if ($answer['status'] !== 200) {
+        http_response_code($answer['status']);
     }
-    // The script retries once by itself when the page's token was stale, or
-    // when the page asked for no proof of work or a smaller one (a page from
-    // a cache made before it was turned on or raised).
-    if ($reason = $FetchIt->guard()->reason()) {
-        header('X-FetchIt-Refused: ' . $reason);
-        if ($reason === 'pow') {
-            header('X-FetchIt-Pow: ' . $FetchIt->guard()->pow());
-        }
-        // With fetchit.page_cache the next token of a used or expired one is
-        // timed now: the script waits this long before it sends it.
-        if ($reason === 'token' && $FetchIt->guard()->freshToken()) {
-            header('X-FetchIt-Min-Time: ' . $FetchIt->guard()->minTime());
-        }
-    }
-    echo $refused !== null ? $refused : $FetchIt->process($action, array_merge($_FILES, $post));
+    echo $answer['body'];
 }
 
 @session_write_close();

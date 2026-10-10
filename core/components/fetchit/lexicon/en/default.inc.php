@@ -21,6 +21,7 @@ $_lang['fetchit_err_token'] = 'The form has expired. Please send it again.';
 $_lang['fetchit_err_too_fast'] = 'The form was sent too fast. Please send it again.';
 $_lang['fetchit_err_rate'] = 'Too many submissions. Please try again later.';
 $_lang['fetchit_err_store'] = 'The form cannot be checked right now. Please try again later.';
+$_lang['fetchit_err_pending'] = 'The form is still being processed. Please wait a moment.';
 $_lang['fetchit_err_pow'] = 'The form could not be confirmed. Please reload the page and send it again.';
 $_lang['fetchit_err_captcha'] = 'The spam check was not passed. Please reload the page and send the form again.';
 $_lang['fetchit_err_captcha_client'] = 'The spam check could not be completed. Make sure nothing on the page blocks it and try again.';
