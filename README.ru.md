@@ -251,7 +251,7 @@ FetchIt.Message = {
 
 ### Состояние формы
 
-Пока форма отправляется, у неё `data-fetchit-state="sending"` и `aria-busy="true"`; после ответа `data-fetchit-state` равен `success` или `error` (отказ сервера или неудачный запрос), а `aria-busy` снимается. Состояние ставится до событий, поэтому сохраняется, даже если обработчик их отменил. Сброс формы посетителем убирает его; сброс от `clearFieldsOnSuccess` оставляет `success`. Спиннеру хватает CSS:
+Пока форма отправляется, у неё `data-fetchit-state="sending"` и `aria-busy="true"`; после ответа `data-fetchit-state` равен `success` или `error` (отказ сервера или неудачный запрос), а `aria-busy` снимается. Состояние ставится до событий `fetchit:after`, `fetchit:error` и `fetchit:success`, поэтому сохраняется, даже если обработчик их отменил. Сброс формы убирает его, кроме сброса во время отправки; сброс от `clearFieldsOnSuccess` оставляет `success`. Для стилей хватает CSS:
 
 ```css
 form[data-fetchit-state="sending"] button[type="submit"] {
@@ -260,7 +260,7 @@ form[data-fetchit-state="sending"] button[type="submit"] {
 }
 ```
 
-`&formState=0` и `&ariaBusy=0` выключают их для формы. CSS, который рисует спиннер на любом элементе с `[aria-busy="true"]` (например, Pico CSS 1; Pico 2 формы пропускает), нарисует его на всей форме: если это не нужно, выключите там `&ariaBusy`.
+`&formState=0` и `&ariaBusy=0` выключают их для формы. CSS, который рисует спиннер на любом элементе с `[aria-busy="true"]` (например, Pico CSS 1 и 2.0; Pico 2.1 формы пропускает), нарисует его на всей форме: если это не нужно, выключите там `&ariaBusy`.
 
 ## TypeScript
 

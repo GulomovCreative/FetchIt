@@ -251,7 +251,7 @@ The page starts FetchIt with `FetchIt.observe()` on `DOMContentLoaded`. It handl
 
 ### The state of the form
 
-While a form is sent, it has `data-fetchit-state="sending"` and `aria-busy="true"`; after the answer, `data-fetchit-state` is `success` or `error` (a refusal of the server or a failed request), and `aria-busy` is gone. The state is set before the events, so it holds when a listener cancels them. A reset by the visitor removes it; the reset of `clearFieldsOnSuccess` keeps `success`. A spinner needs only CSS:
+While a form is sent, it has `data-fetchit-state="sending"` and `aria-busy="true"`; after the answer, `data-fetchit-state` is `success` or `error` (a refusal of the server or a failed request), and `aria-busy` is gone. The state is set before `fetchit:after`, `fetchit:error` and `fetchit:success`, so it holds when a listener cancels them. A reset of the form removes it, except while the form is sent; the reset of `clearFieldsOnSuccess` keeps `success`. Styles need only CSS:
 
 ```css
 form[data-fetchit-state="sending"] button[type="submit"] {
@@ -260,7 +260,7 @@ form[data-fetchit-state="sending"] button[type="submit"] {
 }
 ```
 
-`&formState=0` and `&ariaBusy=0` turn them off for a form. CSS that draws a spinner on any element with `[aria-busy="true"]` (Pico CSS 1, for example; Pico 2 leaves forms out) draws it over the whole form: turn `&ariaBusy` off there if that is not wanted.
+`&formState=0` and `&ariaBusy=0` turn them off for a form. CSS that draws a spinner on any element with `[aria-busy="true"]` (Pico CSS 1 and 2.0, for example; Pico 2.1 leaves forms out) draws it over the whole form: turn `&ariaBusy` off there if that is not wanted.
 
 ## TypeScript
 

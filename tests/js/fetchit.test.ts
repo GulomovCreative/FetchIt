@@ -1022,6 +1022,63 @@ describe('the state of the form', () => {
     expect(busy(form)).toBeNull()
   })
 
+  it('is sending again on the next submission after an error', async () => {
+    const form = mountForm()
+    FetchIt.create(config())
+    respond({ success: false, message: 'Check the form', data: {} })
+    await submit(form)
+    let during: (string | null)[] | undefined
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      during = [state(form), busy(form)]
+      return { json: async () => ({ success: true, message: '', data: [] }) }
+    }))
+
+    await submit(form)
+
+    expect(during).toEqual(['sending', 'true'])
+    expect(state(form)).toBe('success')
+  })
+
+  it('drops a state of sending the form brings from an old instance', () => {
+    const form = mountForm()
+    form.setAttribute('data-fetchit-state', 'sending')
+    form.setAttribute('aria-busy', 'true')
+
+    FetchIt.create(config())
+
+    expect(state(form)).toBeNull()
+    expect(busy(form)).toBeNull()
+  })
+
+  it('keeps the outcome the form brings from an old instance, as its message stays', () => {
+    const form = mountForm()
+    form.setAttribute('data-fetchit-state', 'success')
+
+    FetchIt.create(config())
+
+    expect(state(form)).toBe('success')
+  })
+
+  it('logs a setSubmissionState of a class of the site that throws, and the form still works', async () => {
+    class Site extends FetchIt {
+      setSubmissionState (): void {
+        throw new Error('broken')
+      }
+    }
+    const form = mountForm()
+    form.setAttribute('aria-busy', 'true')
+    new Site(form, config({ requestErrorMessage: 'Could not send' }))
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await submit(form)
+
+    expect(logged).toHaveBeenCalledWith(expect.any(TypeError))
+    expect(element(form, '[data-validation-error]').textContent).toBe('Could not send')
+    expect(field(form, 'email').disabled).toBe(false)
+    expect(instance(form)!.pending).toBe(false)
+  })
+
   it('leaves out data-fetchit-state with formState off', async () => {
     const form = mountForm()
     FetchIt.create(config({ formState: false }))
@@ -1197,6 +1254,9 @@ describe('failed requests', () => {
     await submit(form)
 
     expect(element(form, '[data-validation-error]').textContent).toBe('')
+    // The state is set before the event: it holds when the event is cancelled.
+    expect(form.getAttribute('data-fetchit-state')).toBe('error')
+    expect(form.hasAttribute('aria-busy')).toBe(false)
   })
 
   it('does not report a failure after the server accepted the form', async () => {
@@ -1337,6 +1397,7 @@ describe('spam protection', () => {
     expect((fetch.mock.calls[1]![1]!.body as FormData).get('fetchit_token')).toBe('fresh')
     expect(element(form, '[data-success]').textContent).toBe('Sent')
     expect(field(form, 'fetchit_token').value).toBe('after')
+    expect(form.getAttribute('data-fetchit-state')).toBe('success')
   })
 
   it('sends again only once', async () => {
@@ -1627,6 +1688,8 @@ describe('captchas', () => {
       expect(fetch).not.toHaveBeenCalled()
       expect(element(form, '[data-validation-error]').textContent).toBe('The check could not be completed')
       expect(String(vi.mocked(console.error).mock.calls[0]![0])).toContain('challenges.cloudflare.com')
+      expect(form.getAttribute('data-fetchit-state')).toBe('error')
+      expect(form.hasAttribute('aria-busy')).toBe(false)
       sendsAgain(form)
     } finally {
       vi.useRealTimers()
@@ -1875,6 +1938,8 @@ describe('destroying a captcha', () => {
 
     expect(fetch).not.toHaveBeenCalled()
     expect(errors).not.toHaveBeenCalled()
+    expect(form.hasAttribute('data-fetchit-state')).toBe(false)
+    expect(form.hasAttribute('aria-busy')).toBe(false)
   })
 
   it('renders no Turnstile widget for a submission of a destroyed form', async () => {
@@ -2196,6 +2261,8 @@ describe('a page from a full-page cache', () => {
     expect(submissionsOf(fetch)).toHaveLength(1)
     expect(element(form, '[data-validation-error]').textContent).toBe('')
     expect(error).not.toHaveBeenCalled()
+    expect(form.hasAttribute('data-fetchit-state')).toBe(false)
+    expect(form.hasAttribute('aria-busy')).toBe(false)
   })
 
   it('keeps the token of the page when the server gives none', async () => {
@@ -2278,6 +2345,8 @@ describe('a page from a full-page cache', () => {
     expect(element(form, '[data-validation-error]').textContent).toBe('')
     expect(warn).not.toHaveBeenCalled()
     expect(error).not.toHaveBeenCalled()
+    expect(form.hasAttribute('data-fetchit-state')).toBe(false)
+    expect(form.hasAttribute('aria-busy')).toBe(false)
   })
 
   it('exchanges nothing without freshToken', async () => {
