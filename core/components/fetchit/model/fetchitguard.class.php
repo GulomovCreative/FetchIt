@@ -596,7 +596,9 @@ class FetchItGuard
     {
         $store = $this->store();
 
-        return $store !== null ? $store->mark($nonce, $this->now() + $this->ttl()) : 'failed';
+        // A minute past the token, as the marks in files: the clocks of
+        // several servers may be a little apart.
+        return $store !== null ? $store->mark($nonce, $this->now() + $this->ttl() + 60) : 'failed';
     }
 
 

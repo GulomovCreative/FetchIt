@@ -665,6 +665,21 @@ class GuardTest extends TestCase
         $this->assertRefused('token', 'fetchit_err_token', $this->submit([], 10, $token));
     }
 
+    public function testADatabaseMarkOutlivesTheTokenByAMinute()
+    {
+        // As the marks in files: servers with clocks a little apart.
+        $this->modx->options['fetchit.protection.store'] = 'db';
+        $this->modx->options['table_prefix'] = 'fetchit_test_';
+        $this->modx->options['fetchit.protection.token_ttl'] = 3600;
+        $this->modx->pdo = new PDO('sqlite::memory:');
+        $this->guard()->store()->install();
+
+        $this->assertNull($this->submit());
+
+        $expires = $this->modx->pdo->query("SELECT expires FROM fetchit_test_fetchit_store WHERE k LIKE 'm:%'")->fetchAll(PDO::FETCH_COLUMN);
+        $this->assertSame([$this->now + 3600 + 60], array_map('intval', $expires));
+    }
+
     // ----------------------------------------------------- the fresh token
 
     private function pageCache()
