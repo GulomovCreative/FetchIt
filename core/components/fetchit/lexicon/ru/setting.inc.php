@@ -8,6 +8,8 @@ $_lang['setting_fetchit.frontend.input.invalid.class'] = 'CSS класс кот�
 $_lang['setting_fetchit.frontend.custom.invalid.class'] = 'CSS класс который будет добавлен кастомному элементу по ключу не прошедшему валидацию.';
 $_lang['setting_fetchit.frontend.default.notifier'] = 'Показывать ответы уведомлениями.';
 $_lang['setting_fetchit.frontend.default.notifier_desc'] = 'Если "Да", ответы сервера и ошибки отправки показываются ещё и уведомлениями в углу страницы, если только сайт не задал свой FetchIt.Message. Уведомления встроены в поставляемый скрипт FetchIt, других файлов не подключается.';
+$_lang['setting_fetchit.page_cache'] = 'Страницы отдаёт полностраничный кеш';
+$_lang['setting_fetchit.page_cache_desc'] = 'Включите, если страницы с формами отдаёт nginx, CDN или статический кеш. Свойства форм хранятся в хранилище защиты 90 дней после последнего вывода, а скрипт получает свежий токен, когда посетитель начинает заполнять форму. После включения очистите кеш страниц и храните страницы в нём меньше 90 дней.';
 
 $_lang['area_fetchit_protection'] = 'Защита от спама';
 $_lang['setting_fetchit.protection'] = 'Защита от спама';

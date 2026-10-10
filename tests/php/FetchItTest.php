@@ -1007,4 +1007,69 @@ class FetchItTest extends TestCase
 
         $this->assertSame(['<script src="/assets/components/formit/js/web/formit.js"></script>'], $this->modx->jscripts);
     }
+
+    // ------------------------------------------------------- full-page cache
+
+    const ACTION = '0123456789abcdef0123456789abcdef';
+
+    /**
+     * session_id() cannot change once PHPUnit has printed anything.
+     *
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function testWithThePageCacheAnotherSessionFindsTheForm()
+    {
+        // The visitor who rendered the page keeps the properties in the
+        // session; one served the cached HTML has none of them.
+        $this->modx->options['fetchit.page_cache'] = true;
+        $this->withSession();
+        $this->fetchit()->storeActionProperties(self::ACTION, ['snippet' => 'FormIt', 'pdo' => new stdClass()]);
+
+        $_SESSION = [];
+
+        $this->assertSame(['snippet' => 'FormIt'], $this->fetchit()->loadActionProperties(self::ACTION));
+        $this->modx->removeCache();
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function testWithoutThePageCacheNothingIsKeptBeyondTheSession()
+    {
+        $this->withSession();
+        $this->fetchit()->storeActionProperties(self::ACTION, ['snippet' => 'FormIt']);
+
+        $_SESSION = [];
+
+        $this->assertNull($this->fetchit()->loadActionProperties(self::ACTION));
+        $this->assertDirectoryDoesNotExist($this->modx->getCachePath() . 'fetchit/forms');
+        $this->modx->removeCache();
+    }
+
+    public function testAKeyThatIsNotAnActionNeverReachesTheStore()
+    {
+        // X-FetchIt-Action comes from the client.
+        $this->modx->options['fetchit.page_cache'] = true;
+        file_put_contents($this->modx->getCachePath() . 'secret.php', "<?php exit; ?>\n{\"snippet\":\"Evil\"}");
+
+        foreach (['../secret', '../../cache/secret', str_repeat('g', 32), strtoupper(self::ACTION)] as $action) {
+            $this->assertNull($this->fetchit()->loadActionProperties($action), $action);
+        }
+        $this->fetchit()->storeActionProperties('../evil', ['snippet' => 'FormIt']);
+        $this->assertFileDoesNotExist($this->modx->getCachePath() . 'fetchit/evil.php');
+        $this->modx->removeCache();
+    }
+
+    public function testTheConfigAsksForAFreshTokenOnlyWithThePageCacheAndTheProtection()
+    {
+        $this->assertArrayNotHasKey('freshToken', $this->fetchit()->clientConfig('abc'));
+
+        $this->modx->options['fetchit.page_cache'] = true;
+        $this->assertArrayNotHasKey('freshToken', $this->fetchit()->clientConfig('abc'), 'Protection is off here');
+
+        $this->modx->options['fetchit.protection'] = true;
+        $this->assertTrue($this->fetchit()->clientConfig('abc')['freshToken']);
+    }
 }

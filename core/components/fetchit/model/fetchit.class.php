@@ -383,7 +383,7 @@ class FetchIt
     {
         $captcha = $this->guard()->activeCaptcha();
 
-        return [
+        $config = [
             'action' => $action,
             'assetsUrl' => $this->config['assetsUrl'],
             'actionUrl' => str_replace('[[+assetsUrl]]', $this->config['assetsUrl'], $this->config['actionUrl']),
@@ -400,6 +400,12 @@ class FetchIt
                 ? $this->modx->resource->get('id')
                 : 0,
         ];
+
+        if ($this->guard()->freshToken()) {
+            $config['freshToken'] = true;
+        }
+
+        return $config;
     }
 
 
@@ -600,6 +606,34 @@ HTML;
 
 
     /**
+     * fetchit.page_cache: the pages with forms come from a full-page cache
+     * (nginx, a CDN), so the properties of a form must outlive the session
+     * of the visitor who rendered it, and the script exchanges the token of
+     * the page for a fresh one.
+     *
+     * @return bool
+     */
+    public function pageCache()
+    {
+        return (bool)$this->modx->getOption('fetchit.page_cache', null, false);
+    }
+
+
+    /**
+     * Whether $action can be a key of a form: X-FetchIt-Action comes from the
+     * client, and the key names a file of the store.
+     *
+     * @param mixed $action
+     *
+     * @return bool
+     */
+    public static function isAction($action)
+    {
+        return is_string($action) && preg_match('/^[0-9a-f]{32}$/', $action) === 1;
+    }
+
+
+    /**
      * @param string $action
      *
      * @return string
@@ -621,6 +655,16 @@ HTML;
         foreach ($scriptProperties as $key => $value) {
             if (is_object($value) || is_resource($value)) {
                 unset($scriptProperties[$key]);
+            }
+        }
+
+        if ($this->pageCache() && self::isAction($action) && ($store = $this->guard()->store()) !== null) {
+            $json = json_encode($scriptProperties);
+            if ($json === false) {
+                $this->modx->log(modX::LOG_LEVEL_ERROR, '[FetchIt] The properties of form ' . substr($action, 0, 8)
+                    . ' cannot be stored as JSON (' . json_last_error_msg() . '); it does not work from a full-page cache');
+            } else {
+                $store->saveForm($action, $json, time());
             }
         }
 
@@ -653,6 +697,12 @@ HTML;
             $stored = $_SESSION['FetchIt'][$action];
         } else {
             $stored = $this->modx->cacheManager->get($this->getActionPropertiesCacheKey($action));
+            if ((empty($stored) || !is_array($stored)) && $this->pageCache() && self::isAction($action)
+                && ($store = $this->guard()->store()) !== null
+            ) {
+                $json = $store->loadForm($action);
+                $stored = $json !== null ? json_decode($json, true) : null;
+            }
         }
 
         if (empty($stored) || !is_array($stored)) {
