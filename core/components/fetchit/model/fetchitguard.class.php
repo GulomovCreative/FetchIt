@@ -394,6 +394,89 @@ class FetchItGuard
 
 
     /**
+     * The key under which the answer to a submission is kept for its
+     * retries: an HMAC of the form and the X-FetchIt-Submission UUID the
+     * script sends, so that a key of one form or site is nothing to another.
+     *
+     * @param string $action
+     * @param mixed $submission The header, '' when there is none
+     *
+     * @return string|null 64 hex characters; null when it is not a UUID
+     */
+    public function submissionKey($action, $submission)
+    {
+        if (!is_string($submission) || !preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $submission)) {
+            return null;
+        }
+
+        return hash_hmac('sha256', $action . "\n" . strtolower($submission), $this->secret());
+    }
+
+
+    /**
+     * A token for the next submission of a form whose retry got the kept
+     * answer: the token it sent was used by its first attempt. Only for a
+     * well-signed token of the form, as nextToken().
+     *
+     * @param string $action
+     * @param array $post
+     *
+     * @return string|null
+     */
+    public function renew($action, array $post)
+    {
+        return $this->enabled() && $this->valid($action, $this->read($post)) ? $this->issue($action) : null;
+    }
+
+
+    /**
+     * Take the key of a submission before it is processed; see
+     * FetchItStore::claim().
+     *
+     * @param string $key From submissionKey()
+     *
+     * @return string FetchItStore::MARKED, USED or FAILED
+     */
+    public function claim($key)
+    {
+        $store = $this->store();
+
+        return $store !== null ? $store->claim($key, $this->now()) : FetchItStore::FAILED;
+    }
+
+
+    /**
+     * See FetchItStore::loadAnswer().
+     *
+     * @param string $key From submissionKey()
+     *
+     * @return string|null|false
+     */
+    public function loadAnswer($key)
+    {
+        $store = $this->store();
+
+        return $store !== null ? $store->loadAnswer($key, $this->now()) : false;
+    }
+
+
+    /**
+     * See FetchItStore::saveAnswer().
+     *
+     * @param string $key From submissionKey()
+     * @param string $json
+     *
+     * @return bool
+     */
+    public function saveAnswer($key, $json)
+    {
+        $store = $this->store();
+
+        return $store !== null && $store->saveAnswer($key, $json, $this->now());
+    }
+
+
+    /**
      * Why the last check() refused, or null.
      *
      * @return string|null
