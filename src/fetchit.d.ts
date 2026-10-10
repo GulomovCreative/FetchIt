@@ -76,6 +76,8 @@ interface FetchItAnswer {
   success: boolean;
   message?: unknown;
   data?: unknown;
+  /** The page to go to after a success (&redirectTo, the redirect hook of FormIt) */
+  redirect?: unknown;
 }
 
 /**
@@ -150,9 +152,13 @@ interface FetchItAfterDetail extends FetchItBeforeDetail {
 /**
  * fetchit:success, cancelable. The form message and the notification are
  * already shown. Cancelling it keeps the fields filled (no reset, so no
- * fetchit:reset) and leaves a reCAPTCHA widget of the site alone.
+ * fetchit:reset), leaves a reCAPTCHA widget of the site alone and stays on
+ * the page instead of going to redirect.
  */
-interface FetchItSuccessDetail extends FetchItAfterDetail {}
+interface FetchItSuccessDetail extends FetchItAfterDetail {
+  /** The page the answer leads to (&redirectTo, the redirect hook of FormIt); see FetchItInstance.navigate() */
+  redirect?: string | undefined;
+}
 
 /**
  * fetchit:error, cancelable. FetchIt.Message.error has already run.
@@ -211,6 +217,13 @@ interface FetchItInstance {
   readonly elements: Element[];
   /** The input, select and textarea elements of the form */
   readonly fields: Element[];
+  /**
+   * Go to the page of a successful answer, after fetchit:success: only an
+   * http(s) address, relative ones against the page; anything else is
+   * logged. True when the page is left: the fields then stay disabled.
+   * Override it for a router of your own.
+   */
+  navigate(url: string): boolean;
   /**
    * Forget the form: it leaves FetchIt.instances and FetchIt.forms, its
    * listeners are removed, its proof of work stops, its captcha widget is

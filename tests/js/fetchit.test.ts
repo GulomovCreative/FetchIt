@@ -2362,3 +2362,109 @@ describe('a page from a full-page cache', () => {
     expect(sentToken(submissionsOf(fetch)[0]!)).toBe('old-token')
   })
 })
+
+describe('redirect after a success', () => {
+  type Navigating = { navigate (url: string): boolean }
+  const navigate = () => vi.spyOn(FetchIt.prototype as unknown as Navigating, 'navigate')
+
+  it('goes to the redirect of the answer after the success', async () => {
+    const leave = navigate().mockReturnValue(true)
+    const form = mountForm()
+    FetchIt.create(config())
+    const events: string[] = []
+    on('fetchit:success', () => events.push('success'))
+    on('fetchit:reset', () => events.push('reset'))
+    vi.stubGlobal('fetch', answerWith({ success: true, message: 'Thanks', data: [], redirect: 'https://example.com/thanks/' }))
+
+    await submit(form)
+
+    expect(leave).toHaveBeenCalledWith('https://example.com/thanks/')
+    expect(events).toEqual(['success', 'reset'])
+    expect(element(form, '[data-success]').textContent).toBe('Thanks')
+    expect(form.getAttribute('data-fetchit-state')).toBe('success')
+  })
+
+  it('keeps the fields disabled while it leaves', async () => {
+    navigate().mockReturnValue(true)
+    const form = mountForm()
+    FetchIt.create(config())
+    const fetch = answerWith({ success: true, message: 'Thanks', data: [], redirect: 'https://example.com/thanks/' })
+    vi.stubGlobal('fetch', fetch)
+
+    await submit(form)
+    await submit(form)
+
+    expect(field(form, 'email').disabled).toBe(true)
+    expect(form.querySelector('button')!.disabled).toBe(true)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('gives the redirect to fetchit:success, and stays when it is cancelled', async () => {
+    const leave = navigate()
+    const form = mountForm()
+    FetchIt.create(config())
+    let redirect: string | undefined
+    on('fetchit:success', event => {
+      redirect = (event.detail as FetchItSuccessDetail).redirect
+      event.preventDefault()
+    })
+    vi.stubGlobal('fetch', answerWith({ success: true, message: 'Thanks', data: [], redirect: '/thanks/' }))
+
+    await submit(form)
+
+    expect(redirect).toBe('/thanks/')
+    expect(leave).not.toHaveBeenCalled()
+    expect(field(form, 'email').disabled).toBe(false)
+  })
+
+  it('stays on an answer without a redirect, or with one that is not a string', async () => {
+    const leave = navigate()
+    const form = mountForm()
+    FetchIt.create(config())
+    let detail: FetchItSuccessDetail | undefined
+    on('fetchit:success', event => { detail = event.detail as FetchItSuccessDetail })
+    vi.stubGlobal('fetch', answerWith({ success: true, message: 'Thanks', data: [], redirect: 5 }))
+
+    await submit(form)
+
+    expect(leave).not.toHaveBeenCalled()
+    expect(detail).not.toHaveProperty('redirect')
+    expect(detail!.response).toEqual({ success: true, message: 'Thanks', data: [] })
+    expect(field(form, 'email').disabled).toBe(false)
+  })
+
+  it('stays on an error that has a redirect', async () => {
+    const leave = navigate()
+    const form = mountForm()
+    FetchIt.create(config())
+    vi.stubGlobal('fetch', answerWith({ success: false, message: 'Check', data: [], redirect: '/thanks/' }))
+
+    await submit(form)
+
+    expect(leave).not.toHaveBeenCalled()
+  })
+
+  it('does not go to an address that is not http(s)', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountForm()
+    FetchIt.create(config())
+    vi.stubGlobal('fetch', answerWith({ success: true, message: 'Thanks', data: [], redirect: 'javascript:alert(1)' }))
+
+    await submit(form)
+
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('javascript:alert(1)'))
+    expect(field(form, 'email').disabled).toBe(false)
+    expect(instance(form)!.pending).toBe(false)
+  })
+
+  it('navigate() turns down what is not an http(s) address', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountForm()
+    FetchIt.create(config())
+    const fetchit = instance(form) as unknown as Navigating
+
+    expect(fetchit.navigate('javascript:alert(1)')).toBe(false)
+    expect(fetchit.navigate('data:text/html,hi')).toBe(false)
+    expect(fetchit.navigate('http://[bad')).toBe(false)
+  })
+})

@@ -166,7 +166,11 @@ class FetchIt implements FetchItInstance {
 
       // Set once the visitor has seen the outcome; a later error is only logged.
       let shown = false;
+      // Set when the page is left for the redirect of the answer: the form
+      // stays disabled, so it is not sent twice meanwhile.
+      let leaving = false;
       let response: FetchItResponse | undefined;
+      let redirect: string | undefined;
 
       try {
         try {
@@ -219,6 +223,7 @@ class FetchIt implements FetchItInstance {
             throw new Error(`FetchIt: unexpected answer from ${query.url || this.config.actionUrl} (HTTP ${query.status})`);
           }
           response = toResponse(body);
+          redirect = typeof body.redirect === 'string' && body.redirect !== '' ? body.redirect : undefined;
         } catch (error) {
           this.failRequest(error, formData);
           return;
@@ -260,8 +265,9 @@ class FetchIt implements FetchItInstance {
         shown = true;
         FetchIt.notify('success', response.message);
 
-        // Cancelling it keeps the fields and skips the reCAPTCHA reset.
-        if (!dispatch('fetchit:success', { form: this.form, formData, response, fetchit: this })) {
+        // Cancelling it keeps the fields, skips the reCAPTCHA reset and stays
+        // on the page.
+        if (!dispatch('fetchit:success', { form: this.form, formData, response, fetchit: this, ...(redirect ? { redirect } : {}) })) {
           return;
         }
 
@@ -280,6 +286,14 @@ class FetchIt implements FetchItInstance {
           this.form.reset();
           this.preserveFormMessagesOnReset = false;
         }
+
+        if (redirect) {
+          try {
+            leaving = this.navigate(redirect);
+          } catch (error) {
+            console.error('FetchIt: navigate() threw; the visitor stays on the page', error);
+          }
+        }
       } catch (error) {
         // After the server accepted the form, "could not send" would make
         // the visitor send it again.
@@ -294,10 +308,12 @@ class FetchIt implements FetchItInstance {
         if (this.submissionState === 'sending') {
           this.showSubmissionState(null);
         }
-        this.enableFields();
-        this.pending = false;
-        // A captcha answer is good for one check.
-        this.captcha?.reset();
+        if (!leaving) {
+          this.enableFields();
+          this.pending = false;
+          // A captcha answer is good for one check.
+          this.captcha?.reset();
+        }
       }
     }, { signal });
 
@@ -559,6 +575,26 @@ class FetchIt implements FetchItInstance {
     } catch (error) {
       console.error('FetchIt: setSubmissionState() threw; the form does not show its state', error);
     }
+  }
+
+  /**
+   * Go to the page of a successful answer: an http(s) address only,
+   * relative ones against the page. True when the page is left.
+   */
+  navigate (url: string): boolean {
+    let target: URL;
+    try {
+      target = new URL(url, window.location.href);
+    } catch {
+      console.error(`FetchIt: the redirect ${url} is not an address; the visitor stays on the page`);
+      return false;
+    }
+    if (target.protocol !== 'http:' && target.protocol !== 'https:') {
+      console.error(`FetchIt: the redirect ${url} is not an http(s) address; the visitor stays on the page`);
+      return false;
+    }
+    window.location.assign(target.href);
+    return true;
   }
 
   clearErrors () {

@@ -103,7 +103,7 @@ if (form && instance) {
 export const instanceApi: Record<keyof FetchItInstance, true> = {
   form: true, config: true, formData: true, setError: true, clearError: true, clearErrors: true,
   setFormMessage: true, clearFormMessages: true, enableFields: true, disableFields: true,
-  getFields: true, getErrors: true, getCustomErrors: true, elements: true, fields: true, destroy: true,
+  getFields: true, getErrors: true, getCustomErrors: true, elements: true, fields: true, navigate: true, destroy: true,
 }
 export const staticApi: Record<keyof FetchItStatic, true> = {
   Message: true, forms: true, instances: true, events: true, defaultRequestErrorMessage: true,
@@ -149,3 +149,12 @@ FetchIt.init(document.createElement('div'))
 FetchIt.instances.get(document.createElement('form'))?.destroy()
 // @ts-expect-error: the options are an object
 FetchIt.observe(true)
+
+// ---------------------------------------------------------------- redirect
+
+document.addEventListener('fetchit:success', event => {
+  const redirect: string | undefined = event.detail.redirect
+  if (redirect && event.detail.fetchit.navigate(redirect)) {
+    console.log('leaving')
+  }
+})
