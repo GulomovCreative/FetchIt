@@ -15,12 +15,14 @@ interface Window {
     }): string;
     getResponse(widget: string): string | undefined;
     reset(widget: string): void;
+    remove?(widget: string): void;
   };
   smartCaptcha?: {
     render(element: HTMLElement, options: { sitekey: string; invisible?: boolean; callback?: (token: string) => void }): number;
     execute(widget: number): void;
     getResponse(widget: number): string;
     reset(widget: number): void;
+    destroy?(widget: number): void;
     subscribe?(widget: number, event: string, callback: (detail?: unknown) => void): () => void;
   };
 }
