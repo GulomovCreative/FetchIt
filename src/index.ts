@@ -401,6 +401,8 @@ class FetchIt implements FetchItInstance {
     if (token) {
       const body = new FormData();
       body.set(FetchIt.tokenField, token);
+      // action.php reads the settings of the context of the page.
+      body.set('pageId', String(this.config.pageId));
       try {
         const answer = await fetch(this.config.actionUrl, {
           method: 'post',

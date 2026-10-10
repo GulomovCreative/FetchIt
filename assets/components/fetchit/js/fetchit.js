@@ -929,6 +929,7 @@
 			if (token) {
 				const body = new FormData();
 				body.set(FetchIt.tokenField, token);
+				body.set("pageId", String(this.config.pageId));
 				try {
 					var _answer$headers;
 					const answer = await fetch(this.config.actionUrl, {

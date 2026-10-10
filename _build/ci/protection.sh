@@ -115,7 +115,7 @@ case "$what" in
         action="$(open_page "$custom")"
         page_token="$(cat "$jar.token")"
         forget_session
-        exchange "$action"
+        exchange "$action" -F "pageId=$custom"
         check "the exchange answers 204" test "$(status)" = 204
         check "it brings a fresh token" test "$(cat "$jar.token")" != "$page_token"
         check "it tells the proof of work" test -n "$(header x-fetchit-pow)"
@@ -137,7 +137,7 @@ case "$what" in
 
         echo "# Exchanges that get nothing"
         printf 'garbage' > "$jar.token"
-        exchange "$action"
+        exchange "$action" -F "pageId=$custom"
         check "a bad token gets no token" test -z "$(header x-fetchit-token)"
         check "and is refused as a token" test "$(header x-fetchit-refused)" = token
         : > "$jar.headers"
