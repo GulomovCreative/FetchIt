@@ -1120,7 +1120,8 @@
 		/**
 		* Inserted forms get an instance; removed ones are destroyed. The
 		* records come after the whole batch of changes, so a form moved within
-		* the page is connected again by then and is kept.
+		* the page is connected again by then and is kept; one put back in a
+		* later task (a modal opened again) gets a new instance.
 		*/
 		static mutated(records) {
 			const removed = [];
