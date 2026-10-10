@@ -426,7 +426,9 @@ class FetchIt
      */
     protected function encode($data, $what)
     {
-        $json = json_encode($data, JSON_INVALID_UTF8_SUBSTITUTE);
+        // "<" and ">" as \u003C and \u003E: text such as "<!--<script" would
+        // keep the HTML parser from ending the inline script.
+        $json = json_encode($data, JSON_INVALID_UTF8_SUBSTITUTE | JSON_HEX_TAG);
         if (!is_string($json)) {
             $this->modx->log(modX::LOG_LEVEL_ERROR, "[FetchIt] Could not encode {$what}: " . json_last_error_msg() . '; the forms are sent without FetchIt');
 
