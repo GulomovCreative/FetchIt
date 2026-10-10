@@ -155,4 +155,44 @@ class DbStoreTest extends TestCase
     {
         $this->assertTrue($this->store()->strict());
     }
+
+    const ACTION = '0123456789abcdef0123456789abcdef';
+
+    /**
+     * @dataProvider errorModes
+     */
+    public function testFormPropertiesAreKeptAndRead($errorMode)
+    {
+        $this->connect($errorMode);
+        $store = $this->store();
+
+        $this->assertTrue($store->saveForm(self::ACTION, '{"snippet":"FormIt"}', 1000));
+        $this->assertTrue($store->saveForm(self::ACTION, '{"snippet":"FormIt"}', 1000), 'A second render is fine');
+
+        $this->assertSame('{"snippet":"FormIt"}', $store->loadForm(self::ACTION));
+        $this->assertNull($store->loadForm('fedcba9876543210fedcba9876543210'));
+        $this->assertSame([], $this->logged);
+    }
+
+    public function testAFormIsKeptAliveDailyAndPrunedAfter90Days()
+    {
+        $store = $this->store();
+        $store->saveForm(self::ACTION, '{}', 1000);
+        $store->saveForm(self::ACTION, '{}', 1000 + 86401);
+
+        $store->prune(1000 + FetchItStore::FORM_TTL + 1);
+        $this->assertSame('{}', $store->loadForm(self::ACTION), 'Kept alive by the second render');
+
+        $store->prune(1000 + 86401 + FetchItStore::FORM_TTL + 1);
+        $this->assertNull($store->loadForm(self::ACTION));
+    }
+
+    public function testAFormWithoutTheTableIsNotKept()
+    {
+        $store = $this->store();
+        $store->uninstall();
+
+        $this->assertFalse($store->saveForm(self::ACTION, '{}', 1000));
+        $this->assertNull($store->loadForm(self::ACTION));
+    }
 }

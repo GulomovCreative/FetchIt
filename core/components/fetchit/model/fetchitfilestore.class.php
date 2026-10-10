@@ -9,6 +9,9 @@
  */
 class FetchItFileStore implements FetchItStore
 {
+    /** The start of a form file: run through the web, it outputs nothing */
+    const HIDE = "<?php exit; ?>\n";
+
     /** @var modX */
     protected $modx;
 
@@ -88,11 +91,45 @@ class FetchItFileStore implements FetchItStore
 
 
     /**
+     * A file under core/cache/fetchit/forms/, which "Clear cache" does not
+     * touch, written once: the action key is a hash of the properties. A
+     * render a day later keeps it for FORM_TTL more.
+     *
      * {@inheritdoc}
      */
     public function saveForm($action, $json, $now)
     {
-        return false;
+        $file = $this->formFile($action);
+        $time = @filemtime($file);
+        if ($time !== false) {
+            if ($now - $time > 86400) {
+                @touch($file, $now);
+            }
+
+            return true;
+        }
+
+        $dir = dirname($file) . '/';
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            call_user_func($this->log, "could not create {$dir}; forms from a full-page cache are not found");
+
+            return false;
+        }
+        // A whole file or none: a submission may read it meanwhile.
+        $temporary = $dir . '.' . $action . '.' . bin2hex(random_bytes(4));
+        if (@file_put_contents($temporary, self::HIDE . $json) === false || !@rename($temporary, $file)) {
+            @unlink($temporary);
+            call_user_func($this->log, "could not write to {$dir}; forms from a full-page cache are not found");
+
+            return false;
+        }
+        @touch($file, $now);
+
+        if (mt_rand(1, 100) === 1) {
+            $this->pruneForms(sprintf('%02x', mt_rand(0, 255)), $now);
+        }
+
+        return true;
     }
 
 
@@ -101,7 +138,48 @@ class FetchItFileStore implements FetchItStore
      */
     public function loadForm($action)
     {
-        return null;
+        $content = @file_get_contents($this->formFile($action));
+        if ($content === false || strpos($content, self::HIDE) !== 0) {
+            return null;
+        }
+
+        return substr($content, strlen(self::HIDE));
+    }
+
+
+    /**
+     * The file of the properties of a form.
+     *
+     * @param string $action 32 hex characters
+     *
+     * @return string
+     */
+    public function formFile($action)
+    {
+        return $this->modx->getCachePath() . 'fetchit/forms/' . substr($action, 0, 2) . '/' . $action . '.php';
+    }
+
+
+    /**
+     * Delete the forms of one shard not rendered for FORM_TTL.
+     *
+     * @param string $shard Two hex characters
+     * @param int $now
+     */
+    public function pruneForms($shard, $now)
+    {
+        $dir = $this->modx->getCachePath() . 'fetchit/forms/' . $shard . '/';
+        $handle = @opendir($dir);
+        if ($handle === false) {
+            return;
+        }
+        $before = $now - self::FORM_TTL;
+        while (($file = readdir($handle)) !== false) {
+            if ($file !== '.' && $file !== '..' && @filemtime($dir . $file) < $before) {
+                @unlink($dir . $file);
+            }
+        }
+        closedir($handle);
     }
 
 
@@ -114,6 +192,7 @@ class FetchItFileStore implements FetchItStore
     public function prune($now)
     {
         $this->pruneShard(sprintf('%02x', mt_rand(0, 255)));
+        $this->pruneForms(sprintf('%02x', mt_rand(0, 255)), $now);
     }
 
 
