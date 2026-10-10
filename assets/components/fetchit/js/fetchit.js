@@ -681,8 +681,8 @@
 			_defineProperty(this, "formData", void 0);
 			_defineProperty(this, "listening", new AbortController());
 			_defineProperty(this, "destroyed", false);
-			_defineProperty(this, "exchange", void 0);
-			_defineProperty(this, "readyAt", 0);
+			_defineProperty(this, "tokenExchange", void 0);
+			_defineProperty(this, "freshTokenReadyAt", 0);
 			if (!(form instanceof HTMLFormElement)) throw new Error("FetchIt: the element is not a form");
 			(_FetchIt$instances$ge = FetchIt.instances.get(form)) === null || _FetchIt$instances$ge === void 0 || _FetchIt$instances$ge.destroy();
 			this.form = form;
@@ -933,9 +933,9 @@
 		* full-page cache holds a token many visitors got.
 		*/
 		freshToken() {
-			var _this$exchange;
-			(_this$exchange = this.exchange) !== null && _this$exchange !== void 0 || (this.exchange = this.exchangeToken());
-			return this.exchange;
+			var _this$tokenExchange;
+			(_this$tokenExchange = this.tokenExchange) !== null && _this$tokenExchange !== void 0 || (this.tokenExchange = this.exchangeToken());
+			return this.tokenExchange;
 		}
 		/**
 		* Ask the server for a fresh token (FetchItGuard::exchange()). A failed
@@ -967,7 +967,7 @@
 						const bits = Number((_answer$headers$get = answer.headers.get("X-FetchIt-Pow")) !== null && _answer$headers$get !== void 0 ? _answer$headers$get : 0);
 						if (bits > ((_this$config$pow3 = this.config.pow) !== null && _this$config$pow3 !== void 0 ? _this$config$pow3 : 0)) this.config.pow = bits;
 						const minTime = Number((_answer$headers$get2 = answer.headers.get("X-FetchIt-Min-Time")) !== null && _answer$headers$get2 !== void 0 ? _answer$headers$get2 : 0);
-						this.readyAt = readyAt(minTime);
+						this.freshTokenReadyAt = readyAt(minTime);
 					} else if (!this.destroyed) {
 						var _answer$headers$get3, _answer$headers2;
 						console.warn(`FetchIt: no fresh token (${(_answer$headers$get3 = (_answer$headers2 = answer.headers) === null || _answer$headers2 === void 0 ? void 0 : _answer$headers2.get("X-FetchIt-Refused")) !== null && _answer$headers$get3 !== void 0 ? _answer$headers$get3 : `HTTP ${answer.status}`}); the form keeps the token of the page`);
@@ -984,7 +984,7 @@
 		* Wait until the fill time of the server has passed since the exchange.
 		*/
 		async untilReady() {
-			await until(this.readyAt);
+			await until(this.freshTokenReadyAt);
 		}
 		/**
 		* The token in the form now.

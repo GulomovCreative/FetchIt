@@ -90,10 +90,10 @@ class FetchIt implements FetchItInstance {
   destroyed = false;
   // The exchange of the token of the page for a fresh one (config.freshToken),
   // started on the first focus or submission.
-  exchange?: Promise<void> = undefined;
+  tokenExchange?: Promise<void> = undefined;
   // Date.now() from which the server takes the fresh token as filled in:
   // min_time counts from the exchange.
-  readyAt = 0;
+  freshTokenReadyAt = 0;
 
   constructor (form: unknown, config: FetchItConfig) {
     if (!(form instanceof HTMLFormElement)) {
@@ -413,8 +413,8 @@ class FetchIt implements FetchItInstance {
    * full-page cache holds a token many visitors got.
    */
   freshToken (): Promise<void> {
-    this.exchange ??= this.exchangeToken();
-    return this.exchange;
+    this.tokenExchange ??= this.exchangeToken();
+    return this.tokenExchange;
   }
 
   /**
@@ -445,7 +445,7 @@ class FetchIt implements FetchItInstance {
             this.config.pow = bits;
           }
           const minTime = Number(answer.headers.get('X-FetchIt-Min-Time') ?? 0);
-          this.readyAt = readyAt(minTime);
+          this.freshTokenReadyAt = readyAt(minTime);
         } else if (!this.destroyed) {
           console.warn(`FetchIt: no fresh token (${answer.headers?.get('X-FetchIt-Refused') ?? `HTTP ${answer.status}`}); the form keeps the token of the page`);
         }
@@ -469,7 +469,7 @@ class FetchIt implements FetchItInstance {
    * Wait until the fill time of the server has passed since the exchange.
    */
   async untilReady () {
-    await until(this.readyAt);
+    await until(this.freshTokenReadyAt);
   }
 
   /**
