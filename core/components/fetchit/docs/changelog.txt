@@ -25,9 +25,14 @@ FetchIt 4 replaces both with one package and installs over either of them.
 
 - The page starts its forms with one `FetchIt.observe()` instead of a
   `FetchIt.create()` per form. A class of the site in
-  `fetchit.frontend.js.classname` that overrides `create()` needs to move that
-  code to `observe()` or to the constructor. A script of the site with only
-  `create()` still gets one `create(config)` call per form key.
+  `fetchit.frontend.js.classname` with a `create()` of its own gets one
+  `create(config)` call per form key first, as before, then `observe()`; a
+  script of the site without `observe()` gets only the `create()` calls.
+- A form that cannot start, or whose config is broken, is logged in the
+  console and sent the usual way; the other forms start all the same. A form
+  removed while it is being sent ends quietly.
+- Text that is not UTF-8 in a lexicon entry or a setting no longer breaks the
+  config of the forms; what cannot be encoded is logged.
 - A fragment without `<head>` and `<body>` gets no script and logs no error.
 
 ## [4.0.0] - 2026-09-25

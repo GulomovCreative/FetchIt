@@ -100,7 +100,9 @@ class FetchIt implements FetchItInstance {
     const signal = this.listening.signal;
 
     this.form.addEventListener('submit', async event => {
-      // A browser that does not know the signal option keeps the listener.
+      // A browser that does not know the signal option keeps the listeners
+      // of a destroyed instance; the one that sends is guarded, the others
+      // only clear errors and messages.
       if (FetchIt.instances.get(this.form) !== this) {
         return;
       }
@@ -656,7 +658,8 @@ class FetchIt implements FetchItInstance {
   /**
    * Inserted forms get an instance; removed ones are destroyed. The
    * records come after the whole batch of changes, so a form moved within
-   * the page is connected again by then and is kept.
+   * the page is connected again by then and is kept; one put back in a
+   * later task (a modal opened again) gets a new instance.
    */
   static mutated (records: MutationRecord[]) {
     const removed: Node[] = [];
