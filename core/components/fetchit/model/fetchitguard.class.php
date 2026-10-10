@@ -83,6 +83,9 @@ class FetchItGuard
     /** @var FetchItStore|null|false Where marks and counters live; false until store() picked it */
     protected $store = false;
 
+    /** @var bool Whether the last withinRateLimit() refused because its counter could not be stored */
+    protected $storeFailed = false;
+
 
     /**
      * @param FetchIt $fetchit
@@ -366,6 +369,9 @@ class FetchItGuard
         // too, before a next token or a mark: past the limit a replayed token
         // mints nothing and writes nothing.
         if (!$this->withinRateLimit($action)) {
+            if ($this->storeFailed) {
+                return $this->refuse('store', 'fetchit_err_store');
+            }
             $this->log(self::LOG_PROBLEMS, 'rate limit reached', $action);
 
             return $this->refuse('rate', 'fetchit_err_rate');
@@ -459,15 +465,28 @@ class FetchItGuard
 
     /**
      * Where marks, counters and the properties of forms live.
+     * fetchit.protection.store: files (the default) or db; null for anything
+     * else, and the forms are refused.
      *
      * @return FetchItStore|null
      */
     public function store()
     {
         if ($this->store === false) {
-            $this->store = new FetchItFileStore($this->modx, function ($what) {
+            $setting = strtolower(trim((string)$this->modx->getOption('fetchit.protection.store', null, 'files')));
+            $log = function ($what) {
                 $this->log(self::LOG_PROBLEMS, $what);
-            }, $this->ttl());
+            };
+            if ($setting === '' || $setting === 'files') {
+                $this->store = new FetchItFileStore($this->modx, $log, $this->ttl());
+            } elseif ($setting === 'db') {
+                $this->store = new FetchItDbStore($this->modx, $log);
+            } else {
+                // Fail closed: a typo must not quietly drop to the files of one server.
+                $this->store = null;
+                $this->modx->log(modX::LOG_LEVEL_ERROR, "[FetchIt] fetchit.protection.store is \"{$setting}\", not files or db;"
+                    . ' forms are refused until it is fixed');
+            }
         }
 
         return $this->store;
@@ -529,14 +548,19 @@ class FetchItGuard
 
 
     /**
-     * Count this submission and check the limit of the form for the client.
+     * Count this request and check the limit of the form for the client.
+     * Submissions and token exchanges ($scope "submit" or "exchange") have
+     * counters of their own. The key is an HMAC: an md5 of an IPv4 address
+     * is reversed in minutes.
      *
      * @param string $action
+     * @param string $scope
      *
      * @return bool
      */
-    protected function withinRateLimit($action)
+    protected function withinRateLimit($action, $scope = 'submit')
     {
+        $this->storeFailed = false;
         $limit = (int)$this->modx->getOption('fetchit.protection.rate_limit', null, 10);
         $window = (int)$this->modx->getOption('fetchit.protection.rate_window', null, 600);
         if ($limit <= 0 || $window <= 0) {
@@ -544,14 +568,19 @@ class FetchItGuard
         }
 
         $store = $this->store();
-        $count = $store !== null ? $store->hit(md5($action . '|' . $this->clientAddress()), $window, $this->now()) : null;
-        if ($count === null) {
+        $key = hash_hmac('sha256', $scope . '|' . $action . '|' . $this->clientAddress(), $this->secret());
+        $count = $store !== null ? $store->hit($key, $window, $this->now()) : null;
+        if ($count !== null) {
+            return $count <= $limit;
+        }
+        if ($store !== null && !$store->strict()) {
             $this->log(self::LOG_PROBLEMS, 'could not store the rate limit counter; the limit is not enforced', $action);
 
             return true;
         }
+        $this->storeFailed = true;
 
-        return $count <= $limit;
+        return false;
     }
 
 
