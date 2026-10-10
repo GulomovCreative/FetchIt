@@ -25,13 +25,16 @@
 #               exchanged for a fresh one (204, not cached, with the proof of
 #               work and the fill time), which passes 4.5 s later; a replayed
 #               token gets a next one timed now, refused as too fast; a bad
-#               token and a GET get none.
-#   no-page-cache  the defaults: no exchange, and a page rendered for another
-#               session is not found (why fetchit.page_cache exists).
+#               token gets none (204) and a GET is redirected (302).
+#   no-page-cache  the defaults: the exchange answers 204 with no token, a
+#               page rendered for another session is not found (why
+#               fetchit.page_cache exists), and a replayed token gets no
+#               fill time to wait.
 #   db-store    fetchit.protection.store db, fetchit.page_cache 1,
 #               fetchit.protection.rate_limit 2: a page rendered for another
 #               session passes, its token is refused the second time, and the
-#               limit holds after the MODX cache is cleared.
+#               limit holds after the MODX cache is cleared (the setting.php
+#               call below clears it).
 #
 # Refusals are recognised by the X-FetchIt-Refused header, whatever the
 # language of the site.
@@ -139,21 +142,31 @@ case "$what" in
         echo "# Exchanges that get nothing"
         printf 'garbage' > "$jar.token"
         exchange "$action" -F "pageId=$custom"
-        check "a bad token gets no token" test -z "$(header x-fetchit-token)"
-        check "and is refused as a token" test "$(header x-fetchit-refused)" = token
+        check "a bad token answers 204" test "$(status)" = 204
+        check "... with no token" test -z "$(header x-fetchit-token)"
+        check "... refused as a token" test "$(header x-fetchit-refused)" = token
         : > "$jar.headers"
         curl -sS -D "$jar.headers" -o /dev/null -H "X-FetchIt-Action: $action" -H "X-FetchIt-Exchange: 1" \
             "$base/assets/components/fetchit/action.php?fetchit_token=$page_token" || true
-        check "a GET gets no token" test -z "$(header x-fetchit-token)"
+        check "a GET is redirected" test "$(status)" = 302
+        check "... with no token" test -z "$(header x-fetchit-token)"
         ;;
     no-page-cache)
         echo "# Without fetchit.page_cache (id $custom)"
         action="$(open_page "$custom")"
+        page_token="$(cat "$jar.token")"
         exchange "$action"
-        check "the exchange gives no token" test -z "$(header x-fetchit-token)"
+        check "the exchange answers 204" test "$(status)" = 204
+        check "... with no token" test -z "$(header x-fetchit-token)"
+        check "... and no refusal" test -z "$(header x-fetchit-refused)"
+        check "... not cached all the same" grep -qi '^cache-control:.*no-store' "$jar.headers"
         forget_session
         response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom")"
         check "a page rendered for another session is not found" json '.success == false' "$response"
+        printf '%s' "$page_token" > "$jar.token"
+        submit "$action" -F email=ann@example.com -F "pageId=$custom" > /dev/null
+        check "a replayed token is refused" test "$(header x-fetchit-refused)" = token
+        check "... with no fill time to wait" test -z "$(header x-fetchit-min-time)"
         ;;
     db-store)
         echo "# Tokens, counters and forms in the database (id $custom)"

@@ -20,6 +20,8 @@ class StoreResolverTest extends TestCase
 
     protected function tearDown(): void
     {
+        // Whatever a test did to the prefix, the table of the tests goes.
+        $this->modx->options['table_prefix'] = 'fetchit_test_';
         $this->store()->uninstall();
     }
 
