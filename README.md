@@ -91,7 +91,7 @@ The chunk `myForm.tpl`, a plain form with the attributes of FetchIt:
 - `data-success` and `data-validation-error` show the message of the form.
 - The `[[+fi.…]]` placeholders are for submissions without JavaScript. If those do not matter, leave them out.
 
-FetchIt adds the `data-fetchit` key and the service fields of the protection to the form, and adds the script to the page. The chunk `tpl.FetchIt.example` is a ready example.
+FetchIt adds the `data-fetchit` key, the config of the form (`data-fetchit-config`) and the service fields of the protection to the form, and adds the script to the page. The chunk `tpl.FetchIt.example` is a ready example.
 
 The [documentation](https://docs.modx.pro/components/fetchit/) (in Russian) has more examples: markup, notifications, modals, client-side validation, the JS API.
 
@@ -105,6 +105,8 @@ The [documentation](https://docs.modx.pro/components/fetchit/) (in Russian) has 
 | `clearFieldsOnSuccess` | `1` | Clear the fields after a successful submission |
 
 All other properties go to the processing snippet: for FormIt, `&hooks`, `&validate`, `&emailTo`, `&successMessage`, `&placeholderPrefix` and the rest.
+
+The `FetchItScript` snippet has no properties: `[[!FetchItScript]]` adds the script to a page whose forms come later, see [Things to keep in mind](#things-to-keep-in-mind).
 
 A snippet of your own gets the fields sent in `$fields` (without the service fields of the protection) and answers through FetchIt:
 
@@ -158,7 +160,7 @@ A refusal comes as an ordinary error of the form: the lexicon message `fetchit_e
 
 - **A full-page cache** (nginx, a CDN, static cache plugins) gives every visitor the same token. Through FetchIt this works thanks to the automatic resend, but pages with forms are better left out of such a cache: without JavaScript the first submission is refused.
 - **FormIt 5.2 and later** can send forms over AJAX itself. For FetchIt forms that mode is turned off: FetchIt removes the properties FormIt stored, the `fi.ajaxToken` placeholder and the `formit.js` script, as otherwise the form could be sent through FormIt's `action.php`, around the protection. Forms that `[[!FormIt]]` itself outputs on the same page keep their AJAX mode. The reCAPTCHA of FormIt 5.2 gets its answer through `formit.js`, so it does not work in FetchIt forms: use `fetchit.captcha` instead. Captcha hooks that read the answer from their field themselves work, as long as `fetchit.captcha` is not set to the same provider.
-- **Forms inserted over AJAX** after the page has loaded are not picked up by FetchIt: the script finds the forms when the page loads. Such forms are sent the usual way.
+- **Forms loaded later** (a modal loaded over AJAX, pdoPage, mFilter2) work like any other: every form carries its config in `data-fetchit-config`, and the script picks up inserted forms and forgets removed ones. The HTML must come from an uncached `[[!FetchIt]]` call, so the form has its token. A page that has no FetchIt form of its own and gets one later needs the script: put `[[!FetchItScript]]` into its template. A form inserted by your own script is picked up a moment later; call `FetchIt.init(element)` to have it at once.
 - **A script of your own instead of the bundled one** must send the form to `action.php` with an `X-FetchIt-Action` header equal to the `data-fetchit` attribute of the form, and a `pageId` field with the id of the page. It must send the `fetchit_token` field of the form and take the next token from the `X-FetchIt-Token` header of every answer. When an answer comes with `X-FetchIt-Refused: token`, send the form again with the new token. With a proof of work, send in `fetchit_pow` a solution for the token sent in that request, and solve again for a resend. A `pow` refusal tells the difficulty in the `X-FetchIt-Pow` header. With a captcha, send the provider's answer in its field (`cf-turnstile-response`, `g-recaptcha-response` or `smart-token`), and execute reCAPTCHA v3 with the action `fetchit`.
 - **Behind a proxy or a CDN** all visitors come from one address, and the limit becomes one for the whole site. List the addresses of the proxies in `fetchit.protection.proxies` (IPs or CIDR ranges, separated by commas) and the header with the visitor's address in `fetchit.protection.ip_header` (`X-Forwarded-For`, `CF-Connecting-IP`).
 - **The marks of used tokens** are kept in `core/cache/fetchit/tokens/`, which "Clear cache" leaves alone. When the directory is not writable, forms are refused and the cause is logged (unless the log is off). On several servers without a shared `core/cache`, a token can be used once on each server.
@@ -242,6 +244,8 @@ FetchIt.Message = {
 ```
 
 The global `FetchIt` exists once the deferred `fetchit.js` has run, so set `FetchIt.Message` from a deferred script added after it, or on `DOMContentLoaded`. The instance of a form is `FetchIt.instances.get(form)`, with `setError(name, message)`, `clearErrors()`, `setFormMessage(type, message)` and other methods.
+
+The page starts FetchIt with `FetchIt.observe()` on `DOMContentLoaded`. It handles the forms on the page and those inserted later, and calls `destroy()` on forms taken out of the page: the instance leaves `FetchIt.instances`, its proof of work stops, its captcha widget is removed. `FetchIt.init(root)` handles the forms in `root` right away. `FetchIt.create(config)` still works for pages cached by FetchIt 4.0.
 
 ## TypeScript
 
@@ -373,9 +377,10 @@ BASE_URL=http://localhost:8052 FIXTURES="$fixtures" npm run e2e
 
 ### How it works
 
-- **The snippet** (`core/components/fetchit/elements/snippets/`) outputs the chunk of the form, gives it the `data-fetchit` key (a hash of the call's properties) and the service fields of the protection, stores its properties under that key, and processes a form sent without JavaScript itself.
-- **The plugin** on `OnWebPagePrerender` adds the script to `<head>` when an uncached snippet call ran in the request.
-- **The script** (`src/`, built into `assets/components/fetchit/js/`) sends the form to `action.php` with an `X-FetchIt-Action` header, solves the proof of work, gets the captcha's answer, shows the errors and messages, and dispatches the events.
+- **The snippet** (`core/components/fetchit/elements/snippets/`) outputs the chunk of the form, gives it the `data-fetchit` key (a hash of the call's properties), its config in `data-fetchit-config` and the service fields of the protection, stores its properties under that key, and processes a form sent without JavaScript itself.
+- **`FetchItScript`** asks for the script on a page whose forms come later.
+- **The plugin** on `OnWebPagePrerender` adds the script and the bootstrap that calls `FetchIt.observe()` to `<head>` when an uncached call of either snippet ran in the request. A fragment without `<head>` and `<body>` gets nothing.
+- **The script** (`src/`, built into `assets/components/fetchit/js/`) picks up the forms with their config, also those inserted later, sends the form to `action.php` with an `X-FetchIt-Action` header, solves the proof of work, gets the captcha's answer, shows the errors and messages, and dispatches the events.
 - **`action.php`** finds the properties of the form by its key, checks the protection and runs FormIt or your snippet.
 - **`FetchItGuard`** checks the token, the limit, the trap, the proof of work, the fill time and the captcha (`FetchItCaptcha`), then fires `OnFetchItBeforeProcess`.
 
