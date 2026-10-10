@@ -170,7 +170,14 @@ class FetchIt
         // "method=" inside another attribute's value is never matched.
         $attribute = '#(\s+)([^\s"\'>/=]+)(\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s"\'=<>`]+))?#';
 
-        $config = htmlspecialchars($this->modx->toJSON($this->clientConfig($action)), ENT_QUOTES, 'UTF-8');
+        // Brackets and braces as entities: the page may go through the MODX
+        // parser and Fenom again, which would take them for tags.
+        $config = strtr(htmlspecialchars($this->modx->toJSON($this->clientConfig($action)), ENT_QUOTES, 'UTF-8'), [
+            '[' => '&#91;',
+            ']' => '&#93;',
+            '{' => '&#123;',
+            '}' => '&#125;',
+        ]);
 
         $result = preg_replace_callback($tag, function ($match) use ($action, $attribute, $config) {
             /** @var array $match */
@@ -383,22 +390,36 @@ class FetchIt
 
 
     /**
-     * Flag this request for registerScript() and add the inline call that
-     * initialises the forms with this action.
+     * Ask for the script of the forms: the plugin adds it at
+     * OnWebPagePrerender of this request. The forms carry their config
+     * (prepareForm()), so nothing else is needed per form.
      *
-     * @param string $action
+     * @param string $action Kept for compatibility; the config is in the form
      */
-    public function loadScript($action)
+    public function loadScript($action = '')
     {
         self::$scriptRequested = true;
+    }
 
-        $config = $this->modx->toJSON($this->clientConfig($action));
-        $js_classname = trim($this->modx->getOption('fetchit.frontend.js.classname', null, 'FetchIt', true));
-        // The class may be a window property, a top-level "class" declaration
-        // (no window property) or a dotted name. Without the script (a cached
-        // snippet call, a page without <head>) the form falls back to a
-        // normal submit instead of throwing.
-        $this->modx->regClientHTMLBlock("<script>window.addEventListener('DOMContentLoaded', () => { let FetchItClass; try { FetchItClass = {$js_classname}; } catch (e) {} if (FetchItClass && typeof FetchItClass.create === 'function') { FetchItClass.create($config); } else { console.error('FetchIt: {$js_classname} is not loaded'); } });</script>");
+
+    /**
+     * The inline code that starts the forms of the page once the deferred
+     * scripts have run. The class may be a window property, a top-level
+     * "class" declaration (no window property) or a dotted name. Without
+     * the script (blocked, failed) the forms fall back to a normal submit
+     * instead of throwing.
+     *
+     * @return string
+     */
+    protected function bootstrapScript()
+    {
+        $classname = trim($this->modx->getOption('fetchit.frontend.js.classname', null, 'FetchIt', true));
+        $options = $this->modx->toJSON([
+            'defaultNotifier' => (bool)$this->config['default_notifier'],
+            'notifierCloseLabel' => $this->config['default_notifier'] ? $this->lexiconOrEmpty('fetchit_notifier_close') : '',
+        ]);
+
+        return "<script>window.addEventListener('DOMContentLoaded', () => { let FetchItClass; try { FetchItClass = {$classname}; } catch (e) {} if (FetchItClass && typeof FetchItClass.observe === 'function') { FetchItClass.observe({$options}); } else { console.error('FetchIt: {$classname} is not loaded'); } });</script>";
     }
 
 
@@ -419,10 +440,11 @@ class FetchIt
 
 
     /**
-     * Called by the plugin at OnWebPagePrerender: add the frontend script
-     * (and the script of the captcha provider) to <head> once, if
-     * loadScript() ran in this request. The built-in notifier is part of the
-     * frontend script.
+     * Called by the plugin at OnWebPagePrerender: add the frontend script,
+     * the script of the captcha provider and the bootstrap that starts the
+     * forms to <head> once, if loadScript() ran in this request. A fragment
+     * without <head> and <body> gets nothing. The built-in notifier is part
+     * of the frontend script.
      */
     public function registerScript()
     {
@@ -431,6 +453,14 @@ class FetchIt
         }
         self::$scriptRequested = false;
 
+        $output = &$this->modx->resource->_output;
+        // A fragment (a resource with an empty template, loaded into
+        // another page): its forms carry their config, and the page they go
+        // into has the script.
+        if (!preg_match('#<(?:head|body)\b#i', $output)) {
+            return;
+        }
+
         $js = trim($this->config['frontend_js']);
         if (!preg_match('/\.js/i', $js)) {
             $this->modx->log(modX::LOG_LEVEL_ERROR, "[FetchIt] fetchit.frontend.js is not a JavaScript file: \"{$js}\"; no script added");
@@ -438,14 +468,16 @@ class FetchIt
             return;
         }
 
-        $assets = ['<script src="' . $this->withVersion(str_replace('[[+assetsUrl]]', $this->config['assetsUrl'], $js)) . '" defer></script>'];
+        $assets = [
+            '<script src="' . $this->withVersion(str_replace('[[+assetsUrl]]', $this->config['assetsUrl'], $js)) . '" defer></script>',
+            $this->bootstrapScript(),
+        ];
 
         // The script of the captcha provider, before FetchIt's (both defer).
         if ($captcha = $this->guard()->activeCaptcha()) {
             array_unshift($assets, '<script src="' . htmlspecialchars($captcha['script'], ENT_QUOTES) . '" defer></script>');
         }
 
-        $output = &$this->modx->resource->_output;
         $found = preg_match('#<head\b[^>]*>(.*?)</head>#is', $output, $head, PREG_OFFSET_CAPTURE);
         if (!$found) {
             $reason = $found === false ? $this->pcreError() : 'the page has no <head>';

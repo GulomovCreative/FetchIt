@@ -38,7 +38,8 @@ echo "# Page with its own handler (id $custom)"
 action="$(open_page "$custom")"
 check "the form gets a data-fetchit key" test -n "$action"
 check "the script is linked in <head>" grep -q 'components/fetchit/js/fetchit\.js?v=' "$jar.html"
-check "the form is initialised" grep -q "FetchItClass = FetchIt; .*FetchItClass.create({\"action\":\"$action\"" "$jar.html"
+check "the form carries its config" grep -q "data-fetchit-config=\"&#123;&quot;action&quot;:&quot;$action&quot;" "$jar.html"
+check "the page starts the forms" grep -q "FetchItClass = FetchIt; .*FetchItClass.observe({" "$jar.html"
 
 status="$(curl -s -o /dev/null -w '%{http_code}' "$base/assets/components/fetchit/action.php" || true)"
 check "GET action.php redirects" test "$status" = 302
