@@ -25,6 +25,25 @@ function toResponse (answer: FetchItAnswer): FetchItResponse {
   };
 }
 
+/**
+ * Date.now() from which a token of now is taken as filled in, given min_time
+ * in seconds (X-FetchIt-Min-Time); 0 when there is none to wait for.
+ */
+function readyAt (minTime: number): number {
+  // The server counts whole seconds; a little more keeps clear of it.
+  return minTime > 0 ? Date.now() + minTime * 1000 + 250 : 0;
+}
+
+/**
+ * Wait until Date.now() reaches the time.
+ */
+async function until (time: number): Promise<void> {
+  const wait = time - Date.now();
+  if (wait > 0) {
+    await new Promise(resolve => setTimeout(resolve, wait));
+  }
+}
+
 class FetchIt implements FetchItInstance {
   declare static Message?: FetchItMessage;
   static forms: HTMLFormElement[] = [];
@@ -165,6 +184,14 @@ class FetchIt implements FetchItInstance {
           if (next && (refused === 'token' || (refused === 'pow' && bits > (this.config.pow ?? 0)))) {
             if (refused === 'pow') {
               this.config.pow = bits;
+            }
+            // With a full-page cache the next token of a used or expired
+            // one is timed now: wait the fill time the server asks for.
+            if (refused === 'token') {
+              await until(readyAt(Number(query.headers?.get('X-FetchIt-Min-Time') ?? 0)));
+              if (this.destroyed) {
+                return;
+              }
             }
             formData.set(FetchIt.tokenField, next);
             if (this.config.pow) {
@@ -418,8 +445,7 @@ class FetchIt implements FetchItInstance {
             this.config.pow = bits;
           }
           const minTime = Number(answer.headers.get('X-FetchIt-Min-Time') ?? 0);
-          // The server counts whole seconds; a little more keeps clear of it.
-          this.readyAt = minTime > 0 ? Date.now() + minTime * 1000 + 250 : 0;
+          this.readyAt = readyAt(minTime);
         } else if (!this.destroyed) {
           console.warn(`FetchIt: no fresh token (${answer.headers?.get('X-FetchIt-Refused') ?? `HTTP ${answer.status}`}); the form keeps the token of the page`);
         }
@@ -443,10 +469,7 @@ class FetchIt implements FetchItInstance {
    * Wait until the fill time of the server has passed since the exchange.
    */
   async untilReady () {
-    const wait = this.readyAt - Date.now();
-    if (wait > 0) {
-      await new Promise(resolve => setTimeout(resolve, wait));
-    }
+    await until(this.readyAt);
   }
 
   /**

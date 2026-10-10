@@ -68,6 +68,11 @@ if (empty($_POST)) {
         if ($reason === 'pow') {
             header('X-FetchIt-Pow: ' . $FetchIt->guard()->pow());
         }
+        // With fetchit.page_cache the next token of a used or expired one is
+        // timed now: the script waits this long before it sends it.
+        if ($reason === 'token' && $FetchIt->guard()->freshToken()) {
+            header('X-FetchIt-Min-Time: ' . $FetchIt->guard()->minTime());
+        }
     }
     echo $refused !== null ? $refused : $FetchIt->process($action, array_merge($_FILES, $post));
 }
