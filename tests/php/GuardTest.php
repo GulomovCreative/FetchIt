@@ -922,6 +922,38 @@ class GuardTest extends TestCase
         $this->assertNull($this->guard()->renew(self::ACTION, []));
     }
 
+    public function testRenewKeepsTheTimeOfTheTokenSent()
+    {
+        $token = $this->token();
+        $this->now += 10;
+
+        $next = $this->guard()->renew(self::ACTION, [FetchItGuard::TOKEN => $token]);
+
+        $this->assertSame($this->parts($token)[1], $this->parts($next)[1]);
+    }
+
+    public function testRenewTimesThePageCacheTokenNow()
+    {
+        $this->pageCache();
+        $token = $this->token();
+        $this->now += 100;
+
+        $next = $this->guard()->renew(self::ACTION, [FetchItGuard::TOKEN => $token]);
+
+        $this->assertSame((string)$this->now, $this->parts($next)[1]);
+    }
+
+    public function testRenewTimesAnExpiredTokenNowLessMinTime()
+    {
+        $this->modx->options['fetchit.protection.token_ttl'] = 3600;
+        $token = $this->token();
+        $this->now += 3601;
+
+        $next = $this->guard()->renew(self::ACTION, [FetchItGuard::TOKEN => $token]);
+
+        $this->assertSame((string)($this->now - 3), $this->parts($next)[1]);
+    }
+
     public function testRenewGivesNothingWithoutTheProtection()
     {
         $token = $this->token();

@@ -416,7 +416,10 @@ class FetchItGuard
     /**
      * A token for the next submission of a form whose retry got the kept
      * answer: the token it sent was used by its first attempt. Only for a
-     * well-signed token of the form, as nextToken().
+     * well-signed token of the form, as nextToken(). Its time keeps the fill
+     * time going on, as the next token of checkProtection() does: timed now
+     * with fetchit.page_cache, timed now less min_time when the token has
+     * expired, and otherwise the time of the token sent.
      *
      * @param string $action
      * @param array $post
@@ -425,7 +428,23 @@ class FetchItGuard
      */
     public function renew($action, array $post)
     {
-        return $this->enabled() && $this->valid($action, $this->read($post)) ? $this->issue($action) : null;
+        if (!$this->enabled()) {
+            return null;
+        }
+        $token = $this->read($post);
+        if (!$this->valid($action, $token)) {
+            return null;
+        }
+
+        $age = $this->now() - $token['time'];
+        if ($this->freshToken()) {
+            return $this->issue($action);
+        }
+        if ($age > $this->ttl() || $age < 0) {
+            return $this->issue($action, $this->now() - $this->minTime());
+        }
+
+        return $this->issue($action, $token['time']);
     }
 
 
