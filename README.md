@@ -314,7 +314,8 @@ What may affect your code:
 - the processing snippet gets only the form sent in `fields`: `$_POST` and the files from `$_FILES` when sent through FetchIt, only `$_POST` for a form sent the usual way; no GET values and no cookies;
 - `fetchit:success` can be cancelled: `event.preventDefault()` keeps the fields filled;
 - sending again while a request is running is ignored;
-- `method` and `data-fetchit` now come last among the attributes of the form tag.
+- `method` and `data-fetchit` now come last among the attributes of the form tag;
+- since FetchIt 4.1 the page starts the forms with `FetchIt.observe()`, and every form carries its config in `data-fetchit-config`. A script of your own in `fetchit.frontend.js` with only `create()` still gets a `create(config)` call per form key; a class extending FetchIt that overrides `create()` needs that code in `observe()` or the constructor.
 
 The full list of changes is in the [changelog](core/components/fetchit/docs/changelog.txt).
 

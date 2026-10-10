@@ -407,7 +407,9 @@ class FetchIt
      * scripts have run. The class may be a window property, a top-level
      * "class" declaration (no window property) or a dotted name. Without
      * the script (blocked, failed) the forms fall back to a normal submit
-     * instead of throwing.
+     * instead of throwing. A script of the site written for FetchIt 4.0
+     * has only create(): it gets one call per action of the forms on the
+     * page, as before.
      *
      * @return string
      */
@@ -419,7 +421,7 @@ class FetchIt
             'notifierCloseLabel' => $this->config['default_notifier'] ? $this->lexiconOrEmpty('fetchit_notifier_close') : '',
         ]);
 
-        return "<script>window.addEventListener('DOMContentLoaded', () => { let FetchItClass; try { FetchItClass = {$classname}; } catch (e) {} if (FetchItClass && typeof FetchItClass.observe === 'function') { FetchItClass.observe({$options}); } else { console.error('FetchIt: {$classname} is not loaded'); } });</script>";
+        return "<script>window.addEventListener('DOMContentLoaded', () => { let FetchItClass; try { FetchItClass = {$classname}; } catch (e) {} if (FetchItClass && typeof FetchItClass.observe === 'function') { FetchItClass.observe({$options}); } else if (FetchItClass && typeof FetchItClass.create === 'function') { const actions = {}; document.querySelectorAll('form[data-fetchit-config]').forEach(form => { try { const config = JSON.parse(form.getAttribute('data-fetchit-config')); if (!actions[config.action]) { actions[config.action] = true; FetchItClass.create(config); } } catch (e) { console.error(e); } }); } else { console.error('FetchIt: {$classname} is not loaded'); } });</script>";
     }
 
 
