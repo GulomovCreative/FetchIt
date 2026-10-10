@@ -1,9 +1,9 @@
 <?php
 /**
- * Create the table of fetchit.protection.store db on install and upgrade,
- * and drop it on uninstall. It never stops the installation: with the
- * default store (files) the table is not used, and a database user that may
- * not create tables gets a warning in the install log.
+ * Create the table fetchit_store (used by fetchit.protection.store = db) on
+ * install and upgrade, and drop it on uninstall. It never stops the
+ * installation: with the default store (files) the table is not used, and a
+ * database user that may not create tables gets a warning in the install log.
  *
  * @var xPDOTransport $transport
  * @var array $options
@@ -14,11 +14,31 @@ if (!$transport->xpdo || !($transport instanceof xPDOTransport)) {
 }
 
 $modx = $transport->xpdo;
+
+if ((int)$options[xPDOTransport::PACKAGE_ACTION] === xPDOTransport::ACTION_UNINSTALL) {
+    // MODX removes the files of the component before this resolver runs on
+    // uninstall, so FetchItDbStore cannot be loaded: plain SQL here.
+    $table = $modx->escape($modx->getOption('table_prefix', null, '') . 'fetchit_store');
+    $run = function ($sql) use ($modx) {
+        try {
+            $statement = $modx->prepare($sql);
+
+            return $statement !== false && $statement->execute();
+        } catch (PDOException $exception) {
+            return false;
+        }
+    };
+    if ($run("SELECT 1 FROM {$table} WHERE 1 = 0") && !$run("DROP TABLE {$table}")) {
+        $modx->log(modX::LOG_LEVEL_WARN, '[FetchIt] Could not drop the table fetchit_store');
+    }
+
+    return true;
+}
+
 if (!class_exists('FetchItDbStore')) {
     $model = $modx->getOption('fetchit.core_path', null, $modx->getOption('core_path') . 'components/fetchit/') . 'model/';
     if (!is_readable($model . 'fetchitdbstore.class.php')) {
-        // Uninstalled files: the table stays, which is harmless.
-        $modx->log(modX::LOG_LEVEL_WARN, '[FetchIt] The table fetchit_store was left: the files of FetchIt are gone');
+        $modx->log(modX::LOG_LEVEL_WARN, '[FetchIt] The files of FetchIt are missing; the table fetchit_store was not created');
 
         return true;
     }
@@ -35,11 +55,6 @@ switch ($options[xPDOTransport::PACKAGE_ACTION]) {
         if (!$store->install()) {
             $modx->log(modX::LOG_LEVEL_WARN, '[FetchIt] Could not create the table fetchit_store;'
                 . ' with fetchit.protection.store db the forms are refused until it exists');
-        }
-        break;
-    case xPDOTransport::ACTION_UNINSTALL:
-        if (!$store->uninstall()) {
-            $modx->log(modX::LOG_LEVEL_WARN, '[FetchIt] Could not drop the table fetchit_store');
         }
         break;
 }

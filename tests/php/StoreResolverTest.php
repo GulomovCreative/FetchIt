@@ -43,17 +43,17 @@ class StoreResolverTest extends TestCase
         $this->assertTrue($this->resolve(xPDOTransport::ACTION_INSTALL));
 
         $this->assertTrue($this->store()->exists());
-        $this->assertSame('marked', $this->store()->mark('ab12cd34ef56ab78', 2000000000));
+        $this->assertSame('marked', $this->store()->mark('ab12cd34ef56ab78', time() + 3600));
     }
 
     public function testUpgradeKeepsWhatIsThere()
     {
         $this->resolve(xPDOTransport::ACTION_INSTALL);
-        $this->store()->mark('ab12cd34ef56ab78', 2000000000);
+        $this->store()->mark('ab12cd34ef56ab78', time() + 3600);
 
         $this->assertTrue($this->resolve(xPDOTransport::ACTION_UPGRADE));
 
-        $this->assertSame('used', $this->store()->mark('ab12cd34ef56ab78', 2000000000));
+        $this->assertSame('used', $this->store()->mark('ab12cd34ef56ab78', time() + 3600));
     }
 
     public function testUninstallDropsTheTable()
@@ -63,6 +63,35 @@ class StoreResolverTest extends TestCase
         $this->assertTrue($this->resolve(xPDOTransport::ACTION_UNINSTALL));
 
         $this->assertFalse($this->store()->exists());
+    }
+
+    public function testUninstallWithoutTheTableIsFine()
+    {
+        $this->assertTrue($this->resolve(xPDOTransport::ACTION_UNINSTALL));
+
+        $this->assertSame([], $this->modx->logged);
+    }
+
+    /**
+     * @dataProvider errorModes
+     */
+    public function testUninstallDropsTheTableInEitherErrorMode($errorMode)
+    {
+        $this->modx = fetchit_test_modx($errorMode);
+        $this->store()->install();
+
+        $this->assertTrue($this->resolve(xPDOTransport::ACTION_UNINSTALL));
+
+        $this->assertFalse($this->store()->exists());
+        $this->assertSame([], $this->modx->logged);
+    }
+
+    public function errorModes()
+    {
+        return [
+            'silent' => [PDO::ERRMODE_SILENT],
+            'exceptions' => [PDO::ERRMODE_EXCEPTION],
+        ];
     }
 
     public function testAFailureDoesNotStopTheInstallation()
