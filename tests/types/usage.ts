@@ -27,8 +27,8 @@ export type Checks = [
   Assert<Equals<ReturnType<FetchItStatic['createNotifier']>, FetchItNotifier>>,
   Assert<Equals<ConstructorParameters<FetchItStatic>, [form: HTMLFormElement, config: FetchItConfig]>>,
   Assert<Equals<InstanceType<FetchItStatic>, FetchItInstance>>,
-  Assert<Equals<Parameters<FetchItStatic['init']>, [root?: ParentNode]>>,
-  Assert<Equals<Parameters<FetchItStatic['observe']>, [options?: FetchItObserveOptions]>>,
+  Assert<Equals<Parameters<FetchItStatic['init']>, [root?: ParentNode | undefined]>>,
+  Assert<Equals<Parameters<FetchItStatic['observe']>, [options?: FetchItObserveOptions | undefined]>>,
 ]
 
 document.addEventListener('fetchit:before', event => {
