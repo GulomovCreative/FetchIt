@@ -32,6 +32,15 @@ class FetchIt
      */
     protected $storeFailed = false;
 
+    /**
+     * Whether the last process() answered fetchit_err_store without running
+     * the snippet: submit() then frees the key of the submission. Not
+     * storeFailed, which the snippet may change by loading another form.
+     *
+     * @var bool
+     */
+    protected $unprocessed = false;
+
     /** @var bool[] The actions whose stored properties were logged as not valid JSON */
     protected $invalidJson = [];
 
@@ -353,16 +362,23 @@ class FetchIt
         $this->catchRedirect();
         try {
             $response = $this->process($action, $fields);
-            // fetchit_err_store: the properties of the form could not be read.
-            $unprocessed = $this->storeFailed;
-        } finally {
-            // An exception goes on up: finishRedirect() at the shutdown must not answer for it.
+        } catch (Throwable $e) {
+            // It goes on up: finishRedirect() at the shutdown must not answer for it.
+            // The key stays taken: the snippet may have sent the mail already.
+            // No processing left: finishRedirect() has answered or logged it.
+            $handled = $this->processing === null;
             $this->processing = null;
+            if ($key !== null && !$handled) {
+                $this->modx->log(modX::LOG_LEVEL_ERROR, '[FetchIt] The processing of form ' . substr($action, 0, 8) . ' failed: '
+                    . $e->getMessage() . '; retries of this submission are answered that it is still processed for an hour');
+            }
+            throw $e;
         }
+        $this->processing = null;
 
         $body = $this->withRedirect($action, $this->json($response));
         if ($key !== null) {
-            if ($unprocessed) {
+            if ($this->unprocessed) {
                 // Nothing was processed: a retry may find the store working again.
                 $guard->release($key);
             } else {
@@ -440,7 +456,8 @@ class FetchIt
         }
         if ($this->headersSent()) {
             $this->modx->log(modX::LOG_LEVEL_ERROR, "[FetchIt] The processing of form {$form} sent a redirect to {$location} after its output began;"
-                . ' the script gets HTML instead of an answer. Output before the redirect: check the processing snippet for echo or a BOM');
+                . ' the script gets HTML instead of an answer. Output before the redirect: check the processing snippet for echo or a BOM'
+                . ($processing['key'] !== null ? '; retries of this submission are answered that it is still processed for an hour' : ''));
 
             return;
         }
@@ -451,6 +468,7 @@ class FetchIt
         } catch (Throwable $e) {
             $this->modx->log(modX::LOG_LEVEL_ERROR, "[FetchIt] Could not build the answer to the redirect of form {$form} to {$location}: "
                 . $e->getMessage() . '; the visitor gets an empty success message');
+            // Not toJSON() of MODX: it may be what just failed.
             $body = (string)json_encode(['success' => true, 'message' => '', 'data' => [], 'redirect' => $location], JSON_INVALID_UTF8_SUBSTITUTE);
         }
         if ($processing['key'] !== null) {
@@ -1036,6 +1054,7 @@ HTML;
     public function process($action, array $fields = array())
     {
         $stored = $this->loadActionProperties($action);
+        $this->unprocessed = $stored === null && $this->storeFailed;
         if ($stored === null) {
             return $this->error($this->storeFailed ? 'fetchit_err_store' : 'fetchit_err_action_nf');
         }
