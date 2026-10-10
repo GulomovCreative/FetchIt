@@ -32,7 +32,9 @@
  *
  * Only a request that brought a well-signed token of the form gets the next
  * one (nextToken()): a request without a token is refused and gets none, so a
- * bot has to load the page.
+ * bot has to load the page. With fetchit.page_cache, exchange() gives the
+ * script a fresh token for the token of a page from a full-page cache, and a
+ * used or expired token gets a next one timed now.
  *
  * The service fields are removed from the fields, $_POST and $_REQUEST before
  * FormIt or the processing snippet runs, so they never reach e-mails.
@@ -336,6 +338,49 @@ class FetchItGuard
 
 
     /**
+     * Exchange the token of a page for a fresh one, timed now: with
+     * fetchit.page_cache the script asks for it when the visitor starts on
+     * the form, since a page from a full-page cache holds a token many got.
+     * The token must belong to the form and be well signed, of any age, used
+     * or not; it is not marked. Exchanges have a rate limit of their own.
+     * Afterwards reason() tells why there is none: token, rate or store.
+     *
+     * @param string $action
+     * @param array $post
+     *
+     * @return string|null
+     */
+    public function exchange($action, array $post)
+    {
+        $this->next = null;
+        $this->reason = null;
+        if (!$this->freshToken()) {
+            return null;
+        }
+
+        if (!$this->valid($action, $this->read($post))) {
+            $this->log(self::LOG_ALL, 'exchange: no valid token', $action);
+            $this->refuse('token', 'fetchit_err_token');
+
+            return null;
+        }
+        if (!$this->withinRateLimit($action, 'exchange')) {
+            if ($this->storeFailed) {
+                $this->refuse('store', 'fetchit_err_store');
+
+                return null;
+            }
+            $this->log(self::LOG_PROBLEMS, 'exchange: rate limit reached', $action);
+            $this->refuse('rate', 'fetchit_err_rate');
+
+            return null;
+        }
+
+        return $this->next = $this->issue($action);
+    }
+
+
+    /**
      * The token for the next submission of the page, after check(): null when
      * the request did not bring a well-signed token of the form.
      *
@@ -359,6 +404,32 @@ class FetchItGuard
 
 
     /**
+     * Whether a token belongs to the form and is well signed.
+     *
+     * @param string $action
+     * @param array|null $token From read()
+     *
+     * @return bool
+     */
+    protected function valid($action, $token)
+    {
+        return $token !== null && $token['form'] === substr($action, 0, 8)
+            && hash_equals($this->sign($action, $token['time'], $token['nonce']), $token['signature']);
+    }
+
+
+    /**
+     * fetchit.protection.min_time, in seconds.
+     *
+     * @return int
+     */
+    public function minTime()
+    {
+        return max(0, (int)$this->modx->getOption('fetchit.protection.min_time', null, 3));
+    }
+
+
+    /**
      * @param string $action
      * @param array|null $token
      * @param array $sent The POST as sent, service fields included
@@ -369,9 +440,7 @@ class FetchItGuard
     {
         $trap = $this->trapName();
         $caught = isset($sent[$trap]) && trim((string)$sent[$trap]) !== '';
-        if ($token === null || $token['form'] !== substr($action, 0, 8)
-            || !hash_equals($this->sign($action, $token['time'], $token['nonce']), $token['signature'])
-        ) {
+        if (!$this->valid($action, $token)) {
             $this->log(self::LOG_ALL, 'no valid token', $action);
 
             return $this->refuse('token', 'fetchit_err_token');
@@ -391,14 +460,21 @@ class FetchItGuard
 
         $age = $this->now() - $token['time'];
         $ttl = $this->ttl();
-        $minTime = max(0, (int)$this->modx->getOption('fetchit.protection.min_time', null, 3));
+        $minTime = $this->minTime();
         // A retry keeps the time of the first render; an expired page starts
         // anew, as if it had been filled in already.
         $this->next = $age > $ttl || $age < 0
             ? $this->issue($action, $this->now() - $minTime)
             : $this->issue($action, $token['time']);
+        // With a full-page cache many visitors hold one token: a used or
+        // expired one starts the fill time anew, or a bot replaying it would
+        // never wait.
+        $restart = $this->freshToken();
 
         if ($age > $ttl || $age < 0) {
+            if ($restart) {
+                $this->next = $this->issue($action);
+            }
             $this->log(self::LOG_ALL, 'expired token', $action);
 
             return $this->refuse('token', 'fetchit_err_token');
@@ -406,6 +482,9 @@ class FetchItGuard
 
         $mark = $this->mark($token['nonce']);
         if ($mark === 'used') {
+            if ($restart) {
+                $this->next = $this->issue($action);
+            }
             $this->log(self::LOG_ALL, 'used token', $action);
 
             return $this->refuse('token', 'fetchit_err_token');
