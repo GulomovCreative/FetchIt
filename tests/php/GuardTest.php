@@ -1259,6 +1259,34 @@ class GuardTest extends TestCase
         $this->assertSame(['X-FetchIt-Refused: token', 'X-FetchIt-Min-Time: 3'], array_slice($this->headers, 1));
     }
 
+    public function testAStoreFailureWhileRenewingTheTokenKeepsTheAnswer()
+    {
+        // The table of the db store, whose counters are strict; SQLite in memory
+        // whatever FETCHIT_TEST_DSN says, for the trigger below.
+        $this->modx->pdo = new PDO('sqlite::memory:');
+        $this->modx->options['table_prefix'] = 'fetchit_test_';
+        $this->modx->options['fetchit.protection.store'] = 'db';
+        $this->modx->options['fetchit.protection.rate_limit'] = 10;
+        $this->modx->options['fetchit.protection.rate_window'] = 600;
+        $this->assertTrue((new FetchItDbStore($this->modx, function () {}))->install());
+        $this->fetchit = $this->fetchit();
+        $snippet = $this->counted();
+        $post = $this->filled($this->token());
+        $first = $this->send($this->fetchit, $post);
+        // From now on a rate counter cannot be stored; the answers can.
+        foreach (['INSERT', 'UPDATE'] as $statement) {
+            $this->modx->pdo->exec("CREATE TRIGGER no_counters_{$statement} BEFORE {$statement} ON fetchit_test_fetchit_store"
+                . " WHEN NEW.k LIKE 'r:%' BEGIN SELECT 1 FROM no_counters; END");
+        }
+
+        $retry = $this->send($this->fetchit(), $post);
+
+        $this->assertSame(1, $snippet->runs);
+        $this->assertSame($first, $retry);
+        $this->assertSame([], $this->headers);
+        $this->assertLogged('failed on hit');
+    }
+
     private function assertNotLogged($needle)
     {
         foreach (array_column($this->modx->logged, 1) as $message) {
