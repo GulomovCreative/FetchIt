@@ -7,6 +7,26 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 FetchIt 1.x was the package for MODX 2 and FetchIt 3.x the package for MODX 3.
 FetchIt 4 replaces both with one package and installs over either of them.
 
+## [Unreleased]
+
+### Added
+
+- Forms loaded after the page (a modal loaded over AJAX, pdoPage, mFilter2)
+  are sent through FetchIt like any other. Every form carries its config in
+  `data-fetchit-config`; the script picks up inserted forms and forgets
+  removed ones.
+- The `FetchItScript` snippet adds the script to a page whose forms come
+  later.
+- `FetchIt.observe()`, `FetchIt.init(root)` and `destroy()` of an instance.
+
+### Changed
+
+- The page starts its forms with one `FetchIt.observe()` instead of a
+  `FetchIt.create()` per form. A class of the site in
+  `fetchit.frontend.js.classname` that overrides `create()` needs to move that
+  code to `observe()` or to the constructor.
+- A fragment without `<head>` and `<body>` gets no script and logs no error.
+
 ## [4.0.0] - 2026-09-25
 
 One package for MODX 2.8 and MODX 3, with spam protection on by default. It
@@ -171,6 +191,7 @@ explained in the README, [Upgrading to FetchIt 4](https://github.com/GulomovCrea
 
 - The first release: forms sent with the Fetch API and processed by FormIt or a snippet of your own.
 
+[Unreleased]: https://github.com/GulomovCreative/FetchIt/compare/v4.0.0...HEAD
 [4.0.0]: https://github.com/GulomovCreative/FetchIt/compare/v1.1.3...v4.0.0
 [3.1.4]: https://github.com/GulomovCreative/FetchIt/compare/a2f6d4d...v3.1.4
 [3.1.3]: https://github.com/GulomovCreative/FetchIt/compare/7ac236f...a2f6d4d
