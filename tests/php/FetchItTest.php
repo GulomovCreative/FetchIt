@@ -256,6 +256,14 @@ class FetchItTest extends TestCase
         $this->assertSame(2, substr_count($html, 'data-fetchit="abc"'));
     }
 
+    public function testTheSecondFormOfTheChunkGetsTheConfigToo()
+    {
+        $html = $this->fetchit()->prepareForm('<form id="a"></form><form id="b"></form>', 'abc');
+
+        $this->assertSame(1, preg_match('#<form id="b"[^>]*data-fetchit-config="([^"]+)"#', $html, $match), $html);
+        $this->assertSame('abc', json_decode(html_entity_decode($match[1], ENT_QUOTES, 'UTF-8'), true)['action']);
+    }
+
     // ------------------------------------------------------ action properties
 
     /**
@@ -749,6 +757,17 @@ class FetchItTest extends TestCase
 
         $this->assertStringContainsString('"defaultNotifier":true', $this->bootstrap($html));
         $this->assertStringContainsString(json_encode('Закрыть'), $this->bootstrap($html));
+    }
+
+    public function testACloseLabelCannotEndTheBootstrap()
+    {
+        $this->modx->lexicon->entries['fetchit_notifier_close'] = '</script><script>alert(1)</script>';
+
+        $html = $this->render('<html><head></head><body></body></html>', ['fetchit.frontend.default.notifier' => true]);
+
+        // The script of FetchIt and the bootstrap, nothing more.
+        $this->assertSame(2, substr_count($html, '</script>'));
+        $this->assertStringContainsString('"notifierCloseLabel":"<\\/script><script>alert(1)<\\/script>"', $this->bootstrap($html));
     }
 
     private function assertLogged($needle)
