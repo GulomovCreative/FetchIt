@@ -2753,6 +2753,94 @@ describe('timeout and retries', () => {
     expect(keyOf(fetch.mock.calls[1])).not.toBe(keyOf(fetch.mock.calls[0]))
   })
 
+  // Headers at once, then a body that comes only when the request is aborted.
+  function stalled(init?: RequestInit) {
+    return Promise.resolve({
+      status: 200,
+      url: actionUrl,
+      headers: new Headers(),
+      json: () => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')))
+      }),
+    })
+  }
+
+  it('stops an attempt whose body stalls after the headers', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountForm()
+    FetchIt.create(config({ timeout: 5, timeoutMessage: 'No answer in time' }))
+    vi.stubGlobal('fetch', vi.fn((_request: Request, init?: RequestInit) => stalled(init)))
+
+    await send(form)
+    await vi.advanceTimersByTimeAsync(4999)
+    expect(element(form, '[data-validation-error]').textContent).toBe('')
+    await vi.advanceTimersByTimeAsync(1)
+
+    expect(element(form, '[data-validation-error]').textContent).toBe('No answer in time')
+    expect(form.getAttribute('data-fetchit-state')).toBe('error')
+  })
+
+  it('retries an attempt whose body stalled', async () => {
+    const form = mountForm()
+    FetchIt.create(config({ timeout: 5, retries: 1 }))
+    const fetch = server({ body: sent })
+    fetch.mockImplementationOnce((_request: Request, init?: RequestInit) => stalled(init) as ReturnType<typeof fetch>)
+
+    await send(form)
+    await vi.advanceTimersByTimeAsync(5000 + 1000)
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(element(form, '[data-success]').textContent).toBe('Sent')
+  })
+
+  it('sends no retry from a form destroyed while an attempt was on its way', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountForm()
+    FetchIt.create(config({ retries: 2 }))
+    let fail: (reason: unknown) => void = () => {}
+    const fetch = vi.fn(() => new Promise((_resolve, reject) => {
+      fail = reject
+    }))
+    vi.stubGlobal('fetch', fetch)
+    const retries: unknown[] = []
+    on('fetchit:retry', event => retries.push(event))
+
+    await send(form)
+    instance(form)!.destroy()
+    fail(new TypeError('Failed to fetch'))
+    await vi.advanceTimersByTimeAsync(10000)
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(retries).toEqual([])
+    expect(element(form, '[data-validation-error]').textContent).toBe('')
+    expect(error).not.toHaveBeenCalled()
+  })
+
+  it('sends nothing from a form destroyed while the proof of work of a retry was solved', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config({ retries: 1, pow: 8 }))
+    let finish: (solution: string) => void = () => {}
+    const solving = instance(form) as InstanceInternals & { solution (token: string): Promise<string> }
+    solving.solution = (token: string) => token === 'old-token'
+      ? Promise.resolve('first')
+      : new Promise(resolve => {
+        finish = resolve
+      })
+    const fetch = server(
+      { status: 409, body: { success: false, message: 'Still', data: [] }, headers: { 'X-FetchIt-Refused': 'pending', 'X-FetchIt-Token': 'next' } },
+      { body: sent },
+    )
+
+    await send(form)
+    await vi.advanceTimersByTimeAsync(1000)
+    instance(form)!.destroy()
+    finish('second')
+    await vi.advanceTimersByTimeAsync(10000)
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(element(form, '[data-success]').textContent).toBe('')
+  })
+
   it('makes a key without crypto.randomUUID (a page over http)', async () => {
     const getRandomValues = globalThis.crypto.getRandomValues.bind(globalThis.crypto)
     vi.stubGlobal('crypto', { getRandomValues })

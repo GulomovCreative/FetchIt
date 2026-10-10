@@ -62,6 +62,16 @@ class NoAnswer {
   constructor (readonly error: unknown) {}
 }
 
+/**
+ * A request whose headers came: read() reads the body within the same
+ * timeout, done() stops the timeout of a body left unread.
+ */
+interface Sent {
+  query: Response;
+  read (): Promise<unknown>;
+  done (): void;
+}
+
 // Answers of a proxy whose server did not take the request: retried when
 // they are not FetchIt answers.
 const unavailable = [502, 503, 504];
@@ -433,16 +443,17 @@ class FetchIt implements FetchItInstance {
     for (let attempt = 0; ; attempt++) {
       let failure: unknown;
       try {
-        const query = await this.attempt(formData, submission);
-        if (query === undefined) {
+        const sent = await this.attempt(formData, submission);
+        if (sent === undefined) {
           return undefined;
         }
+        const query = sent.query;
         const pending = query.headers?.get('X-FetchIt-Refused') === 'pending';
         let body: unknown;
         try {
-          body = await query.json();
+          body = await sent.read();
         } catch (error) {
-          if (!unavailable.includes(query.status)) {
+          if (error instanceof NoAnswer || !unavailable.includes(query.status)) {
             throw error;
           }
           failure = error;
@@ -467,6 +478,10 @@ class FetchIt implements FetchItInstance {
         failure = error.error;
       }
 
+      // A form taken off the page tells nobody, as failRequest() does.
+      if (this.destroyed) {
+        return undefined;
+      }
       if (attempt >= retries || !dispatch('fetchit:retry', { form: this.form, formData, attempt: attempt + 1, error: failure, fetchit: this })) {
         throw failure;
       }
@@ -483,6 +498,9 @@ class FetchIt implements FetchItInstance {
         if (this.config.pow) {
           formData.set(FetchIt.powField, await this.solution(token));
         }
+        if (this.destroyed) {
+          return undefined;
+        }
       }
     }
   }
@@ -492,8 +510,9 @@ class FetchIt implements FetchItInstance {
    * or asked for more proof of work, once more with the new token.
    * Undefined when the form was destroyed meanwhile.
    */
-  async attempt (formData: FormData, submission: string): Promise<Response | undefined> {
-    let query = await this.post(formData, submission);
+  async attempt (formData: FormData, submission: string): Promise<Sent | undefined> {
+    let sent = await this.post(formData, submission);
+    let query = sent.query;
     let next = query.headers?.get('X-FetchIt-Token');
     this.updateToken(next);
     const refused = query.headers?.get('X-FetchIt-Refused');
@@ -503,6 +522,8 @@ class FetchIt implements FetchItInstance {
     // send once more with the new token instead of showing it. The
     // captcha answer was not checked yet (FetchItGuard checks it last).
     if (next && (refused === 'token' || (refused === 'pow' && bits > (this.config.pow ?? 0)))) {
+      // Its body is not read.
+      sent.done();
       if (refused === 'pow') {
         this.config.pow = bits;
       }
@@ -518,22 +539,24 @@ class FetchIt implements FetchItInstance {
       if (this.config.pow) {
         formData.set(FetchIt.powField, await this.solution(next));
       }
-      query = await this.post(formData, submission);
+      sent = await this.post(formData, submission);
+      query = sent.query;
       next = query.headers?.get('X-FetchIt-Token');
       this.updateToken(next);
     }
     if (refused === 'captcha' && !this.config.captcha) {
       console.warn('FetchIt: the server asks for a captcha this page does not have; the page may come from a cache made before the captcha was turned on');
     }
-    return query;
+    return sent;
   }
 
   /**
    * POST the form. Without a key and a timeout exactly as before; with
    * them the X-FetchIt-Submission header and an abort after
-   * config.timeout. A rejection becomes a NoAnswer.
+   * config.timeout, which also covers reading the body. A rejection, or a
+   * body read stopped by the timeout, becomes a NoAnswer.
    */
-  async post (formData: FormData, submission: string): Promise<Response> {
+  async post (formData: FormData, submission: string): Promise<Sent> {
     const timeout = Math.max(Number(this.config.timeout) || 0, 0);
     const init: RequestInit = { method: 'post', body: formData };
     if (submission) {
@@ -551,13 +574,24 @@ class FetchIt implements FetchItInstance {
         stop.abort();
       }, timeout * 1000);
     }
+    const done = () => clearTimeout(timer);
+    let query: Response;
     try {
-      return await fetch(this.request, init);
+      query = await fetch(this.request, init);
     } catch (error) {
+      done();
       throw new NoAnswer(timedOut ? new TimeoutError(timeout) : error);
-    } finally {
-      clearTimeout(timer);
     }
+    const read = async (): Promise<unknown> => {
+      try {
+        return await query.json();
+      } catch (error) {
+        throw timedOut ? new NoAnswer(new TimeoutError(timeout)) : error;
+      } finally {
+        done();
+      }
+    };
+    return { query, read, done };
   }
 
   /**
