@@ -791,6 +791,21 @@
 			this.form.addEventListener("focusin", () => this.solveAhead(), { once: true });
 		}
 		/**
+		* The form is gone: forget it, stop the proof of work, remove the
+		* captcha widget. Its listeners go with the form; an answer still on
+		* its way is handled as usual.
+		*/
+		destroy() {
+			var _this$work, _this$captcha2;
+			if (FetchIt.instances.get(this.form) !== this) return;
+			FetchIt.instances.delete(this.form);
+			const index = FetchIt.forms.indexOf(this.form);
+			if (index !== -1) FetchIt.forms.splice(index, 1);
+			(_this$work = this.work) === null || _this$work === void 0 || _this$work.stop.abort();
+			this.work = void 0;
+			(_this$captcha2 = this.captcha) === null || _this$captcha2 === void 0 || _this$captcha2.destroy();
+		}
+		/**
 		* fetch() rejected (network error), the body was not a FetchIt answer
 		* (a PHP error page, HTML after a redirect, JSON from a firewall),
 		* handling the answer threw, or the captcha gave no answer to send: tell
@@ -814,23 +829,23 @@
 		* Add the solution of the proof of work and the captcha's answer.
 		*/
 		async protectSubmission(formData) {
-			var _this$captcha2;
+			var _this$captcha3;
 			if (this.config.pow) {
 				var _formData$get;
 				const token = String((_formData$get = formData.get(FetchIt.tokenField)) !== null && _formData$get !== void 0 ? _formData$get : "");
 				formData.set(FetchIt.powField, await this.solution(token));
 			}
-			await ((_this$captcha2 = this.captcha) === null || _this$captcha2 === void 0 ? void 0 : _this$captcha2.answer(formData));
+			await ((_this$captcha3 = this.captcha) === null || _this$captcha3 === void 0 ? void 0 : _this$captcha3.answer(formData));
 		}
 		/**
 		* The solution of the proof of work for a token, started once; solving
 		* for another token stops it.
 		*/
 		solution(token) {
-			var _this$work;
-			if (((_this$work = this.work) === null || _this$work === void 0 ? void 0 : _this$work.token) !== token) {
-				var _this$work2, _this$config$pow2;
-				(_this$work2 = this.work) === null || _this$work2 === void 0 || _this$work2.stop.abort();
+			var _this$work2;
+			if (((_this$work2 = this.work) === null || _this$work2 === void 0 ? void 0 : _this$work2.token) !== token) {
+				var _this$work3, _this$config$pow2;
+				(_this$work3 = this.work) === null || _this$work3 === void 0 || _this$work3.stop.abort();
 				const stop = new AbortController();
 				const solution = solve(token, (_this$config$pow2 = this.config.pow) !== null && _this$config$pow2 !== void 0 ? _this$config$pow2 : 0, stop.signal);
 				const work = {
@@ -853,8 +868,8 @@
 			var _this$form$querySelec;
 			const token = (_this$form$querySelec = this.form.querySelector(`input[name="${FetchIt.tokenField}"]`)) === null || _this$form$querySelec === void 0 ? void 0 : _this$form$querySelec.value;
 			if (this.config.pow && token) this.solution(token).catch((error) => {
-				var _this$work3;
-				if (((_this$work3 = this.work) === null || _this$work3 === void 0 ? void 0 : _this$work3.token) === token) console.error(error);
+				var _this$work4;
+				if (((_this$work4 = this.work) === null || _this$work4 === void 0 ? void 0 : _this$work4.token) === token) console.error(error);
 			});
 		}
 		/**
@@ -999,27 +1014,94 @@
 		static createNotifier(options) {
 			return createNotifier(options);
 		}
+		/**
+		* The built-in notifier, when asked for. A FetchIt.Message of the site
+		* wins over it; one with neither success nor error (a spinner in before
+		* and after) gets the built-in ones.
+		*/
+		static useNotifier(options) {
+			if (!options.defaultNotifier) return;
+			const message = FetchIt.Message;
+			if (message === void 0) FetchIt.Message = createNotifier({ closeLabel: options.notifierCloseLabel });
+			else if (!message.success && !message.error) Object.assign(message, createNotifier({ closeLabel: options.notifierCloseLabel }));
+		}
+		/**
+		* Handle the forms of the page and those inserted later, and forget the
+		* removed ones: the bootstrap of the page calls it on DOMContentLoaded.
+		*/
+		static observe(options = {}) {
+			FetchIt.useNotifier(options);
+			if (FetchIt.observer) return;
+			this.init(document);
+			FetchIt.observer = new MutationObserver((records) => this.mutated(records));
+			FetchIt.observer.observe(document.documentElement, {
+				childList: true,
+				subtree: true
+			});
+		}
+		/**
+		* Handle the forms in root, root itself included, that carry their
+		* config and have no instance yet.
+		*/
+		static init(root = document) {
+			const selector = `form[data-fetchit][${FetchIt.configAttribute}]`;
+			const forms = Array.from(root.querySelectorAll(selector));
+			if (root instanceof HTMLFormElement && root.matches(selector)) forms.unshift(root);
+			forms.forEach((form) => {
+				if (FetchIt.instances.has(form)) return;
+				const config = FetchIt.readConfig(form);
+				if (config) new this(form, config);
+			});
+		}
+		/**
+		* The config of a form, or null (logged) when it is not valid: the form
+		* is then sent the usual way.
+		*/
+		static readConfig(form) {
+			try {
+				var _form$getAttribute;
+				const config = JSON.parse((_form$getAttribute = form.getAttribute(FetchIt.configAttribute)) !== null && _form$getAttribute !== void 0 ? _form$getAttribute : "");
+				if (config !== null && typeof config === "object" && config.action) return config;
+			} catch {}
+			console.error(`FetchIt: the form has no valid ${FetchIt.configAttribute}`, form);
+			return null;
+		}
+		/**
+		* Inserted forms get an instance; removed ones are destroyed. The
+		* records come after the whole batch of changes, so a form moved within
+		* the page is connected again by then and is kept.
+		*/
+		static mutated(records) {
+			const removed = [];
+			records.forEach((record) => {
+				record.addedNodes.forEach((node) => {
+					if (node instanceof Element) this.init(node);
+				});
+				removed.push(...Array.from(record.removedNodes));
+			});
+			if (!removed.length) return;
+			FetchIt.instances.forEach((instance) => {
+				const form = instance.form;
+				if (!form.isConnected && removed.some((node) => node.contains(form))) instance.destroy();
+			});
+		}
 		static create(config) {
-			if (config.defaultNotifier) {
-				const message = FetchIt.Message;
-				if (message === void 0) FetchIt.Message = createNotifier({ closeLabel: config.notifierCloseLabel });
-				else if (!message.success && !message.error) Object.assign(message, createNotifier({ closeLabel: config.notifierCloseLabel }));
-			}
+			FetchIt.useNotifier(config);
 			if (!config.action) throw new Error("FetchIt: the config has no action");
 			const selector = `form[data-fetchit="${FetchIt.escapeAttribute(config.action)}"]`;
 			const forms = document.querySelectorAll(selector);
-			if (!forms.length) {
-				console.warn(`FetchIt: no form matches ${selector}`);
-				return;
-			}
+			if (!forms.length) console.warn(`FetchIt: no form matches ${selector}`);
 			forms.forEach((form) => {
 				var _FetchIt$instances$ge;
 				return (_FetchIt$instances$ge = FetchIt.instances.get(form)) !== null && _FetchIt$instances$ge !== void 0 ? _FetchIt$instances$ge : new this(form, config);
 			});
+			this.observe();
 		}
 	};
 	_defineProperty(FetchIt, "forms", []);
 	_defineProperty(FetchIt, "instances", /* @__PURE__ */ new Map());
+	_defineProperty(FetchIt, "observer", void 0);
+	_defineProperty(FetchIt, "configAttribute", "data-fetchit-config");
 	_defineProperty(FetchIt, "defaultRequestErrorMessage", "Could not send the form. Please try again.");
 	_defineProperty(FetchIt, "tokenField", "fetchit_token");
 	_defineProperty(FetchIt, "powField", "fetchit_pow");

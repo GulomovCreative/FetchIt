@@ -10,8 +10,7 @@
 // your own (declare var FetchIt: any): the two would clash.
 
 /**
- * The config the snippet passes to FetchIt.create() for each form. Forms of
- * one snippet call share it.
+ * The config of a form: the snippet writes it into data-fetchit-config.
  */
 interface FetchItConfig {
   /** The key of the form: its data-fetchit attribute and the X-FetchIt-Action header */
@@ -97,6 +96,17 @@ interface FetchItNotifier {
   error(message: string): void;
 }
 
+/**
+ * The options of FetchIt.observe(): the bootstrap of the page passes the
+ * notifier settings.
+ */
+interface FetchItObserveOptions {
+  /** Show the answers with the built-in notifier; see FetchItStatic.Message */
+  defaultNotifier?: boolean | undefined;
+  /** The label of the close button of the built-in notifier */
+  notifierCloseLabel?: string | undefined;
+}
+
 interface FetchItNotifierOptions {
   /** The label of the close button; "Close" by default */
   closeLabel?: string | undefined;
@@ -173,7 +183,7 @@ interface DocumentEventMap extends FetchItEventMap {}
  */
 interface FetchItInstance {
   readonly form: HTMLFormElement;
-  /** Shared by the forms of one snippet call: change it for all or none */
+  /** From data-fetchit-config of the form, or shared by the forms of one create() call */
   readonly config: Readonly<FetchItConfig>;
   /** The data of the submission in progress or of the last one; undefined before the first */
   readonly formData: FormData | undefined;
@@ -192,13 +202,19 @@ interface FetchItInstance {
   readonly elements: Element[];
   /** The input, select and textarea elements of the form */
   readonly fields: Element[];
+  /**
+   * Forget the form: it leaves FetchIt.instances and FetchIt.forms, its
+   * proof of work stops, its captcha widget is removed. Called when the form
+   * leaves the page; calling it again does nothing.
+   */
+  destroy(): void;
 }
 
 interface FetchItStatic {
   new (form: HTMLFormElement, config: FetchItConfig): FetchItInstance;
   /**
-   * Set it to show the answers your way. With the config's defaultNotifier,
-   * FetchIt.create() puts the built-in notifier here when it is unset, and
+   * Set it to show the answers your way. With the defaultNotifier setting,
+   * FetchIt.observe() puts the built-in notifier here when it is unset, and
    * adds its success and error to one that has neither.
    */
   Message?: FetchItMessage | undefined;
@@ -215,7 +231,20 @@ interface FetchItStatic {
   defaultRequestErrorMessage: string;
   readonly tokenField: string;
   readonly powField: string;
-  /** Handle the forms of this config: the snippet calls it on DOMContentLoaded */
+  /**
+   * Handle the forms of the page and the ones inserted later (a modal
+   * loaded over AJAX, pdoPage, mFilter2), and destroy removed ones. The
+   * bootstrap of the page calls it on DOMContentLoaded; calling it again
+   * only applies the notifier options.
+   */
+  observe(options?: FetchItObserveOptions): void;
+  /**
+   * Handle the forms with data-fetchit-config in root (document by default),
+   * root included, right away: e.g. right after inserting a form, before
+   * the observer sees it.
+   */
+  init(root?: ParentNode): void;
+  /** Handle the forms of this config; pages cached by FetchIt 4.0 call it */
   create(config: FetchItConfig): void;
   /** The built-in notifier, e.g. for FetchIt.Message without the setting */
   createNotifier(options?: FetchItNotifierOptions): FetchItNotifier;

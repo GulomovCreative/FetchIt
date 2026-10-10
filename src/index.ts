@@ -29,6 +29,11 @@ class FetchIt implements FetchItInstance {
   declare static Message?: FetchItMessage;
   static forms: HTMLFormElement[] = [];
   static instances = new Map<HTMLFormElement, FetchIt>();
+  // Started once per page by observe(): it initialises inserted forms and
+  // destroys removed ones.
+  static observer: MutationObserver | undefined = undefined;
+  // Where the snippet puts the config of a form.
+  static configAttribute = 'data-fetchit-config';
   // Used when the page config has no requestErrorMessage (a page cached by 1.1.3).
   static defaultRequestErrorMessage = 'Could not send the form. Please try again.';
   // The hidden field of the spam protection (FetchItGuard::TOKEN).
@@ -230,6 +235,25 @@ class FetchIt implements FetchItInstance {
 
     // The visitor started on the form: solve the proof of work meanwhile.
     this.form.addEventListener('focusin', () => this.solveAhead(), { once: true });
+  }
+
+  /**
+   * The form is gone: forget it, stop the proof of work, remove the
+   * captcha widget. Its listeners go with the form; an answer still on
+   * its way is handled as usual.
+   */
+  destroy () {
+    if (FetchIt.instances.get(this.form) !== this) {
+      return;
+    }
+    FetchIt.instances.delete(this.form);
+    const index = FetchIt.forms.indexOf(this.form);
+    if (index !== -1) {
+      FetchIt.forms.splice(index, 1);
+    }
+    this.work?.stop.abort();
+    this.work = undefined;
+    this.captcha?.destroy();
   }
 
   /**
@@ -496,32 +520,120 @@ class FetchIt implements FetchItInstance {
     return createNotifier(options);
   }
 
-  static create(config: FetchItConfig) {
-    // A FetchIt.Message of the site wins over the built-in notifier; one
-    // with neither success nor error (a spinner in before and after) gets
-    // the built-in ones.
-    if (config.defaultNotifier) {
-      const message = FetchIt.Message;
-      if (message === undefined) {
-        FetchIt.Message = createNotifier({ closeLabel: config.notifierCloseLabel });
-      } else if (!message.success && !message.error) {
-        Object.assign(message, createNotifier({ closeLabel: config.notifierCloseLabel }));
-      }
+  /**
+   * The built-in notifier, when asked for. A FetchIt.Message of the site
+   * wins over it; one with neither success nor error (a spinner in before
+   * and after) gets the built-in ones.
+   */
+  static useNotifier (options: FetchItObserveOptions) {
+    if (!options.defaultNotifier) {
+      return;
     }
+    const message = FetchIt.Message;
+    if (message === undefined) {
+      FetchIt.Message = createNotifier({ closeLabel: options.notifierCloseLabel });
+    } else if (!message.success && !message.error) {
+      Object.assign(message, createNotifier({ closeLabel: options.notifierCloseLabel }));
+    }
+  }
+
+  /**
+   * Handle the forms of the page and those inserted later, and forget the
+   * removed ones: the bootstrap of the page calls it on DOMContentLoaded.
+   */
+  static observe (options: FetchItObserveOptions = {}) {
+    // Applied on every call (it changes nothing the second time), so a
+    // later call with the notifier still turns it on.
+    FetchIt.useNotifier(options);
+    if (FetchIt.observer) {
+      return;
+    }
+    this.init(document);
+    FetchIt.observer = new MutationObserver(records => this.mutated(records));
+    FetchIt.observer.observe(document.documentElement, { childList: true, subtree: true });
+  }
+
+  /**
+   * Handle the forms in root, root itself included, that carry their
+   * config and have no instance yet.
+   */
+  static init (root: ParentNode = document) {
+    const selector = `form[data-fetchit][${FetchIt.configAttribute}]`;
+    const forms = Array.from(root.querySelectorAll<HTMLFormElement>(selector));
+    if (root instanceof HTMLFormElement && root.matches(selector)) {
+      forms.unshift(root);
+    }
+    forms.forEach(form => {
+      if (FetchIt.instances.has(form)) {
+        return;
+      }
+      const config = FetchIt.readConfig(form);
+      if (config) {
+        new this(form, config);
+      }
+    });
+  }
+
+  /**
+   * The config of a form, or null (logged) when it is not valid: the form
+   * is then sent the usual way.
+   */
+  static readConfig (form: HTMLFormElement): FetchItConfig | null {
+    try {
+      const config: unknown = JSON.parse(form.getAttribute(FetchIt.configAttribute) ?? '');
+      if (config !== null && typeof config === 'object' && (config as Partial<FetchItConfig>).action) {
+        return config as FetchItConfig;
+      }
+    } catch {
+      // Reported below.
+    }
+    console.error(`FetchIt: the form has no valid ${FetchIt.configAttribute}`, form);
+    return null;
+  }
+
+  /**
+   * Inserted forms get an instance; removed ones are destroyed. The
+   * records come after the whole batch of changes, so a form moved within
+   * the page is connected again by then and is kept.
+   */
+  static mutated (records: MutationRecord[]) {
+    const removed: Node[] = [];
+    records.forEach(record => {
+      record.addedNodes.forEach(node => {
+        if (node instanceof Element) {
+          this.init(node);
+        }
+      });
+      removed.push(...Array.from(record.removedNodes));
+    });
+    if (!removed.length) {
+      return;
+    }
+    FetchIt.instances.forEach(instance => {
+      const form = instance.form;
+      if (!form.isConnected && removed.some(node => node.contains(form))) {
+        instance.destroy();
+      }
+    });
+  }
+
+  static create(config: FetchItConfig) {
+    FetchIt.useNotifier(config);
 
     if (!config.action) {
       throw new Error('FetchIt: the config has no action');
     }
 
+    // A page cached by FetchIt 4.0: its forms have no config of their own.
     const selector = `form[data-fetchit="${FetchIt.escapeAttribute(config.action)}"]`;
     const forms = document.querySelectorAll<HTMLFormElement>(selector);
     if (!forms.length) {
       console.warn(`FetchIt: no form matches ${selector}`);
-      return;
     }
 
     // Identical snippet calls share an action and call create() twice.
     forms.forEach(form => FetchIt.instances.get(form) ?? new this(form, config));
+    this.observe();
   }
 }
 
