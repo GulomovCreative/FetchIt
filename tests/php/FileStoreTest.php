@@ -189,4 +189,86 @@ class FileStoreTest extends TestCase
         $this->assertFalse($this->store()->saveForm(self::ACTION, '{}', 1000));
         $this->assertStringContainsString('could not', $this->logged[0]);
     }
+
+    const KEY = 'ab0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd';
+
+    public function testASubmissionIsTakenOnce()
+    {
+        $store = $this->store();
+
+        $this->assertSame('marked', $store->claim(self::KEY, 1000));
+        $this->assertSame('used', $store->claim(self::KEY, 1000));
+        $this->assertSame('', $store->loadAnswer(self::KEY, 1000));
+        $this->assertNull($store->loadAnswer(str_repeat('c', 64), 1000));
+    }
+
+    public function testAnAnswerIsKeptAndRead()
+    {
+        $store = $this->store();
+        $store->claim(self::KEY, 1000);
+
+        $this->assertTrue($store->saveAnswer(self::KEY, '{"success":true,"message":"Sent"}', 1000));
+        $this->assertSame('{"success":true,"message":"Sent"}', $store->loadAnswer(self::KEY, 1000));
+        $this->assertSame('used', $store->claim(self::KEY, 1000));
+    }
+
+    public function testAnAnswerIsHiddenFromTheWeb()
+    {
+        $store = $this->store();
+        $store->claim(self::KEY, 1000);
+        $store->saveAnswer(self::KEY, '{"success":true}', 1000);
+
+        $file = $store->answerFile(self::KEY);
+        $this->assertStringEndsWith('fetchit/answers/ab/' . self::KEY . '.php', $file);
+        $this->assertStringStartsWith(FetchItFileStore::HIDE, file_get_contents($file));
+    }
+
+    public function testAnAnswerExpiresAfterAnHourAndTheKeyIsFreeAgain()
+    {
+        $store = $this->store();
+        $store->claim(self::KEY, 1000);
+        $store->saveAnswer(self::KEY, '{"success":true}', 1000);
+        $later = 1000 + FetchItStore::ANSWER_TTL + 1;
+
+        $this->assertNull($store->loadAnswer(self::KEY, $later));
+        $this->assertSame('marked', $store->claim(self::KEY, $later));
+        $this->assertSame('', $store->loadAnswer(self::KEY, $later));
+    }
+
+    public function testOldAnswersArePruned()
+    {
+        $store = $this->store();
+        $store->claim(self::KEY, 1000);
+        $kept = 'ab' . str_repeat('e', 62);
+        $store->claim($kept, 1000 + FetchItStore::ANSWER_TTL);
+
+        $store->pruneAnswers('ab', 1000 + FetchItStore::ANSWER_TTL + 1);
+
+        $this->assertFileDoesNotExist($store->answerFile(self::KEY));
+        $this->assertFileExists($store->answerFile($kept));
+    }
+
+    public function testAnAnswerThatCannotBeWrittenFails()
+    {
+        // A file where the directory of the answers should be.
+        mkdir($this->modx->getCachePath() . 'fetchit', 0775, true);
+        touch($this->modx->getCachePath() . 'fetchit/answers');
+        $store = $this->store();
+
+        $this->assertSame('failed', $store->claim(self::KEY, 1000));
+        $this->assertFalse($store->saveAnswer(self::KEY, '{}', 1000));
+        $this->assertNotEmpty($this->logged);
+    }
+
+    public function testAnAnswerFileWithoutTheGuardIsAFailure()
+    {
+        $store = $this->store();
+        $file = $store->answerFile(self::KEY);
+        mkdir(dirname($file), 0775, true);
+        file_put_contents($file, '{"success":true}');
+        touch($file, 1000);
+
+        $this->assertFalse($store->loadAnswer(self::KEY, 1000));
+        $this->assertNotEmpty($this->logged);
+    }
 }

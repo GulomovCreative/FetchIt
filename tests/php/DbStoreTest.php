@@ -254,4 +254,88 @@ class DbStoreTest extends TestCase
 
         $this->assertSame(['marked', 'used', 'used', 'used'], $results);
     }
+
+    const KEY = 'ab0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcd';
+
+    /**
+     * @dataProvider errorModes
+     */
+    public function testASubmissionIsTakenOnceAndItsAnswerKept($errorMode)
+    {
+        $this->connect($errorMode);
+        $store = $this->store();
+
+        $this->assertSame('marked', $store->claim(self::KEY, 1000));
+        $this->assertSame('used', $store->claim(self::KEY, 1000));
+        $this->assertSame('', $store->loadAnswer(self::KEY, 1000));
+        $this->assertTrue($store->saveAnswer(self::KEY, '{"success":true,"message":"Sent"}', 1000));
+        $this->assertSame('{"success":true,"message":"Sent"}', $store->loadAnswer(self::KEY, 1000));
+        $this->assertNull($store->loadAnswer(str_repeat('c', 64), 1000));
+        $this->assertSame([], $this->logged);
+    }
+
+    public function testTwoStoresTakeOneKeyOnce()
+    {
+        $this->assertSame('marked', $this->store()->claim(self::KEY, 1000));
+        $this->assertSame('used', $this->store()->claim(self::KEY, 1000));
+    }
+
+    public function testAnAnswerExpiresAfterAnHourAndTheKeyIsFreeAgain()
+    {
+        $store = $this->store();
+        $store->claim(self::KEY, 1000);
+        $store->saveAnswer(self::KEY, '{"success":true}', 1000);
+        $later = 1000 + FetchItStore::ANSWER_TTL + 1;
+
+        $this->assertNull($store->loadAnswer(self::KEY, $later));
+        $this->assertSame('marked', $store->claim(self::KEY, $later));
+        $this->assertSame('', $store->loadAnswer(self::KEY, $later));
+    }
+
+    public function testALongAnswerIsKeptWithoutItsData()
+    {
+        $store = $this->store();
+        $store->claim(self::KEY, 1000);
+        $long = json_encode(['success' => true, 'message' => 'Sent', 'data' => ['text' => str_repeat('x', 70000)], 'redirect' => 'https://example.com/']);
+
+        $this->assertTrue($store->saveAnswer(self::KEY, $long, 1000));
+        $this->assertSame(['success' => true, 'message' => 'Sent', 'redirect' => 'https://example.com/'], json_decode($store->loadAnswer(self::KEY, 1000), true));
+    }
+
+    public function testAnAnswerWithAVeryLongMessageKeepsOnlyItsOutcome()
+    {
+        $store = $this->store();
+        $store->claim(self::KEY, 1000);
+
+        $store->saveAnswer(self::KEY, json_encode(['success' => false, 'message' => str_repeat('x', 70000)]), 1000);
+
+        $this->assertSame(['success' => false, 'message' => ''], json_decode($store->loadAnswer(self::KEY, 1000), true));
+    }
+
+    public function testPruneDropsOldAnswers()
+    {
+        $store = $this->store();
+        $store->claim(self::KEY, 1000);
+
+        $store->prune(1000 + FetchItStore::ANSWER_TTL + 1);
+
+        $this->assertSame('marked', $store->claim(self::KEY, 1000));
+    }
+
+    /**
+     * @dataProvider errorModes
+     */
+    public function testWithoutTheTableTheAnswersFailAndAreLoggedOnce($errorMode)
+    {
+        $this->connect($errorMode);
+        $store = $this->store();
+        $store->uninstall();
+
+        $this->assertSame('failed', $store->claim(self::KEY, 1000));
+        $this->assertSame('failed', $store->claim(self::KEY, 1000));
+        $this->assertFalse($store->saveAnswer(self::KEY, '{}', 1000));
+        $this->assertFalse($store->loadAnswer(self::KEY, 1000));
+        $this->assertCount(3, $this->logged);
+        $this->assertStringContainsString('failed on claim', $this->logged[0]);
+    }
 }

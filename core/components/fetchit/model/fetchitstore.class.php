@@ -2,8 +2,8 @@
 
 /**
  * Where FetchItGuard keeps what must outlive a request: the marks of used
- * tokens, the rate limit counters and, with fetchit.page_cache, the
- * properties of the forms. fetchit.protection.store picks one:
+ * tokens, the rate limit counters, the answers to submissions sent with retries
+ * and, with fetchit.page_cache, the properties of the forms. fetchit.protection.store picks one:
  * FetchItFileStore (files, the default) or FetchItDbStore (a table, shared
  * by several servers).
  */
@@ -20,6 +20,9 @@ interface FetchItStore
 
     /** What mark() returns: the mark could not be written */
     const FAILED = 'failed';
+
+    /** Seconds the answer to a submission is kept for its retries */
+    const ANSWER_TTL = 3600;
 
     /**
      * Mark the nonce of a token as used.
@@ -62,6 +65,41 @@ interface FetchItStore
      *     when there are none; false when the store failed (logged)
      */
     public function loadForm($action);
+
+    /**
+     * Take the key of a submission before it is processed, so that a retry
+     * of it is not processed again. A key taken more than ANSWER_TTL ago is
+     * free again.
+     *
+     * @param string $key 64 hex characters
+     * @param int $now
+     *
+     * @return string MARKED, USED when it was taken already, or FAILED
+     */
+    public function claim($key, $now);
+
+    /**
+     * Keep the answer to a submission whose key was taken, for ANSWER_TTL.
+     *
+     * @param string $key 64 hex characters
+     * @param string $json
+     * @param int $now
+     *
+     * @return bool
+     */
+    public function saveAnswer($key, $json, $now);
+
+    /**
+     * The answer to a submission kept by saveAnswer().
+     *
+     * @param string $key 64 hex characters
+     * @param int $now
+     *
+     * @return string|null|false The answer; '' when the key is taken and the
+     *     answer not there yet; null when the key is free; false when the
+     *     store failed (logged)
+     */
+    public function loadAnswer($key, $now);
 
     /**
      * Drop what expired; called now and then.
