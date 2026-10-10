@@ -24,6 +24,9 @@ class FetchItFileStore implements FetchItStore
     /** @var bool Whether a form file that cannot be read was logged in this request */
     protected $unreadable = false;
 
+    /** @var bool Whether an answer file that cannot be read was logged in this request */
+    protected $unreadableAnswer = false;
+
 
     /**
      * @param modX $modx
@@ -201,8 +204,140 @@ class FetchItFileStore implements FetchItStore
 
 
     /**
-     * One random shard of the marks and one of the forms, so that one run
-     * stays small however many there are.
+     * The key is a file created with fopen(..., 'x'), so of two attempts of
+     * one submission only one is processed. Its time is $now: a file older
+     * than ANSWER_TTL is free again.
+     *
+     * {@inheritdoc}
+     */
+    public function claim($key, $now)
+    {
+        $file = $this->answerFile($key);
+        $dir = dirname($file) . '/';
+        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
+            call_user_func($this->log, "could not create {$dir}; a retry of a form may process it twice");
+
+            return self::FAILED;
+        }
+
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            $handle = @fopen($file, 'x');
+            if ($handle !== false) {
+                fwrite($handle, self::HIDE);
+                fclose($handle);
+                @touch($file, $now);
+
+                if (mt_rand(1, 100) === 1) {
+                    $this->pruneAnswers(sprintf('%02x', mt_rand(0, 255)), $now);
+                }
+
+                return self::MARKED;
+            }
+            $time = @filemtime($file);
+            if ($time === false) {
+                break;
+            }
+            if ($time >= $now - self::ANSWER_TTL || $attempt === 1) {
+                return self::USED;
+            }
+            // A submission of more than an hour ago: its key is free again.
+            @unlink($file);
+        }
+        call_user_func($this->log, "could not write to {$dir}; a retry of a form may process it twice");
+
+        return self::FAILED;
+    }
+
+
+    /**
+     * A whole file or none: a retry may read it meanwhile.
+     *
+     * {@inheritdoc}
+     */
+    public function saveAnswer($key, $json, $now)
+    {
+        $file = $this->answerFile($key);
+        $dir = dirname($file) . '/';
+        $temporary = $dir . '.' . $key . '.' . bin2hex(random_bytes(4)) . '.php';
+        if (!is_dir($dir) || @file_put_contents($temporary, self::HIDE . $json) === false || !@rename($temporary, $file)) {
+            @unlink($temporary);
+            call_user_func($this->log, "could not write to {$dir}; a retry of a form is answered that it is still processed");
+
+            return false;
+        }
+        @touch($file, $now);
+
+        return true;
+    }
+
+
+    /**
+     * No file, or one older than ANSWER_TTL: null. A file that cannot be
+     * read or does not start with HIDE: false, logged once per request.
+     *
+     * {@inheritdoc}
+     */
+    public function loadAnswer($key, $now)
+    {
+        $file = $this->answerFile($key);
+        $time = @filemtime($file);
+        if ($time === false || $time < $now - self::ANSWER_TTL) {
+            return null;
+        }
+        $content = @file_get_contents($file);
+        if ($content === false || strpos($content, self::HIDE) !== 0) {
+            if (!$this->unreadableAnswer) {
+                $this->unreadableAnswer = true;
+                call_user_func($this->log, "the answer in {$file} cannot be read; a retry of a form may process it twice");
+            }
+
+            return false;
+        }
+
+        return substr($content, strlen(self::HIDE));
+    }
+
+
+    /**
+     * The file of the answer to a submission, under
+     * core/cache/fetchit/answers/, which "Clear cache" does not touch.
+     *
+     * @param string $key 64 hex characters
+     *
+     * @return string
+     */
+    public function answerFile($key)
+    {
+        return $this->modx->getCachePath() . 'fetchit/answers/' . substr($key, 0, 2) . '/' . $key . '.php';
+    }
+
+
+    /**
+     * Delete the answers of one shard older than ANSWER_TTL.
+     *
+     * @param string $shard Two hex characters
+     * @param int $now
+     */
+    public function pruneAnswers($shard, $now)
+    {
+        $dir = $this->modx->getCachePath() . 'fetchit/answers/' . $shard . '/';
+        $handle = @opendir($dir);
+        if ($handle === false) {
+            return;
+        }
+        $before = $now - self::ANSWER_TTL;
+        while (($file = readdir($handle)) !== false) {
+            if ($file !== '.' && $file !== '..' && @filemtime($dir . $file) < $before) {
+                @unlink($dir . $file);
+            }
+        }
+        closedir($handle);
+    }
+
+
+    /**
+     * One random shard of the marks, one of the forms and one of the answers,
+     * so that one run stays small however many there are.
      *
      * {@inheritdoc}
      */
@@ -210,6 +345,7 @@ class FetchItFileStore implements FetchItStore
     {
         $this->pruneShard(sprintf('%02x', mt_rand(0, 255)));
         $this->pruneForms(sprintf('%02x', mt_rand(0, 255)), $now);
+        $this->pruneAnswers(sprintf('%02x', mt_rand(0, 255)), $now);
     }
 
 

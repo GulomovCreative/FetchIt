@@ -4,7 +4,8 @@
  * The store of FetchItGuard in a table of the site's database, shared by
  * several servers: fetchit.protection.store db. The installer creates the
  * table {table_prefix}fetchit_store; a row holds a mark ("m:<nonce>"), a
- * rate counter ("r:<key>") or the properties of a form ("f:<action>").
+ * rate counter ("r:<key>"), the properties of a form ("f:<action>") or the
+ * answer to a submission ("s:<key>").
  *
  * The SQL is the part MySQL, MariaDB, SQL Server and SQLite share, with
  * positional parameters only: named ones used twice need emulated prepares.
@@ -29,6 +30,9 @@ class FetchItDbStore implements FetchItStore
         'hit' => '; forms are refused',
         'saveForm' => '; the form does not work from a full-page cache',
         'loadForm' => '; the form is answered with fetchit_err_store',
+        'claim' => '; a retry of a form may process it twice',
+        'saveAnswer' => '; a retry of a form is answered that it is still processed',
+        'loadAnswer' => '; a retry of a form may process it twice',
     ];
 
     /** @var modX */
@@ -176,6 +180,109 @@ class FetchItDbStore implements FetchItStore
         $value = $read->fetchColumn();
 
         return is_string($value) ? $value : null;
+    }
+
+
+    /**
+     * The INSERT fails on the primary key when the key is taken, so of two
+     * attempts of one submission only one is processed. A row that expired
+     * is taken over.
+     *
+     * {@inheritdoc}
+     */
+    public function claim($key, $now)
+    {
+        $table = $this->table();
+        $row = 's:' . $key;
+        $expires = $now + self::ANSWER_TTL;
+        $inserted = $this->run("INSERT INTO {$table} (k, since, " . $this->count() . ', expires, v) VALUES (?, 0, 0, ?, NULL)', [$row, $expires], 'claim');
+        if ($inserted instanceof PDOStatement) {
+            return self::MARKED;
+        }
+        if ($inserted !== 'duplicate') {
+            return self::FAILED;
+        }
+
+        $taken = $this->run("UPDATE {$table} SET expires = ?, v = NULL WHERE k = ? AND expires < ?", [$expires, $row, $now], 'claim');
+        if (!$taken instanceof PDOStatement) {
+            return self::FAILED;
+        }
+
+        return $taken->rowCount() > 0 ? self::MARKED : self::USED;
+    }
+
+
+    /**
+     * An answer longer than MAX_FORM is kept without its data.
+     *
+     * {@inheritdoc}
+     */
+    public function saveAnswer($key, $json, $now)
+    {
+        $table = $this->table();
+        $row = 's:' . $key;
+        $json = $this->fitAnswer($json);
+        $expires = $now + self::ANSWER_TTL;
+        $updated = $this->run("UPDATE {$table} SET v = ?, expires = ? WHERE k = ?", [$json, $expires, $row], 'saveAnswer');
+        if (!$updated instanceof PDOStatement) {
+            return false;
+        }
+        if ($updated->rowCount() > 0) {
+            return true;
+        }
+        // The row went meanwhile (a prune of a slow submission).
+        $inserted = $this->run("INSERT INTO {$table} (k, since, " . $this->count() . ', expires, v) VALUES (?, 0, 0, ?, ?)', [$row, $expires, $json], 'saveAnswer');
+
+        return $inserted instanceof PDOStatement || $inserted === 'duplicate';
+    }
+
+
+    /**
+     * {@inheritdoc}
+     */
+    public function loadAnswer($key, $now)
+    {
+        $read = $this->run('SELECT v, expires FROM ' . $this->table() . ' WHERE k = ?', ['s:' . $key], 'loadAnswer');
+        if (!$read instanceof PDOStatement) {
+            return false;
+        }
+        $row = $read->fetch(PDO::FETCH_NUM);
+        if ($row === false || (int)$row[1] < $now) {
+            return null;
+        }
+
+        return $row[0] === null ? '' : (string)$row[0];
+    }
+
+
+    /**
+     * An answer that fits the column: without its data when it is too long,
+     * and with only its outcome when even its message is.
+     *
+     * @param string $json
+     *
+     * @return string
+     */
+    protected function fitAnswer($json)
+    {
+        if (strlen($json) <= self::MAX_FORM) {
+            return $json;
+        }
+        $answer = json_decode($json, true);
+        $success = is_array($answer) && isset($answer['success']) && $answer['success'] === true;
+        $short = [
+            'success' => $success,
+            'message' => is_array($answer) && isset($answer['message']) && is_string($answer['message']) ? $answer['message'] : '',
+        ];
+        if (is_array($answer) && isset($answer['redirect']) && is_string($answer['redirect'])) {
+            $short['redirect'] = $answer['redirect'];
+        }
+        $json = json_encode($short);
+        if ($json !== false && strlen($json) <= self::MAX_FORM) {
+            return $json;
+        }
+
+        return json_encode(['success' => $success, 'message' => '']);
     }
 
 
