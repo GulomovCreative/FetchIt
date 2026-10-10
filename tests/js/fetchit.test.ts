@@ -1954,6 +1954,51 @@ describe('a page from a full-page cache', () => {
     expect(element(form, '[data-success]').textContent).toBe('Sent')
   })
 
+  it('waits for the fill time of the server before the retry', async () => {
+    // The next token of a used or expired one is timed now.
+    const form = mountProtectedForm()
+    FetchIt.create(config({ freshToken: true }))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const fetch = cachedPageServer(
+      async () => ({ 'X-FetchIt-Refused': 'rate' }),
+      { body: { success: false, message: 'Expired', data: [] }, headers: { 'X-FetchIt-Token': 'retry', 'X-FetchIt-Refused': 'token', 'X-FetchIt-Min-Time': '1' } },
+      { body: { success: true, message: 'Sent', data: [] }, headers: {} },
+    )
+    focus(form)
+    await settle()
+
+    await submit(form)
+    await vi.waitFor(() => expect(submissionsOf(fetch)).toHaveLength(1))
+    const refused = Date.now()
+
+    await vi.waitFor(() => expect(submissionsOf(fetch)).toHaveLength(2), { timeout: 3000 })
+    expect(Date.now() - refused).toBeGreaterThanOrEqual(1000)
+    expect(submitted).toEqual(['old-token', 'retry'])
+    await vi.waitFor(() => expect(element(form, '[data-success]').textContent).toBe('Sent'))
+  })
+
+  it('sends no retry from a form destroyed while it waits for the fill time', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config({ freshToken: true }))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const fetch = cachedPageServer(
+      async () => ({ 'X-FetchIt-Refused': 'rate' }),
+      { body: { success: false, message: 'Expired', data: [] }, headers: { 'X-FetchIt-Token': 'retry', 'X-FetchIt-Refused': 'token', 'X-FetchIt-Min-Time': '1' } },
+    )
+    focus(form)
+    await settle()
+
+    await submit(form)
+    await vi.waitFor(() => expect(submissionsOf(fetch)).toHaveLength(1))
+    instance(form)!.destroy()
+    await new Promise(resolve => setTimeout(resolve, 1400))
+
+    expect(submissionsOf(fetch)).toHaveLength(1)
+    expect(element(form, '[data-validation-error]').textContent).toBe('')
+    expect(error).not.toHaveBeenCalled()
+  })
+
   it('keeps the token of the page when the server gives none', async () => {
     const form = mountProtectedForm()
     FetchIt.create(config({ freshToken: true }))

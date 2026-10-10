@@ -661,6 +661,20 @@
 			data: data !== null && typeof data === "object" ? data : {}
 		};
 	}
+	/**
+	* Date.now() from which a token of now is taken as filled in, given min_time
+	* in seconds (X-FetchIt-Min-Time); 0 when there is none to wait for.
+	*/
+	function readyAt(minTime) {
+		return minTime > 0 ? Date.now() + minTime * 1e3 + 250 : 0;
+	}
+	/**
+	* Wait until Date.now() reaches the time.
+	*/
+	async function until(time) {
+		const wait = time - Date.now();
+		if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+	}
 	var FetchIt = class FetchIt {
 		constructor(form, config) {
 			var _FetchIt$instances$ge;
@@ -728,15 +742,20 @@
 						const refused = (_query$headers2 = query.headers) === null || _query$headers2 === void 0 ? void 0 : _query$headers2.get("X-FetchIt-Refused");
 						const bits = Number((_query$headers$get = (_query$headers3 = query.headers) === null || _query$headers3 === void 0 ? void 0 : _query$headers3.get("X-FetchIt-Pow")) !== null && _query$headers$get !== void 0 ? _query$headers$get : 0);
 						if (next && (refused === "token" || refused === "pow" && bits > ((_this$config$pow = this.config.pow) !== null && _this$config$pow !== void 0 ? _this$config$pow : 0))) {
-							var _query$headers4;
+							var _query$headers5;
 							if (refused === "pow") this.config.pow = bits;
+							if (refused === "token") {
+								var _query$headers$get2, _query$headers4;
+								await until(readyAt(Number((_query$headers$get2 = (_query$headers4 = query.headers) === null || _query$headers4 === void 0 ? void 0 : _query$headers4.get("X-FetchIt-Min-Time")) !== null && _query$headers$get2 !== void 0 ? _query$headers$get2 : 0)));
+								if (this.destroyed) return;
+							}
 							formData.set(FetchIt.tokenField, next);
 							if (this.config.pow) formData.set(FetchIt.powField, await this.solution(next));
 							query = await fetch(this.request, {
 								method: "post",
 								body: formData
 							});
-							next = (_query$headers4 = query.headers) === null || _query$headers4 === void 0 ? void 0 : _query$headers4.get("X-FetchIt-Token");
+							next = (_query$headers5 = query.headers) === null || _query$headers5 === void 0 ? void 0 : _query$headers5.get("X-FetchIt-Token");
 							this.updateToken(next);
 						}
 						if (refused === "captcha" && !this.config.captcha) console.warn("FetchIt: the server asks for a captcha this page does not have; the page may come from a cache made before the captcha was turned on");
@@ -948,7 +967,7 @@
 						const bits = Number((_answer$headers$get = answer.headers.get("X-FetchIt-Pow")) !== null && _answer$headers$get !== void 0 ? _answer$headers$get : 0);
 						if (bits > ((_this$config$pow3 = this.config.pow) !== null && _this$config$pow3 !== void 0 ? _this$config$pow3 : 0)) this.config.pow = bits;
 						const minTime = Number((_answer$headers$get2 = answer.headers.get("X-FetchIt-Min-Time")) !== null && _answer$headers$get2 !== void 0 ? _answer$headers$get2 : 0);
-						this.readyAt = minTime > 0 ? Date.now() + minTime * 1e3 + 250 : 0;
+						this.readyAt = readyAt(minTime);
 					} else if (!this.destroyed) {
 						var _answer$headers$get3, _answer$headers2;
 						console.warn(`FetchIt: no fresh token (${(_answer$headers$get3 = (_answer$headers2 = answer.headers) === null || _answer$headers2 === void 0 ? void 0 : _answer$headers2.get("X-FetchIt-Refused")) !== null && _answer$headers$get3 !== void 0 ? _answer$headers$get3 : `HTTP ${answer.status}`}); the form keeps the token of the page`);
@@ -965,8 +984,7 @@
 		* Wait until the fill time of the server has passed since the exchange.
 		*/
 		async untilReady() {
-			const wait = this.readyAt - Date.now();
-			if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+			await until(this.readyAt);
 		}
 		/**
 		* The token in the form now.

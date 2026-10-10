@@ -132,6 +132,7 @@ case "$what" in
         printf '%s' "$page_token" > "$jar.token"
         submit "$action" -F email=ann@example.com -F "pageId=$custom" > /dev/null
         check "the replay is refused" test "$(header x-fetchit-refused)" = token
+        check "it tells the fill time of the next token" test "$(header x-fetchit-min-time)" = 4
         submit "$action" -F email=ann@example.com -F "pageId=$custom" > /dev/null
         check "its next token, sent at once, is too fast" test "$(header x-fetchit-refused)" = too_fast
 
