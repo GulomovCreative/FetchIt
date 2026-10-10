@@ -402,6 +402,8 @@ class FetchIt
             'inputInvalidClass' => trim(preg_replace('/\s+/', ' ', (string)$this->modx->getOption('fetchit.frontend.input.invalid.class'))),
             'customInvalidClass' => trim(preg_replace('/\s+/', ' ', (string)$this->modx->getOption('fetchit.frontend.custom.invalid.class'))),
             'clearFieldsOnSuccess' => (bool)$this->modx->getOption('clearFieldsOnSuccess', $this->config, 1, false),
+            'formState' => (bool)$this->modx->getOption('formState', $this->config, 1, false),
+            'ariaBusy' => (bool)$this->modx->getOption('ariaBusy', $this->config, 1, false),
             'defaultNotifier' => $this->config['default_notifier'],
             'notifierCloseLabel' => $this->config['default_notifier'] ? $this->lexiconOrEmpty('fetchit_notifier_close') : '',
             'requestErrorMessage' => $this->modx->lexicon('fetchit_err_request'),

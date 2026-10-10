@@ -25,6 +25,10 @@ interface FetchItConfig extends FetchItObserveOptions {
   /** Classes for [data-custom] elements of an invalid field, separated by spaces */
   customInvalidClass?: string | undefined;
   clearFieldsOnSuccess?: boolean | undefined;
+  /** data-fetchit-state on the form: sending, success, error (&formState); on unless false */
+  formState?: boolean | undefined;
+  /** aria-busy="true" on the form while it is sent (&ariaBusy); on unless false */
+  ariaBusy?: boolean | undefined;
   /**
    * Shown when the form could not be sent: a network error, an answer that
    * is not FetchIt's, a failed proof of work (and a captcha that gave no
