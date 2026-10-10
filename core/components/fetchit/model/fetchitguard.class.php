@@ -80,6 +80,9 @@ class FetchItGuard
     /** @var bool[] The setting problems logged in this request */
     protected $warned = [];
 
+    /** @var FetchItStore|null|false Where marks and counters live; false until store() picked it */
+    protected $store = false;
+
 
     /**
      * @param FetchIt $fetchit
@@ -455,9 +458,25 @@ class FetchItGuard
 
 
     /**
+     * Where marks, counters and the properties of forms live.
+     *
+     * @return FetchItStore|null
+     */
+    public function store()
+    {
+        if ($this->store === false) {
+            $this->store = new FetchItFileStore($this->modx, function ($what) {
+                $this->log(self::LOG_PROBLEMS, $what);
+            }, $this->ttl());
+        }
+
+        return $this->store;
+    }
+
+
+    /**
      * Mark a nonce as used: "marked", "used" when it was already, or "failed"
-     * when the mark could not be written. The mark is a file created with
-     * fopen(..., 'x'), so of two requests with one token only one wins.
+     * when the mark could not be written; see FetchItStore::mark().
      *
      * @param string $nonce
      *
@@ -465,30 +484,9 @@ class FetchItGuard
      */
     protected function mark($nonce)
     {
-        $dir = $this->marksPath() . substr($nonce, 0, 2) . '/';
-        if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
-            $this->log(self::LOG_PROBLEMS, "could not create {$dir}; forms are refused until it is writable");
+        $store = $this->store();
 
-            return 'failed';
-        }
-
-        $handle = @fopen($dir . $nonce, 'x');
-        if ($handle === false) {
-            if (file_exists($dir . $nonce)) {
-                return 'used';
-            }
-            $this->log(self::LOG_PROBLEMS, "could not write to {$dir}; forms are refused until it is writable");
-
-            return 'failed';
-        }
-        fclose($handle);
-
-        // Now and then, drop the marks of tokens that expired anyway.
-        if (mt_rand(1, 100) === 1) {
-            $this->prune();
-        }
-
-        return 'marked';
+        return $store !== null ? $store->mark($nonce, $this->now() + $this->ttl()) : 'failed';
     }
 
 
@@ -501,19 +499,12 @@ class FetchItGuard
      */
     public function prune($shard = null)
     {
-        $shard = $shard === null ? sprintf('%02x', mt_rand(0, 255)) : $shard;
-        $dir = $this->marksPath() . $shard . '/';
-        $handle = @opendir($dir);
-        if ($handle === false) {
-            return;
+        $store = $this->store();
+        if ($store instanceof FetchItFileStore) {
+            $store->pruneShard($shard === null ? sprintf('%02x', mt_rand(0, 255)) : $shard);
+        } elseif ($store !== null) {
+            $store->prune($this->now());
         }
-        $before = time() - $this->ttl() - 60;
-        while (($file = readdir($handle)) !== false) {
-            if ($file[0] !== '.' && @filemtime($dir . $file) < $before) {
-                @unlink($dir . $file);
-            }
-        }
-        closedir($handle);
     }
 
 
@@ -552,18 +543,15 @@ class FetchItGuard
             return true;
         }
 
-        $key = 'fetchit/rate/' . md5($action . '|' . $this->clientAddress());
-        $count = $this->modx->cacheManager->get($key);
-        $now = $this->now();
-        if (!is_array($count) || $now - $count['since'] >= $window) {
-            $count = ['since' => $now, 'count' => 0];
-        }
-        $count['count']++;
-        if (!$this->modx->cacheManager->set($key, $count, $window)) {
+        $store = $this->store();
+        $count = $store !== null ? $store->hit(md5($action . '|' . $this->clientAddress()), $window, $this->now()) : null;
+        if ($count === null) {
             $this->log(self::LOG_PROBLEMS, 'could not store the rate limit counter; the limit is not enforced', $action);
+
+            return true;
         }
 
-        return $count['count'] <= $limit;
+        return $count <= $limit;
     }
 
 
