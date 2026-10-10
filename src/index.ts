@@ -94,6 +94,8 @@ class FetchIt implements FetchItInstance {
   // Date.now() from which the server takes the fresh token as filled in:
   // min_time counts from the exchange.
   freshTokenReadyAt = 0;
+  // The state of the submission shown on the form (setState()).
+  state: 'sending' | 'success' | 'error' | null = null;
 
   constructor (form: unknown, config: FetchItConfig) {
     if (!(form instanceof HTMLFormElement)) {
@@ -153,6 +155,7 @@ class FetchIt implements FetchItInstance {
 
       this.pending = true;
       this.disableFields();
+      this.setState('sending');
 
       // Set once the visitor has seen the outcome; a later error is only logged.
       let shown = false;
@@ -213,6 +216,10 @@ class FetchIt implements FetchItInstance {
           this.failRequest(error, formData);
           return;
         }
+
+        // Before the events: a listener that cancels them still leaves the
+        // outcome to CSS.
+        this.setState(response.success ? 'success' : 'error');
 
         FetchIt.notify('after', response.message);
 
@@ -275,6 +282,11 @@ class FetchIt implements FetchItInstance {
           this.failRequest(error, formData);
         }
       } finally {
+        // Nothing was shown (the form was taken off the page): it is not
+        // sent any more.
+        if (this.state === 'sending') {
+          this.setState(null);
+        }
         this.enableFields();
         this.pending = false;
         // A captcha answer is good for one check.
@@ -287,6 +299,10 @@ class FetchIt implements FetchItInstance {
       this.clearErrors();
       if (!this.preserveFormMessagesOnReset) {
         this.clearFormMessages();
+        // A reset while the form is sent keeps sending: the answer sets it.
+        if (!this.pending) {
+          this.setState(null);
+        }
       }
       FetchIt.notify('reset');
     }, { signal });
@@ -344,6 +360,7 @@ class FetchIt implements FetchItInstance {
     if (this.destroyed) {
       return;
     }
+    this.setState('error');
     console.error(error);
 
     const message = (error instanceof CaptchaError && this.config.captchaErrorMessage)
@@ -493,6 +510,30 @@ class FetchIt implements FetchItInstance {
       input.defaultValue = token;
     });
     this.solveAhead();
+  }
+
+  /**
+   * Show the state of the submission on the form, for CSS:
+   * data-fetchit-state (config.formState) and aria-busy while it is sent
+   * (config.ariaBusy). A config without them, from a page cached by an
+   * earlier version, has both on. Null removes the state.
+   */
+  setState (state: 'sending' | 'success' | 'error' | null) {
+    this.state = state;
+    if (this.config.formState !== false) {
+      if (state) {
+        this.form.setAttribute('data-fetchit-state', state);
+      } else {
+        this.form.removeAttribute('data-fetchit-state');
+      }
+    }
+    if (this.config.ariaBusy !== false) {
+      if (state === 'sending') {
+        this.form.setAttribute('aria-busy', 'true');
+      } else {
+        this.form.removeAttribute('aria-busy');
+      }
+    }
   }
 
   clearErrors () {
