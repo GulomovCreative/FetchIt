@@ -53,6 +53,8 @@ if (empty($_POST)) {
 } else {
     // Only the posted form: $_REQUEST may also hold GET values and, with
     // request_order allowing it, cookies.
+    // A stray byte before a redirect of the processing must not send the headers.
+    ob_start();
     $answer = $FetchIt->submit(
         $_SERVER['HTTP_X_FETCHIT_ACTION'],
         $_POST,

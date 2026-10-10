@@ -3,12 +3,12 @@
  * Create the pages the integration tests submit, and write their ids as JSON
  * to <output> (or print them):
  * {"modx": 2|3, "custom": <id>, "api": <id>, "probe": <id>, "formit": <id|null>,
- *  "counter": <id>, "redirect": <id>, "redirector": <id>, "formitredirect": <id|null>,
+ *  "counter": <id>, "redirect": <id>, "redirector": <id>, "noisyredirector": <id>, "formitredirect": <id|null>,
  *  "mixed": <id|null>, "pdotools": <id|null>,
  *  "installed": {"package": <signature>, "elements": <bool>}}
  *
  * "counter" counts its runs and keeps answers for retries, "redirect" leads to
- * the "custom" page after a success, "redirector" redirects itself and
+ * the "custom" page after a success, "redirector" redirects itself, "noisyredirector" prints a few bytes first, and
  * "formitredirect" is FormIt with the redirect hook (null without FormIt).
  *
  * "custom" is processed by a snippet of its own; "api" by a snippet that
@@ -210,6 +210,16 @@ $modx->sendRedirect($modx->makeUrl($modx->getOption('target', $scriptProperties)
 PHP
 );
 
+fixture_element($modx, 'modSnippet', 'FetchItTestNoisyRedirector', 'snippet', <<<'PHP'
+// Prints a few bytes before it redirects: they must not bring back the 302.
+if (empty($fields)) {
+    return '';
+}
+echo "\xEF\xBB\xBFnoise";
+$modx->sendRedirect($modx->makeUrl($modx->getOption('target', $scriptProperties), '', '', 'full'));
+PHP
+);
+
 $pages = [
     'modx' => class_exists('MODX\Revolution\modX') ? 3 : 2,
     'custom' => fixture_page(
@@ -245,6 +255,11 @@ $pages['redirector'] = fixture_page(
     $modx,
     'fetchit-redirector',
     '[[!FetchIt? &snippet=`FetchItTestRedirector` &form=`tpl.FetchIt.test` &target=`' . $pages['custom'] . '`]]'
+);
+$pages['noisyredirector'] = fixture_page(
+    $modx,
+    'fetchit-noisyredirector',
+    '[[!FetchIt? &snippet=`FetchItTestNoisyRedirector` &form=`tpl.FetchIt.test` &target=`' . $pages['custom'] . '`]]'
 );
 
 // A form loaded into another page: the fragment has no template, the host
