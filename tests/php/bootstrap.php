@@ -236,6 +236,40 @@ class modX
         $this->logged[] = [$level, $message];
     }
 
+    /** @var PDO|null The database of prepare(); the store tests set it */
+    public $pdo;
+
+    /**
+     * As xPDO::prepare().
+     */
+    public function prepare($sql)
+    {
+        return $this->pdo->prepare($sql);
+    }
+
+    /**
+     * As xPDO::errorInfo().
+     */
+    public function errorInfo()
+    {
+        return $this->pdo->errorInfo();
+    }
+
+    /**
+     * As xPDO::escape(): the identifier quotes of the driver.
+     */
+    public function escape($string)
+    {
+        switch ($this->pdo ? $this->pdo->getAttribute(PDO::ATTR_DRIVER_NAME) : '') {
+            case 'mysql':
+                return '`' . $string . '`';
+            case 'sqlsrv':
+                return '[' . $string . ']';
+            default:
+                return '"' . $string . '"';
+        }
+    }
+
     public function regClientHTMLBlock($html)
     {
         $this->htmlBlocks[] = $html;
@@ -498,6 +532,24 @@ class xPDOTransport
 
     /** @var modX */
     public $xpdo;
+}
+
+/**
+ * A modX with a database for the store tests: the one in FETCHIT_TEST_DSN
+ * (with FETCHIT_TEST_USER and FETCHIT_TEST_PASSWORD), or SQLite in memory.
+ */
+function fetchit_test_modx($errorMode = PDO::ERRMODE_SILENT)
+{
+    $modx = new modX();
+    $modx->pdo = new PDO(
+        getenv('FETCHIT_TEST_DSN') ?: 'sqlite::memory:',
+        getenv('FETCHIT_TEST_USER') ?: null,
+        getenv('FETCHIT_TEST_PASSWORD') ?: null
+    );
+    $modx->pdo->setAttribute(PDO::ATTR_ERRMODE, $errorMode);
+    $modx->options['table_prefix'] = 'fetchit_test_';
+
+    return $modx;
 }
 
 require_once MODX_CORE_PATH . 'components/fetchit/model/fetchit.class.php';
