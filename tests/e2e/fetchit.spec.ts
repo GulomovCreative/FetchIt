@@ -1,6 +1,12 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
-const fixtures: { custom: number, formit: number | null, mixed?: number | null } = JSON.parse(process.env.FIXTURES ?? '{}')
+const fixtures: {
+  custom: number,
+  formit: number | null,
+  mixed?: number | null,
+  host?: number,
+  pdopage?: number | null,
+} = JSON.parse(process.env.FIXTURES ?? '{}')
 
 test.describe('form with its own handler', () => {
   test.beforeEach(async ({ page }) => {
@@ -240,5 +246,44 @@ test.describe('default notifier @notifier', () => {
     await page.getByRole('button', { name: 'Send' }).click()
     await expect(toasts.locator('.fetchit-toast', { hasText: 'Thanks, ann@example.com' })).toBeVisible()
     await expect(page.locator('.fetchit-toasts-live[role="status"]')).toHaveText('Thanks, ann@example.com')
+  })
+})
+
+// The number of forms FetchIt handles on the page.
+const handled = (page: Page) =>
+  page.evaluate(() => (window as unknown as { FetchIt: { instances: Map<unknown, unknown> } }).FetchIt.instances.size)
+
+test.describe('a form loaded into the page later', () => {
+  test.skip(!fixtures.host, 'no host page')
+
+  test('is sent without a reload, and again after the modal opens anew', async ({ page }) => {
+    await page.goto(`/index.php?id=${fixtures.host}`)
+    const modal = page.locator('#modal')
+
+    for (const round of [1, 2]) {
+      await page.getByRole('button', { name: 'Open the form' }).click()
+      await modal.locator('input[name="email"]').fill(`ann${round}@example.com`)
+      await modal.getByRole('button', { name: 'Send' }).click()
+      await expect(modal.locator('[data-success]')).toHaveText(`Thanks, ann${round}@example.com`)
+      await expect.poll(() => handled(page)).toBe(1)
+
+      await page.getByRole('button', { name: 'Close the form' }).click()
+      await expect.poll(() => handled(page)).toBe(0)
+    }
+  })
+})
+
+test.describe('a form in rows pdoPage loads over AJAX', () => {
+  test.skip(!fixtures.pdopage, 'pdoTools is not installed')
+
+  test('the form of the next row is sent', async ({ page }) => {
+    await page.goto(`/index.php?id=${fixtures.pdopage}`)
+    await page.locator('#pdopage .btn-more').click()
+    const second = page.locator('#pdopage .row').nth(1)
+
+    await second.locator('input[name="email"]').fill('ann@example.com')
+    await second.getByRole('button', { name: 'Send' }).click()
+
+    await expect(second.locator('[data-success]')).toHaveText('Thanks, ann@example.com')
   })
 })
