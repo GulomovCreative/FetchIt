@@ -1075,10 +1075,236 @@ class GuardTest extends TestCase
         $this->assertStringStartsWith('X-FetchIt-Token: ', $headers[0]);
     }
 
+    // ---------------------------------------- submission keys and the protection
+
+    /** @var string[] */
+    private $headers = [];
+
+    /**
+     * A processing snippet that counts its runs, for the form $action.
+     */
+    private function counted($name = 'Handler', $action = self::ACTION)
+    {
+        $runs = 0;
+        $snippet = $this->modx->snippets[$name] = new FakeSnippet($name, function () use (&$runs, $name) {
+            $runs++;
+
+            return json_encode(['success' => true, 'message' => "{$name} run {$runs}", 'data' => []]);
+        });
+        $snippet->runs = &$runs;
+        $this->fetchit->storeActionProperties($action, ['snippet' => $name]);
+
+        return $snippet;
+    }
+
+    private function send(FetchIt $fetchit, array $post, $action = self::ACTION, $submission = self::UUID)
+    {
+        $this->headers = [];
+
+        return $fetchit->submit($action, $post, $submission, function ($line) {
+            $this->headers[] = $line;
+        });
+    }
+
+    /**
+     * The POST of a form with $token, sent 10 seconds after it was rendered.
+     */
+    private function filled($token)
+    {
+        $this->now += 10;
+
+        return [FetchItGuard::TOKEN => $token, $this->guard()->trapName() => '', 'email' => 'a@b.c'];
+    }
+
+    /**
+     * A FetchIt whose guard is $guard, on the clock of the test.
+     */
+    private function guardedBy(FetchItGuard $guard)
+    {
+        $guard->setClock(function () {
+            return $this->now;
+        });
+        $fetchit = new GuardedFetchIt($this->modx);
+        $fetchit->useGuard($guard);
+
+        return $fetchit;
+    }
+
+    public function testASubmissionKeyWithoutATokenIsRefused()
+    {
+        $snippet = $this->counted();
+        $post = $this->filled($this->token());
+        unset($post[FetchItGuard::TOKEN]);
+
+        $answer = $this->send($this->fetchit, $post);
+
+        $this->assertFalse(json_decode($answer['body'], true)['success']);
+        $this->assertSame(0, $snippet->runs);
+        $this->assertNull($this->guard()->loadAnswer($this->guard()->submissionKey(self::ACTION, self::UUID)));
+    }
+
+    public function testASubmissionKeyWithAForgedTokenIsRefused()
+    {
+        $snippet = $this->counted();
+        $token = $this->token();
+        $post = $this->filled(substr($token, 0, -1) . (substr($token, -1) === '0' ? '1' : '0'));
+
+        $answer = $this->send($this->fetchit, $post);
+
+        $this->assertFalse(json_decode($answer['body'], true)['success']);
+        $this->assertSame('token', $this->guard()->reason());
+        $this->assertSame(0, $snippet->runs);
+        $this->assertNull($this->guard()->loadAnswer($this->guard()->submissionKey(self::ACTION, self::UUID)));
+    }
+
+    public function testARetryWithAGarbageTokenGetsTheKeptAnswerAndNoToken()
+    {
+        $snippet = $this->counted();
+        $post = $this->filled($this->token());
+        $first = $this->send($this->fetchit, $post);
+        $post[FetchItGuard::TOKEN] = 'garbage';
+
+        $retry = $this->send($this->fetchit(), $post);
+
+        $this->assertSame(1, $snippet->runs);
+        $this->assertSame($first['body'], $retry['body']);
+        $this->assertSame([], $this->headers);
+    }
+
+    public function testTheSameUuidForAnotherFormProcessesThatForm()
+    {
+        $handler = $this->counted();
+        $other = $this->counted('Other', self::OTHER);
+        $this->send($this->fetchit, $this->filled($this->token()));
+
+        $answer = $this->send($this->fetchit(), $this->filled($this->token(self::OTHER)), self::OTHER);
+
+        $this->assertSame('Other run 1', json_decode($answer['body'], true)['message']);
+        $this->assertSame(1, $handler->runs);
+        $this->assertSame(1, $other->runs);
+    }
+
+    public function testASubmissionTakenMeanwhileIsPendingAndStillGetsTheNextToken()
+    {
+        // The first attempt took the key between loadAnswer() and claim() of this one.
+        $snippet = $this->counted();
+        $guard = new ScriptedGuard($this->fetchit);
+        $guard->loads = false;
+        $guard->claimed = FetchItStore::USED;
+
+        $answer = $this->send($this->guardedBy($guard), $this->filled($this->token()));
+
+        $this->assertSame(409, $answer['status']);
+        $this->assertSame(0, $snippet->runs);
+        $this->assertCount(2, $this->headers);
+        $this->assertStringStartsWith('X-FetchIt-Token: 01234567.', $this->headers[0]);
+        $this->assertSame('X-FetchIt-Refused: pending', $this->headers[1]);
+    }
+
+    public function testAKeyThatCannotBeTakenStillProcessesTheFormOnce()
+    {
+        // A file where the directory of the answers should be.
+        mkdir($this->modx->getCachePath() . 'fetchit', 0775, true);
+        touch($this->modx->getCachePath() . 'fetchit/answers');
+        $snippet = $this->counted();
+
+        $answer = $this->send($this->fetchit, $this->filled($this->token()));
+
+        $this->assertSame(1, $snippet->runs);
+        $this->assertSame('Handler run 1', json_decode($answer['body'], true)['message']);
+        $this->assertNull($this->guard()->loadAnswer($this->guard()->submissionKey(self::ACTION, self::UUID)));
+        $this->assertLogged('may process it twice');
+        $this->assertNotLogged('still processed');
+    }
+
+    public function testAnAnswerThatCannotBeKeptLeavesTheRetryPending()
+    {
+        $snippet = $this->counted();
+        $guard = new ScriptedGuard($this->fetchit);
+        $guard->saves = false;
+        $post = $this->filled($this->token());
+        $this->send($this->guardedBy($guard), $post);
+
+        $retry = $this->send($this->fetchit(), $post);
+
+        $this->assertSame(409, $retry['status']);
+        $this->assertContains('X-FetchIt-Refused: pending', $this->headers);
+        $this->assertSame(1, $snippet->runs);
+    }
+
+    public function testAProofOfWorkRefusalSendsTheBitsAfterTheToken()
+    {
+        $this->modx->options['fetchit.protection.pow'] = 8;
+        $snippet = $this->counted();
+
+        $this->send($this->fetchit, $this->filled($this->token()));
+
+        $this->assertSame(0, $snippet->runs);
+        $this->assertCount(3, $this->headers);
+        $this->assertStringStartsWith('X-FetchIt-Token: ', $this->headers[0]);
+        $this->assertSame(['X-FetchIt-Refused: pow', 'X-FetchIt-Pow: 8'], array_slice($this->headers, 1));
+    }
+
+    public function testAUsedTokenFromThePageCacheSendsTheMinTimeAfterTheToken()
+    {
+        $this->pageCache();
+        $this->counted();
+        $post = $this->filled($this->token());
+        $this->send($this->fetchit, $post, self::ACTION, '');
+
+        $this->send($this->fetchit(), $post, self::ACTION, '');
+
+        $this->assertCount(3, $this->headers);
+        $this->assertStringStartsWith('X-FetchIt-Token: ', $this->headers[0]);
+        $this->assertSame(['X-FetchIt-Refused: token', 'X-FetchIt-Min-Time: 3'], array_slice($this->headers, 1));
+    }
+
     private function assertNotLogged($needle)
     {
         foreach (array_column($this->modx->logged, 1) as $message) {
             $this->assertStringNotContainsString($needle, $message);
         }
+    }
+}
+
+/**
+ * FetchIt with a guard of the test.
+ */
+class GuardedFetchIt extends FetchIt
+{
+    public function useGuard(FetchItGuard $guard)
+    {
+        $this->guard = $guard;
+    }
+}
+
+/**
+ * A guard whose answers to submissions are set by the test: a race of two
+ * attempts, or a store that fails.
+ */
+class ScriptedGuard extends FetchItGuard
+{
+    /** @var bool false: loadAnswer() finds no answer */
+    public $loads = true;
+
+    /** @var string|null What claim() returns instead of taking the key */
+    public $claimed;
+
+    /** @var bool false: saveAnswer() fails */
+    public $saves = true;
+
+    public function loadAnswer($key)
+    {
+        return $this->loads ? parent::loadAnswer($key) : null;
+    }
+
+    public function claim($key)
+    {
+        return $this->claimed !== null ? $this->claimed : parent::claim($key);
+    }
+
+    public function saveAnswer($key, $json)
+    {
+        return $this->saves && parent::saveAnswer($key, $json);
     }
 }
