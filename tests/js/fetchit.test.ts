@@ -1879,6 +1879,18 @@ describe('a page from a full-page cache', () => {
     expect(field(form, 'fetchit_token').value).toBe('fresh')
   })
 
+  it('sends the page with the exchange, for the settings of its context', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config({ freshToken: true }))
+    const fetch = cachedPageServer(async () => ({ 'X-FetchIt-Token': 'fresh' }))
+
+    focus(form)
+    await settle()
+
+    const body = (exchangesOf(fetch)[0]![1] as RequestInit).body as FormData
+    expect(body.get('pageId')).toBe('5')
+  })
+
   it('sends the fresh token, once', async () => {
     const form = mountProtectedForm()
     FetchIt.create(config({ freshToken: true }))

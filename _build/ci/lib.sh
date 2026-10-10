@@ -52,14 +52,15 @@ submit() {
 }
 
 # Exchanges the token in $jar.token for a fresh one (fetchit.page_cache) and
-# keeps it there; the headers of the answer go to $jar.headers.
+# keeps it there; the headers of the answer go to $jar.headers. More curl
+# arguments go along, as -F "pageId=..." for the context of the page.
 exchange() {
-    local action="$1"
+    local action="$1"; shift
     : > "$jar.headers"
     curl -sS -c "$jar" -b "$jar" -D "$jar.headers" -o /dev/null \
         -H "X-FetchIt-Action: $action" \
         -H "X-FetchIt-Exchange: 1" \
-        -F "fetchit_token=$(cat "$jar.token")" "$base/assets/components/fetchit/action.php" || true
+        -F "fetchit_token=$(cat "$jar.token")" "$@" "$base/assets/components/fetchit/action.php" || true
     local next
     next="$(header x-fetchit-token)"
     if [ -n "$next" ]; then
