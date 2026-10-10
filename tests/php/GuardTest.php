@@ -885,6 +885,76 @@ class GuardTest extends TestCase
         $this->assertSame((string)($this->now - $minTime), $this->parts($this->guard()->nextToken())[1], 'expired');
     }
 
+    // ------------------------------------------------------- submission keys
+
+    const UUID = '0f8fad5b-d9cb-469f-a165-70867728950e';
+
+    public function testASubmissionKeyBelongsToTheFormAndTheSite()
+    {
+        $key = $this->guard()->submissionKey(self::ACTION, self::UUID);
+
+        $this->assertMatchesRegularExpression('/^[0-9a-f]{64}$/', $key);
+        $this->assertSame($key, $this->guard()->submissionKey(self::ACTION, strtoupper(self::UUID)));
+        $this->assertNotSame($key, $this->guard()->submissionKey(self::OTHER, self::UUID));
+        $this->modx->options['fetchit.protection.secret'] = 'another site';
+        $this->assertNotSame($key, $this->fetchit()->guard()->submissionKey(self::ACTION, self::UUID));
+    }
+
+    public function testOnlyAUuidIsASubmissionKey()
+    {
+        foreach (['', 'abc', self::UUID . 'x', ' ' . self::UUID, '0f8fad5bd9cb469fa16570867728950e', ['x']] as $value) {
+            $this->assertNull($this->guard()->submissionKey(self::ACTION, $value));
+        }
+    }
+
+    public function testRenewGivesANewTokenForAWellSignedOneEvenUsed()
+    {
+        $token = $this->token();
+        $this->submit([], 10, $token);
+
+        $next = $this->guard()->renew(self::ACTION, [FetchItGuard::TOKEN => $token]);
+
+        $this->assertMatchesRegularExpression('/^01234567\.\d+\.[0-9a-f]{16}\.[0-9a-f]{64}$/', $next);
+        $this->assertNotSame($token, $next);
+        $forged = substr($token, 0, -1) . (substr($token, -1) === '0' ? '1' : '0');
+        $this->assertNull($this->guard()->renew(self::ACTION, [FetchItGuard::TOKEN => $forged]));
+        $this->assertNull($this->guard()->renew(self::OTHER, [FetchItGuard::TOKEN => $token]));
+        $this->assertNull($this->guard()->renew(self::ACTION, []));
+    }
+
+    public function testRenewGivesNothingWithoutTheProtection()
+    {
+        $token = $this->token();
+        $this->modx->options['fetchit.protection'] = false;
+
+        $this->assertNull($this->fetchit()->guard()->renew(self::ACTION, [FetchItGuard::TOKEN => $token]));
+    }
+
+    public function testAnAnswerIsKeptByTheKeyOnTheClockOfTheGuard()
+    {
+        $key = $this->guard()->submissionKey(self::ACTION, self::UUID);
+
+        $this->assertNull($this->guard()->loadAnswer($key));
+        $this->assertSame('marked', $this->guard()->claim($key));
+        $this->assertSame('used', $this->guard()->claim($key));
+        $this->assertSame('', $this->guard()->loadAnswer($key));
+        $this->assertTrue($this->guard()->saveAnswer($key, '{"success":true}'));
+        $this->assertSame('{"success":true}', $this->guard()->loadAnswer($key));
+        $this->now += FetchItStore::ANSWER_TTL + 1;
+        $this->assertNull($this->guard()->loadAnswer($key));
+    }
+
+    public function testAnswersFailWithAStoreSettingThatIsNotKnown()
+    {
+        $this->modx->options['fetchit.protection.store'] = 'redis';
+        $guard = $this->fetchit()->guard();
+        $key = $guard->submissionKey(self::ACTION, self::UUID);
+
+        $this->assertSame('failed', $guard->claim($key));
+        $this->assertFalse($guard->loadAnswer($key));
+        $this->assertFalse($guard->saveAnswer($key, '{}'));
+    }
+
     private function assertNotLogged($needle)
     {
         foreach (array_column($this->modx->logged, 1) as $message) {
