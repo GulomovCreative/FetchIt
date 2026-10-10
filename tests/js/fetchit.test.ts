@@ -454,6 +454,28 @@ describe('forms loaded after the page', () => {
     expect(FetchIt.instances.has(form)).toBe(true)
   })
 
+  it('sends a form put back later only once in a browser without the signal option', async () => {
+    // Such a browser ignores the option: the listeners of the destroyed
+    // instance stay on the form.
+    const { host, form } = configuredForm()
+    vi.spyOn(form, 'addEventListener').mockImplementation(function (this: HTMLFormElement, type: string, listener: EventListenerOrEventListenerObject | null, options?: boolean | AddEventListenerOptions) {
+      const { signal: _signal, ...rest } = typeof options === 'object' ? options : {}
+      EventTarget.prototype.addEventListener.call(this, type, listener, rest)
+    } as typeof form.addEventListener)
+    document.body.append(host)
+    await settle()
+    host.remove()
+    await settle()
+    document.body.append(host)
+    await settle()
+    const fetch = respond({ success: true, message: 'Thanks', data: [] })
+
+    await submit(form)
+
+    expect(vi.mocked(form.addEventListener).mock.calls.filter(([type]) => type === 'submit')).toHaveLength(2)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
   it('a form removed while solving for its submission ends quietly', async () => {
     const errors = vi.fn()
     on('fetchit:error', errors)
