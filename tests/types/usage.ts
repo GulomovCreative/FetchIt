@@ -175,3 +175,15 @@ document.addEventListener(FetchIt.events.retry, event => {
 
 const retrying: FetchItConfig = { action: 'a', actionUrl: '/action.php', pageId: 1, timeout: 10, retries: 2, timeoutMessage: 'Late' }
 console.log(retrying)
+
+export type DetailChecks = [
+  Assert<Equals<FetchItSuccessDetail['redirect'], string | undefined>>,
+  Assert<Equals<FetchItRetryDetail['error'], unknown>>,
+  Assert<Equals<FetchItConfig['retries'], number | undefined>>,
+]
+
+document.addEventListener('fetchit:success', event => {
+  console.log(event.detail.redirect, event.detail.response.message)
+  // @ts-expect-error The address is on the detail, not on the response.
+  console.log(event.detail.response.redirect)
+})

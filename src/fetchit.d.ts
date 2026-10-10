@@ -168,7 +168,10 @@ interface FetchItAfterDetail extends FetchItBeforeDetail {
  * the page instead of going to redirect.
  */
 interface FetchItSuccessDetail extends FetchItAfterDetail {
-  /** The page the answer leads to (&redirectTo, the redirect hook of FormIt); see FetchItInstance.navigate() */
+  /**
+   * The page the answer leads to (&redirectTo, the redirect hook of FormIt);
+   * see FetchItInstance.navigate(). It is not on response.
+   */
   redirect?: string | undefined;
 }
 
@@ -186,12 +189,17 @@ interface FetchItErrorDetail extends FetchItBeforeDetail {
 
 /**
  * fetchit:retry, cancelable: an attempt failed and another follows after a
- * pause (1, 2, 4, 8 s). error is why the last attempt failed. Cancelling it
- * ends the submission with that error.
+ * pause (1, 2 and 4 s, then 8 s each). Cancelling it ends the submission
+ * with the error of the attempt.
  */
 interface FetchItRetryDetail extends FetchItBeforeDetail {
-  /** The number of this retry, from 1 */
+  /** The number of this retry, from 1 (the first attempt is not one) */
   attempt: number;
+  /**
+   * Why the attempt failed: the error of fetch(), an Error whose name is
+   * 'TimeoutError' when the timeout ran out, or an Error for an answer that
+   * is not FetchIt's or that the form is still processed
+   */
   error: unknown;
 }
 
@@ -244,8 +252,10 @@ interface FetchItInstance {
   /**
    * Go to the page of a successful answer, after fetchit:success: only an
    * http(s) address, relative ones against the page; anything else is
-   * logged. True when the page is left (not for a hash of the same page): the fields then stay disabled.
-   * Override it for a router of your own.
+   * logged. True when the page is left (not for a hash of the same page):
+   * the fields then stay disabled. Override it for a router of your own.
+   * It is declared on the interface, so code that implements
+   * FetchItInstance itself adds it.
    */
   navigate(url: string): boolean;
   /**
