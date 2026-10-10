@@ -21,6 +21,9 @@ class FetchItFileStore implements FetchItStore
     /** @var int Seconds a mark lives */
     protected $ttl;
 
+    /** @var bool Whether a form file that cannot be read was logged in this request */
+    protected $unreadable = false;
+
 
     /**
      * @param modX $modx
@@ -48,17 +51,17 @@ class FetchItFileStore implements FetchItStore
         if (!is_dir($dir) && !@mkdir($dir, 0775, true) && !is_dir($dir)) {
             call_user_func($this->log, "could not create {$dir}; forms are refused until it is writable");
 
-            return 'failed';
+            return self::FAILED;
         }
 
         $handle = @fopen($dir . $nonce, 'x');
         if ($handle === false) {
             if (file_exists($dir . $nonce)) {
-                return 'used';
+                return self::USED;
             }
             call_user_func($this->log, "could not write to {$dir}; forms are refused until it is writable");
 
-            return 'failed';
+            return self::FAILED;
         }
         fclose($handle);
 
@@ -67,7 +70,7 @@ class FetchItFileStore implements FetchItStore
             $this->prune(time());
         }
 
-        return 'marked';
+        return self::MARKED;
     }
 
 
@@ -135,13 +138,26 @@ class FetchItFileStore implements FetchItStore
 
 
     /**
+     * No file: null. A file that cannot be read or does not start with HIDE
+     * (not written by saveForm()): false, logged once per request.
+     *
      * {@inheritdoc}
      */
     public function loadForm($action)
     {
-        $content = @file_get_contents($this->formFile($action));
-        if ($content === false || strpos($content, self::HIDE) !== 0) {
+        $file = $this->formFile($action);
+        if (!file_exists($file)) {
             return null;
+        }
+        $content = @file_get_contents($file);
+        if ($content === false || strpos($content, self::HIDE) !== 0) {
+            if (!$this->unreadable) {
+                $this->unreadable = true;
+                call_user_func($this->log, "the properties of form " . substr($action, 0, 8) . " in {$file} cannot be read;"
+                    . ' the form is answered with fetchit_err_store');
+            }
+
+            return false;
         }
 
         return substr($content, strlen(self::HIDE));
@@ -185,8 +201,8 @@ class FetchItFileStore implements FetchItStore
 
 
     /**
-     * The marks of one of the 256 shard directories, a random one, so that
-     * one run stays small however many marks there are.
+     * One random shard of the marks and one of the forms, so that one run
+     * stays small however many there are.
      *
      * {@inheritdoc}
      */

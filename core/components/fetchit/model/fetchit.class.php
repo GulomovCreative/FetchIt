@@ -24,6 +24,18 @@ class FetchIt
     protected $guard;
 
     /**
+     * Whether the last loadActionProperties() found no properties because
+     * the store of fetchit.page_cache failed: process() then answers
+     * fetchit_err_store instead of "form not found".
+     *
+     * @var bool
+     */
+    protected $storeFailed = false;
+
+    /** @var bool[] The actions whose stored properties were logged as not valid JSON */
+    protected $invalidJson = [];
+
+    /**
      * Set by loadScript() when the FetchIt snippet puts a form on the page,
      * or FetchItScript asks for the script of forms that come later, so the
      * plugin adds the scripts at OnWebPagePrerender of the same request.
@@ -663,8 +675,9 @@ HTML;
             if ($json === false) {
                 $this->modx->log(modX::LOG_LEVEL_ERROR, '[FetchIt] The properties of form ' . substr($action, 0, 8)
                     . ' cannot be stored as JSON (' . json_last_error_msg() . '); it does not work from a full-page cache');
-            } else {
-                $store->saveForm($action, $json, time());
+            } elseif (!$store->saveForm($action, $json, time())) {
+                $this->modx->log(modX::LOG_LEVEL_ERROR, '[FetchIt] The properties of form ' . substr($action, 0, 8)
+                    . ' could not be stored; it does not work from a full-page cache');
             }
         }
 
@@ -685,7 +698,9 @@ HTML;
 
 
     /**
-     * Stored action properties, or null if missing / invalid.
+     * Stored action properties, or null if missing / invalid. With
+     * fetchit.page_cache a failure of the store is remembered for process(),
+     * and properties that are not valid JSON are logged once.
      *
      * @param string $action
      *
@@ -693,6 +708,7 @@ HTML;
      */
     public function loadActionProperties($action)
     {
+        $this->storeFailed = false;
         if (!empty(session_id()) && isset($_SESSION['FetchIt'][$action])) {
             $stored = $_SESSION['FetchIt'][$action];
         } else {
@@ -700,12 +716,45 @@ HTML;
             if ((empty($stored) || !is_array($stored)) && $this->pageCache() && self::isAction($action)
                 && ($store = $this->guard()->store()) !== null
             ) {
-                $json = $store->loadForm($action);
-                $stored = $json !== null ? json_decode($json, true) : null;
+                $stored = $this->decodeStored($action, $store->loadForm($action));
             }
         }
 
         if (empty($stored) || !is_array($stored)) {
+            return null;
+        }
+
+        return $stored;
+    }
+
+
+    /**
+     * The properties of a form as FetchItStore::loadForm() gave them.
+     *
+     * @param string $action
+     * @param string|null|false $json
+     *
+     * @return array|null
+     */
+    protected function decodeStored($action, $json)
+    {
+        if ($json === false) {
+            $this->storeFailed = true;
+
+            return null;
+        }
+        if ($json === null) {
+            return null;
+        }
+
+        $stored = json_decode($json, true);
+        if (!is_array($stored)) {
+            if (!isset($this->invalidJson[$action])) {
+                $this->invalidJson[$action] = true;
+                $this->modx->log(modX::LOG_LEVEL_ERROR, '[FetchIt] The stored properties of form ' . substr($action, 0, 8)
+                    . ' are not valid JSON (' . json_last_error_msg() . '); the form is answered with "form not found"');
+            }
+
             return null;
         }
 
@@ -750,7 +799,7 @@ HTML;
     {
         $stored = $this->loadActionProperties($action);
         if ($stored === null) {
-            return $this->error('fetchit_err_action_nf');
+            return $this->error($this->storeFailed ? 'fetchit_err_store' : 'fetchit_err_action_nf');
         }
 
         // Do not set FetchIt=>$this here (PDO in session, #17).

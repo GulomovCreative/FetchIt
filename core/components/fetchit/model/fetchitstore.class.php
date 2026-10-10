@@ -12,13 +12,22 @@ interface FetchItStore
     /** Seconds the properties of a form are kept after its last render: 90 days */
     const FORM_TTL = 7776000;
 
+    /** What mark() returns: the nonce is marked now */
+    const MARKED = 'marked';
+
+    /** What mark() returns: the nonce was marked already */
+    const USED = 'used';
+
+    /** What mark() returns: the mark could not be written */
+    const FAILED = 'failed';
+
     /**
      * Mark the nonce of a token as used.
      *
      * @param string $nonce 16 hex characters
      * @param int $expires When the mark may go
      *
-     * @return string "marked", "used" when it was already, or "failed"
+     * @return string MARKED, USED when it was already, or FAILED
      */
     public function mark($nonce, $expires);
 
@@ -45,9 +54,12 @@ interface FetchItStore
     public function saveForm($action, $json, $now);
 
     /**
+     * Read the properties of a form kept by saveForm().
+     *
      * @param string $action 32 hex characters
      *
-     * @return string|null The properties of the form as JSON
+     * @return string|null|false The properties of the form as JSON; null
+     *     when there are none; false when the store failed (logged)
      */
     public function loadForm($action);
 
@@ -59,7 +71,8 @@ interface FetchItStore
     public function prune($now);
 
     /**
-     * Whether a counter that could not be stored refuses the submission.
+     * Whether a counter that could not be stored refuses the request: a
+     * submission or a token exchange.
      *
      * @return bool
      */

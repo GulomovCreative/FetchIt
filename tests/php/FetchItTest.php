@@ -1062,6 +1062,62 @@ class FetchItTest extends TestCase
         $this->modx->removeCache();
     }
 
+    private function storedForm($content)
+    {
+        $dir = $this->modx->getCachePath() . 'fetchit/forms/01/';
+        mkdir($dir, 0775, true);
+        file_put_contents($dir . self::ACTION . '.php', $content);
+    }
+
+    private function loggedText()
+    {
+        return implode("\n", array_column($this->modx->logged, 1));
+    }
+
+    public function testWithThePageCacheAFailingStoreIsNotAMissingForm()
+    {
+        // The visitor is told to try later, not that the form is gone.
+        $this->modx->options['fetchit.page_cache'] = true;
+        $this->storedForm('not a form file');
+
+        $response = $this->decode($this->fetchit()->process(self::ACTION));
+
+        $this->assertFalse($response['success']);
+        $this->assertSame('fetchit_err_store', $response['message']);
+        $this->assertStringContainsString('cannot be read', $this->loggedText());
+        $this->modx->removeCache();
+    }
+
+    public function testWithThePageCacheStoredPropertiesThatAreNotJsonAreLogged()
+    {
+        $this->modx->options['fetchit.page_cache'] = true;
+        $this->storedForm("<?php exit; ?>\n{\"snippet\":");
+        $fetchit = $this->fetchit();
+
+        $response = $this->decode($fetchit->process(self::ACTION));
+        $fetchit->loadActionProperties(self::ACTION);
+
+        $this->assertSame('fetchit_err_action_nf', $response['message']);
+        $logged = array_values(array_filter(array_column($this->modx->logged, 1), function ($message) {
+            return strpos($message, 'not valid JSON') !== false;
+        }));
+        $this->assertCount(1, $logged, 'Logged once');
+        $this->assertStringContainsString('[FetchIt] The stored properties of form 01234567 are not valid JSON (Syntax error)', $logged[0]);
+        $this->modx->removeCache();
+    }
+
+    public function testWithThePageCacheAFormThatCannotBeStoredIsLogged()
+    {
+        $this->modx->options['fetchit.page_cache'] = true;
+        file_put_contents($this->modx->getCachePath() . 'fetchit', 'a file where the directory should be');
+
+        $this->fetchit()->storeActionProperties(self::ACTION, ['snippet' => 'FormIt']);
+
+        $this->assertStringContainsString('[FetchIt] The properties of form 01234567 could not be stored;'
+            . ' it does not work from a full-page cache', $this->loggedText());
+        $this->modx->removeCache();
+    }
+
     public function testTheConfigAsksForAFreshTokenOnlyWithThePageCacheAndTheProtection()
     {
         $this->assertArrayNotHasKey('freshToken', $this->fetchit()->clientConfig('abc'));

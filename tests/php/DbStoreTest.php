@@ -57,26 +57,35 @@ class DbStoreTest extends TestCase
         $this->connect($errorMode);
         $store = $this->store();
 
-        $this->assertSame('marked', $store->mark(self::NONCE, 2000000000));
-        $this->assertSame('used', $store->mark(self::NONCE, 2000000000));
+        $this->assertSame('marked', $store->mark(self::NONCE, time() + 3600));
+        $this->assertSame('used', $store->mark(self::NONCE, time() + 3600));
         $this->assertSame([], $this->logged);
     }
 
     /**
      * @dataProvider errorModes
      */
-    public function testWithoutTheTableEverythingFailsAndIsLoggedOnce($errorMode)
+    public function testWithoutTheTableEachOperationFailsAndIsLoggedOnce($errorMode)
     {
         $this->connect($errorMode);
         $store = $this->store();
         $store->uninstall();
 
-        $this->assertSame('failed', $store->mark(self::NONCE, 2000000000));
+        $this->assertSame('failed', $store->mark(self::NONCE, time() + 3600));
+        $this->assertSame('failed', $store->mark(self::NONCE, time() + 3600));
         $this->assertNull($store->hit('k', 600, 1000));
-        $this->assertCount(1, $this->logged);
-        $this->assertStringContainsString('fetchit_test_fetchit_store', $this->logged[0]);
-        $this->assertStringContainsString('SQLSTATE', $this->logged[0]);
-        $this->assertStringNotContainsString('INSERT', $this->logged[0], 'No SQL in the log');
+        $this->assertFalse($store->saveForm(self::ACTION, '{}', 1000));
+        $this->assertFalse($store->loadForm(self::ACTION));
+        $store->prune(1000);
+
+        // The driver message may hold values of the query: only its codes.
+        $code = '\(SQLSTATE [0-9A-Z]{5}, code [^)]+\)';
+        $this->assertCount(5, $this->logged);
+        $this->assertMatchesRegularExpression("#^The table fetchit_test_fetchit_store failed on mark {$code}; forms are refused$#", $this->logged[0]);
+        $this->assertMatchesRegularExpression("#^The table fetchit_test_fetchit_store failed on hit {$code}; forms are refused$#", $this->logged[1]);
+        $this->assertMatchesRegularExpression("#^The table fetchit_test_fetchit_store failed on saveForm {$code}; the form does not work from a full-page cache$#", $this->logged[2]);
+        $this->assertMatchesRegularExpression("#^The table fetchit_test_fetchit_store failed on loadForm {$code}; the form is answered with fetchit_err_store$#", $this->logged[3]);
+        $this->assertMatchesRegularExpression("#^The table fetchit_test_fetchit_store failed on prune {$code}$#", $this->logged[4]);
     }
 
     /**
@@ -111,14 +120,14 @@ class DbStoreTest extends TestCase
         $store = new class($this->modx, function () {}) extends FetchItDbStore {
             public $raced = false;
 
-            protected function run($sql, array $params, $quiet = false)
+            protected function run($sql, array $params, $operation)
             {
                 if (!$this->raced && strpos($sql, 'INSERT') === 0) {
                     $this->raced = true;
-                    parent::run($sql, [$params[0], $params[1], $params[2]]);
+                    parent::run($sql, [$params[0], $params[1], $params[2]], $operation);
                 }
 
-                return parent::run($sql, $params, $quiet);
+                return parent::run($sql, $params, $operation);
             }
         };
 
@@ -193,7 +202,36 @@ class DbStoreTest extends TestCase
         $store->uninstall();
 
         $this->assertFalse($store->saveForm(self::ACTION, '{}', 1000));
+        $this->assertFalse($store->loadForm(self::ACTION), 'A failure, not a form that is not there');
+    }
+
+    /**
+     * @dataProvider errorModes
+     */
+    public function testLongFormPropertiesAreKept($errorMode)
+    {
+        $this->connect($errorMode);
+        $json = json_encode(['text' => str_repeat('a', 60000 - 11)]);
+        $this->assertSame(60000, strlen($json));
+
+        $this->assertTrue($this->store()->saveForm(self::ACTION, $json, 1000));
+
+        $this->assertSame($json, $this->store()->loadForm(self::ACTION));
+        $this->assertSame([], $this->logged);
+    }
+
+    public function testFormPropertiesLongerThanTheTableKeepsAreRefused()
+    {
+        // TEXT of MySQL, the smallest of the databases, holds 65535 bytes.
+        $json = json_encode(['text' => str_repeat('a', 70000 - 11)]);
+        $store = $this->store();
+
+        $this->assertFalse($store->saveForm(self::ACTION, $json, 1000));
+        $this->assertFalse($store->saveForm(self::ACTION, $json, 1000));
+
         $this->assertNull($store->loadForm(self::ACTION));
+        $this->assertSame(['The properties of form 01234567 are 70000 bytes, more than the table keeps (65535);'
+            . ' it does not work from a full-page cache'], $this->logged);
     }
 
     public function testOneOfManyAtOnceGetsTheMark()
