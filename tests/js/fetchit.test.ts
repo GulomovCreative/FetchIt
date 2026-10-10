@@ -335,6 +335,23 @@ describe('forms loaded after the page', () => {
     expect(FetchIt.instances.has(next.form)).toBe(true)
   })
 
+  it('sends a form put back later only once', async () => {
+    // A modal that detaches its content on close and appends it again.
+    const { host, form } = configuredForm()
+    document.body.append(host)
+    await settle()
+    host.remove()
+    await settle()
+    document.body.append(host)
+    await settle()
+    const fetch = respond({ success: true, message: 'Thanks', data: [] })
+
+    await submit(form)
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(FetchIt.instances.has(form)).toBe(true)
+  })
+
   it('destroy() twice does nothing more', async () => {
     const { host, form } = configuredForm()
     document.body.append(host)

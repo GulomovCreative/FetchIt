@@ -59,6 +59,9 @@ class FetchIt implements FetchItInstance {
   declare captcha: Captcha | null;
   // The proof of work for the current token, started ahead; a new token stops it.
   declare work?: { token: string; solution: Promise<string>; stop: AbortController };
+  // Removes the listeners of the form when the instance is destroyed: a form
+  // put back on the page later gets a new instance and must not be sent twice.
+  listening = new AbortController();
 
   constructor (form: unknown, config: FetchItConfig) {
     if (!(form instanceof HTMLFormElement)) {
@@ -85,7 +88,13 @@ class FetchIt implements FetchItInstance {
   }
 
   prepareEvents() {
+    const signal = this.listening.signal;
+
     this.form.addEventListener('submit', async event => {
+      // A browser that does not know the signal option keeps the listener.
+      if (FetchIt.instances.get(this.form) !== this) {
+        return;
+      }
       event.preventDefault();
 
       // requestSubmit() works on disabled buttons too: one request at a time.
@@ -216,7 +225,7 @@ class FetchIt implements FetchItInstance {
         // A captcha answer is good for one check.
         this.captcha?.reset();
       }
-    });
+    }, { signal });
 
     this.form.addEventListener('reset', () => {
       dispatch('fetchit:reset', { form: this.form, fetchit: this }, false);
@@ -225,28 +234,29 @@ class FetchIt implements FetchItInstance {
         this.clearFormMessages();
       }
       FetchIt.notify('reset');
-    });
+    }, { signal });
 
     ['change', 'input'].forEach(eventName => {
       this.form.addEventListener(eventName, ({ target }) => {
         this.clearError((target as Element).getAttribute('name'));
-      });
+      }, { signal });
     });
 
     // The visitor started on the form: solve the proof of work meanwhile.
-    this.form.addEventListener('focusin', () => this.solveAhead(), { once: true });
+    this.form.addEventListener('focusin', () => this.solveAhead(), { once: true, signal });
   }
 
   /**
-   * The form is gone: forget it, stop the proof of work, remove the
-   * captcha widget. Its listeners go with the form; an answer still on
-   * its way is handled as usual.
+   * The form is gone: forget it, remove its listeners, stop the proof of
+   * work, remove the captcha widget. An answer still on its way is handled
+   * as usual.
    */
   destroy () {
     if (FetchIt.instances.get(this.form) !== this) {
       return;
     }
     FetchIt.instances.delete(this.form);
+    this.listening.abort();
     const index = FetchIt.forms.indexOf(this.form);
     if (index !== -1) {
       FetchIt.forms.splice(index, 1);
