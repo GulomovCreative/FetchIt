@@ -1879,6 +1879,20 @@ describe('a page from a full-page cache', () => {
     expect(field(form, 'fetchit_token').value).toBe('fresh')
   })
 
+  it('logs an exchange that fails on the first focus instead of leaving it unhandled', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config({ freshToken: true }))
+    cachedPageServer(async () => ({ 'X-FetchIt-Token': 'fresh' }))
+    const failure = new Error('broken')
+    vi.spyOn(FetchIt.prototype, 'exchangeToken').mockRejectedValueOnce(failure)
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    focus(form)
+    await settle()
+
+    expect(error).toHaveBeenCalledWith(failure)
+  })
+
   it('sends the page with the exchange, for the settings of its context', async () => {
     const form = mountProtectedForm()
     FetchIt.create(config({ freshToken: true }))
