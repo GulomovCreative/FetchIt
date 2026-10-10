@@ -719,6 +719,7 @@
 			_defineProperty(this, "tokenExchange", void 0);
 			_defineProperty(this, "freshTokenReadyAt", 0);
 			_defineProperty(this, "submissionState", null);
+			_defineProperty(this, "unanswered", void 0);
 			if (!(form instanceof HTMLFormElement)) throw new Error("FetchIt: the element is not a form");
 			(_FetchIt$instances$ge = FetchIt.instances.get(form)) === null || _FetchIt$instances$ge === void 0 || _FetchIt$instances$ge.destroy();
 			this.form = form;
@@ -849,6 +850,7 @@
 				}
 			}, { signal });
 			this.form.addEventListener("reset", () => {
+				this.unanswered = void 0;
 				dispatch("fetchit:reset", {
 					form: this.form,
 					fetchit: this
@@ -862,6 +864,7 @@
 			}, { signal });
 			["change", "input"].forEach((eventName) => {
 				this.form.addEventListener(eventName, ({ target }) => {
+					this.unanswered = void 0;
 					this.clearError(target.getAttribute("name"));
 				}, { signal });
 			});
@@ -889,6 +892,7 @@
 			if (index !== -1) FetchIt.forms.splice(index, 1);
 			(_this$work = this.work) === null || _this$work === void 0 || _this$work.stop.abort();
 			this.work = void 0;
+			this.unanswered = void 0;
 			(_this$captcha3 = this.captcha) === null || _this$captcha3 === void 0 || _this$captcha3.destroy();
 		}
 		/**
@@ -916,11 +920,15 @@
 		/**
 		* Send the form and read the answer: the token exchange and the
 		* protection once, then up to 1 + config.retries attempts with one
-		* X-FetchIt-Submission key, a pause before each retry. Undefined when the
+		* X-FetchIt-Submission key, a pause before each retry. The key is that of
+		* the last submission when it got no FetchIt answer (the last attempt
+		* failed or was still processed) and the form has not changed since; it
+		* is kept for the next one when this one ends so too. Undefined when the
 		* form was destroyed meanwhile. Throws why the last attempt failed when no
 		* attempt brought a FetchIt answer.
 		*/
 		async send(formData) {
+			var _this$unanswered;
 			if (this.config.freshToken) {
 				await this.awaitFreshToken();
 				const token = this.currentToken();
@@ -930,7 +938,8 @@
 			}
 			await this.protectSubmission(formData);
 			const retries = Math.min(Math.max(Math.floor(Number(this.config.retries) || 0), 0), 5);
-			const submission = retries > 0 ? submissionKey() : "";
+			const submission = retries > 0 ? (_this$unanswered = this.unanswered) !== null && _this$unanswered !== void 0 ? _this$unanswered : submissionKey() : "";
+			this.unanswered = void 0;
 			for (let attempt = 0;; attempt++) {
 				let failure;
 				try {
@@ -952,6 +961,7 @@
 							if (!unavailable.includes(query.status)) throw failure;
 						} else if (!pending || attempt >= retries) {
 							const redirect = typeof body.redirect === "string" && body.redirect !== "" ? body.redirect : void 0;
+							if (pending && submission) this.unanswered = submission;
 							return {
 								response: toResponse(body),
 								redirect
@@ -969,7 +979,10 @@
 					attempt: attempt + 1,
 					error: failure,
 					fetchit: this
-				})) throw failure;
+				})) {
+					if (submission) this.unanswered = submission;
+					throw failure;
+				}
 				await new Promise((resolve) => setTimeout(resolve, Math.min(1e3 * 2 ** attempt, 8e3)));
 				if (this.destroyed) return;
 				const token = this.currentToken();

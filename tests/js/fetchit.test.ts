@@ -2852,4 +2852,79 @@ describe('timeout and retries', () => {
 
     expect(keyOf(fetch.mock.calls[0])).toMatch(uuid)
   })
+
+  // Two attempts that time out, then whatever the next submission gets.
+  async function timedOut(form: HTMLFormElement, overrides: Partial<Config>, ...then: Step[]) {
+    FetchIt.create(config({ timeout: 5, retries: 1, timeoutMessage: 'No answer in time', ...overrides }))
+    const fetch = server('hang', 'hang', ...then)
+    await send(form)
+    await vi.advanceTimersByTimeAsync(5000 + 1000 + 5000)
+    expect(element(form, '[data-validation-error]').textContent).toBe('No answer in time')
+    return fetch
+  }
+
+  it('sends the form again with the key of a submission that got no answer', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountForm()
+    const fetch = await timedOut(form, {}, { body: sent })
+
+    await send(form)
+
+    expect(fetch).toHaveBeenCalledTimes(3)
+    expect(keyOf(fetch.mock.calls[2])).toBe(keyOf(fetch.mock.calls[0]))
+    expect(element(form, '[data-success]').textContent).toBe('Sent')
+  })
+
+  it('gives a new key once the form has changed', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountForm()
+    const fetch = await timedOut(form, {}, { body: sent })
+
+    field(form, 'email').value = 'ann@example.com'
+    field(form, 'email').dispatchEvent(new Event('input', { bubbles: true }))
+    await send(form)
+
+    expect(keyOf(fetch.mock.calls[2])).toMatch(uuid)
+    expect(keyOf(fetch.mock.calls[2])).not.toBe(keyOf(fetch.mock.calls[0]))
+  })
+
+  it('gives a new key after a reset of the form', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountForm()
+    const fetch = await timedOut(form, {}, { body: sent })
+
+    form.reset()
+    await send(form)
+
+    expect(keyOf(fetch.mock.calls[2])).toMatch(uuid)
+    expect(keyOf(fetch.mock.calls[2])).not.toBe(keyOf(fetch.mock.calls[0]))
+  })
+
+  it('gives a new key after the answer to a submission sent again', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountForm()
+    const fetch = await timedOut(form, { clearFieldsOnSuccess: false }, { body: sent }, { body: sent })
+
+    await send(form)
+    await send(form)
+
+    expect(keyOf(fetch.mock.calls[2])).toBe(keyOf(fetch.mock.calls[0]))
+    expect(keyOf(fetch.mock.calls[3])).toMatch(uuid)
+    expect(keyOf(fetch.mock.calls[3])).not.toBe(keyOf(fetch.mock.calls[0]))
+  })
+
+  it('sends the form again with its key when it was still processed after the retries', async () => {
+    const form = mountForm()
+    FetchIt.create(config({ retries: 1 }))
+    const pending = { status: 409, body: { success: false, message: 'Still', data: [] }, headers: { 'X-FetchIt-Refused': 'pending' } }
+    const fetch = server(pending, pending, { body: sent })
+
+    await send(form)
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(element(form, '[data-validation-error]').textContent).toBe('Still')
+    await send(form)
+
+    expect(fetch).toHaveBeenCalledTimes(3)
+    expect(keyOf(fetch.mock.calls[2])).toBe(keyOf(fetch.mock.calls[0]))
+  })
 })

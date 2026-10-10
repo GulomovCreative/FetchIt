@@ -145,6 +145,10 @@ class FetchIt implements FetchItInstance {
   // The state of the submission, kept also with formState off
   // (setSubmissionState()).
   submissionState: 'sending' | 'success' | 'error' | null = null;
+  // The key of a submission that got no FetchIt answer (config.retries): the
+  // form sent again unchanged carries it, so the server does not process it
+  // twice. A change of the form, a reset or an answer forgets it.
+  unanswered: string | undefined = undefined;
 
   constructor (form: unknown, config: FetchItConfig) {
     if (!(form instanceof HTMLFormElement)) {
@@ -335,6 +339,7 @@ class FetchIt implements FetchItInstance {
     }, { signal });
 
     this.form.addEventListener('reset', () => {
+      this.unanswered = undefined;
       dispatch('fetchit:reset', { form: this.form, fetchit: this }, false);
       this.clearErrors();
       if (!this.preserveFormMessagesOnReset) {
@@ -350,6 +355,7 @@ class FetchIt implements FetchItInstance {
 
     ['change', 'input'].forEach(eventName => {
       this.form.addEventListener(eventName, ({ target }) => {
+        this.unanswered = undefined;
         this.clearError((target as Element).getAttribute('name'));
       }, { signal });
     });
@@ -385,6 +391,7 @@ class FetchIt implements FetchItInstance {
     }
     this.work?.stop.abort();
     this.work = undefined;
+    this.unanswered = undefined;
     this.captcha?.destroy();
   }
 
@@ -420,7 +427,10 @@ class FetchIt implements FetchItInstance {
   /**
    * Send the form and read the answer: the token exchange and the
    * protection once, then up to 1 + config.retries attempts with one
-   * X-FetchIt-Submission key, a pause before each retry. Undefined when the
+   * X-FetchIt-Submission key, a pause before each retry. The key is that of
+   * the last submission when it got no FetchIt answer (the last attempt
+   * failed or was still processed) and the form has not changed since; it
+   * is kept for the next one when this one ends so too. Undefined when the
    * form was destroyed meanwhile. Throws why the last attempt failed when no
    * attempt brought a FetchIt answer.
    */
@@ -439,7 +449,8 @@ class FetchIt implements FetchItInstance {
     await this.protectSubmission(formData);
 
     const retries = Math.min(Math.max(Math.floor(Number(this.config.retries) || 0), 0), 5);
-    const submission = retries > 0 ? submissionKey() : '';
+    const submission = retries > 0 ? this.unanswered ?? submissionKey() : '';
+    this.unanswered = undefined;
     for (let attempt = 0; ; attempt++) {
       let failure: unknown;
       try {
@@ -466,6 +477,9 @@ class FetchIt implements FetchItInstance {
             }
           } else if (!pending || attempt >= retries) {
             const redirect = typeof body.redirect === 'string' && body.redirect !== '' ? body.redirect : undefined;
+            if (pending && submission) {
+              this.unanswered = submission;
+            }
             return { response: toResponse(body), redirect };
           } else {
             failure = new Error('FetchIt: the form is still processed');
@@ -483,6 +497,9 @@ class FetchIt implements FetchItInstance {
         return undefined;
       }
       if (attempt >= retries || !dispatch('fetchit:retry', { form: this.form, formData, attempt: attempt + 1, error: failure, fetchit: this })) {
+        if (submission) {
+          this.unanswered = submission;
+        }
         throw failure;
       }
       await new Promise(resolve => setTimeout(resolve, Math.min(1000 * 2 ** attempt, 8000)));
