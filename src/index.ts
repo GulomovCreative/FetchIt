@@ -290,6 +290,19 @@ class FetchIt implements FetchItInstance {
         if (redirect) {
           try {
             leaving = this.navigate(redirect);
+            if (leaving) {
+              // Back from the redirect may restore this page from the
+              // bfcache as it was left: give the form back.
+              const restore = (pageEvent: PageTransitionEvent) => {
+                if (pageEvent.persisted) {
+                  window.removeEventListener('pageshow', restore);
+                  this.enableFields();
+                  this.pending = false;
+                  this.captcha?.reset();
+                }
+              };
+              window.addEventListener('pageshow', restore, { signal: this.listening.signal });
+            }
           } catch (error) {
             console.error('FetchIt: navigate() threw; the visitor stays on the page', error);
           }
@@ -579,7 +592,8 @@ class FetchIt implements FetchItInstance {
 
   /**
    * Go to the page of a successful answer: an http(s) address only,
-   * relative ones against the page. True when the page is left.
+   * relative ones against the page. True when the page is left (a change of
+   * the hash of the same page is not leaving).
    */
   navigate (url: string): boolean {
     let target: URL;
@@ -593,8 +607,10 @@ class FetchIt implements FetchItInstance {
       console.error(`FetchIt: the redirect ${url} is not an http(s) address; the visitor stays on the page`);
       return false;
     }
+    const here = new URL(window.location.href);
+    const sameDocument = target.hash !== '' && target.href.split('#')[0] === here.href.split('#')[0];
     window.location.assign(target.href);
-    return true;
+    return !sameDocument;
   }
 
   clearErrors () {

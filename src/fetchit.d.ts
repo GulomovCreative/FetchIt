@@ -220,7 +220,7 @@ interface FetchItInstance {
   /**
    * Go to the page of a successful answer, after fetchit:success: only an
    * http(s) address, relative ones against the page; anything else is
-   * logged. True when the page is left: the fields then stay disabled.
+   * logged. True when the page is left (not for a hash of the same page): the fields then stay disabled.
    * Override it for a router of your own.
    */
   navigate(url: string): boolean;

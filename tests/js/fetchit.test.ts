@@ -2457,6 +2457,47 @@ describe('redirect after a success', () => {
     expect(instance(form)!.pending).toBe(false)
   })
 
+  it('gives the form back when the page comes back from the bfcache', async () => {
+    navigate().mockReturnValue(true)
+    const form = mountForm()
+    FetchIt.create(config())
+    vi.stubGlobal('fetch', answerWith({ success: true, message: 'Thanks', data: [], redirect: '/thanks/' }))
+    await submit(form)
+
+    window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: false }))
+    expect(field(form, 'email').disabled).toBe(true)
+
+    window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }))
+    expect(field(form, 'email').disabled).toBe(false)
+    expect(instance(form)!.pending).toBe(false)
+    expect(form.getAttribute('data-fetchit-state')).toBe('success')
+  })
+
+  it('does not lock the form when navigate() of the site throws', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    navigate().mockImplementation(() => { throw new Error('x') })
+    const form = mountForm()
+    FetchIt.create(config())
+    vi.stubGlobal('fetch', answerWith({ success: true, message: 'Thanks', data: [], redirect: '/thanks/' }))
+
+    await submit(form)
+
+    expect(field(form, 'email').disabled).toBe(false)
+    expect(instance(form)!.pending).toBe(false)
+    expect(error).toHaveBeenCalledWith(expect.stringContaining('navigate() threw'), expect.any(Error))
+  })
+
+  it('navigate() does not leave the page for a hash of the same page', () => {
+    const form = mountForm()
+    FetchIt.create(config())
+    const fetchit = instance(form) as unknown as Navigating
+
+    expect(fetchit.navigate('#done')).toBe(false)
+    expect(fetchit.navigate(`${window.location.href.split('#')[0]}#x`)).toBe(false)
+    expect(window.location.hash).toBe('#x')
+    window.location.hash = ''
+  })
+
   it('navigate() turns down what is not an http(s) address', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const form = mountForm()
