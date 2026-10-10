@@ -1411,4 +1411,14 @@ class FetchItTest extends TestCase
         $this->assertArrayNotHasKey('redirectTo', $config);
         $this->assertArrayNotHasKey('redirectParams', $config);
     }
+
+    public function testTheSnippetDoesNotDeclarePropertiesOfTheProcessingSnippet()
+    {
+        $snippets = require dirname(MODX_CORE_PATH) . '/_build/elements/snippets.php';
+
+        // Their defaults would be stored with the form and override the values of the processing snippet.
+        foreach (['redirectTo', 'redirectParams', 'timeout', 'retries'] as $name) {
+            $this->assertArrayNotHasKey($name, $snippets['FetchIt']['properties']);
+        }
+    }
 }

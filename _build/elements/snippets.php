@@ -4,6 +4,9 @@ return [
     'FetchIt' => [
         'file' => 'fetchit',
         'description' => '',
+        // Not here: properties the processing snippet may also have (redirectTo,
+        // redirectParams, timeout, retries). The snippet stores all its properties
+        // with the form, so their defaults would override the snippet's own values.
         'properties' => [
             'form' => [
                 'type' => 'textfield',
@@ -28,22 +31,6 @@ return [
             'ariaBusy' => [
                 'type' => 'combo-boolean',
                 'value' => true,
-            ],
-            'redirectTo' => [
-                'type' => 'textfield',
-                'value' => '',
-            ],
-            'redirectParams' => [
-                'type' => 'textfield',
-                'value' => '',
-            ],
-            'timeout' => [
-                'type' => 'numberfield',
-                'value' => 0,
-            ],
-            'retries' => [
-                'type' => 'numberfield',
-                'value' => 0,
             ],
         ],
     ],
