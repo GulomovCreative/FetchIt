@@ -5,6 +5,12 @@ require_once dirname(__FILE__) . '/fetchitcaptcha.class.php';
 
 class FetchIt
 {
+    /**
+     * What FetchItScript outputs. A cached call keeps it in the cached page,
+     * so the plugin finds it on every view, and takes it out.
+     */
+    const SCRIPT_MARKER = '<!--FetchItScript-->';
+
     public $version = '4.0.0';
     /** @var modX $modx */
     public $modx;
@@ -19,7 +25,8 @@ class FetchIt
      * or FetchItScript asks for the script of forms that come later, so the
      * plugin adds the scripts at OnWebPagePrerender of the same request.
      * Kept per request, not in the session, which may not exist. Only an
-     * uncached call ([[!FetchIt]]) sets it on every page view.
+     * uncached call sets it on every page view; a cached FetchItScript is
+     * found by its SCRIPT_MARKER.
      *
      * @var bool
      */
@@ -507,18 +514,33 @@ HTML;
     /**
      * Called by the plugin at OnWebPagePrerender: add the frontend script,
      * the script of the captcha provider and the bootstrap that starts the
-     * forms to <head> once, if loadScript() ran in this request. A fragment
-     * without <head> and <body> gets nothing. The built-in notifier is part
-     * of the frontend script.
+     * forms to <head> once, if loadScript() ran in this request or the page
+     * has the SCRIPT_MARKER of FetchItScript, which is taken out. A
+     * fragment without <head> and <body> gets nothing. The built-in
+     * notifier is part of the frontend script.
      */
     public function registerScript()
     {
-        if (!self::$scriptRequested) {
+        // The event fired with no page, or a page whose output is not text.
+        if (empty($this->modx->resource) || !is_string($this->modx->resource->_output)) {
+            if (self::$scriptRequested) {
+                self::$scriptRequested = false;
+                $this->modx->log(modX::LOG_LEVEL_ERROR, '[FetchIt] Could not add the script: OnWebPagePrerender has no page output');
+            }
+
+            return;
+        }
+
+        $output = &$this->modx->resource->_output;
+        $marked = strpos($output, self::SCRIPT_MARKER) !== false;
+        if ($marked) {
+            $output = str_replace(self::SCRIPT_MARKER, '', $output);
+        }
+        if (!self::$scriptRequested && !$marked) {
             return;
         }
         self::$scriptRequested = false;
 
-        $output = &$this->modx->resource->_output;
         $id = $this->modx->resource->get('id');
         // A fragment (a resource with an empty template, loaded into
         // another page): its forms carry their config, and the script comes
