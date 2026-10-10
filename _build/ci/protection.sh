@@ -72,7 +72,7 @@ case "$what" in
     pow)
         echo "# A form that asks for a proof of work (id $custom)"
         action="$(open_page "$custom")"
-        check "the page asks for 12 bits" grep -q '"pow":12' "$jar.html"
+        check "the form asks for 12 bits" grep -q '&quot;pow&quot;:12' "$jar.html"
         response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom")"
         check "sent without a solution, it is refused" test "$(header x-fetchit-refused)" = pow
         check "the refusal tells the script the difficulty" test "$(header x-fetchit-pow)" = 12
@@ -86,7 +86,7 @@ case "$what" in
         echo "# A form behind Turnstile (id $custom)"
         action="$(open_page "$custom")"
         check "the page links the script of Turnstile" grep -q 'challenges\.cloudflare\.com/turnstile/v0/api\.js' "$jar.html"
-        check "the page passes the site key" grep -q '"captcha":{"provider":"turnstile","siteKey":"1x00000000000000000000AA"}' "$jar.html"
+        check "the form passes the site key" grep -q '&quot;captcha&quot;:&#123;&quot;provider&quot;:&quot;turnstile&quot;,&quot;siteKey&quot;:&quot;1x00000000000000000000AA&quot;&#125;' "$jar.html"
         response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom")"
         check "sent without an answer, it is refused" test "$(header x-fetchit-refused)" = captcha
         response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom" -F cf-turnstile-response=XXXX.DUMMY.TOKEN.XXXX)"
