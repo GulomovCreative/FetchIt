@@ -1830,12 +1830,12 @@ describe('the bootstrap of the page', () => {
 
 type Exchange = (init: RequestInit) => Promise<Record<string, string>>
 
+const submitted: string[] = []
+
 /**
  * A server for a page from a full-page cache: exchanges answer with
  * `exchange`, submissions with the answers in turn.
  */
-const submitted: string[] = []
-
 function cachedPageServer(exchange: Exchange, ...answers: { body: unknown, headers: Record<string, string> }[]) {
   submitted.length = 0
   const fetch = vi.fn(async (_input: RequestInfo, init?: RequestInit) => {
@@ -2001,6 +2001,27 @@ describe('a page from a full-page cache', () => {
 
     expect(signal?.aborted).toBe(true)
     expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('sends nothing from a form destroyed while its token is exchanged', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config({ freshToken: true }))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const fetch = cachedPageServer(init => new Promise((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+    }))
+
+    focus(form)
+    await submit(form)
+    instance(form)!.destroy()
+    await settle()
+    await settle()
+
+    expect(submissionsOf(fetch)).toHaveLength(0)
+    expect(element(form, '[data-validation-error]').textContent).toBe('')
+    expect(warn).not.toHaveBeenCalled()
+    expect(error).not.toHaveBeenCalled()
   })
 
   it('exchanges nothing without freshToken', async () => {

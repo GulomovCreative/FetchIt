@@ -148,6 +148,9 @@ class FetchIt implements FetchItInstance {
               formData.set(FetchIt.tokenField, token);
             }
             await this.untilReady();
+            if (this.destroyed) {
+              return;
+            }
           }
           await this.protectSubmission(formData);
           let query = await fetch(this.request, { method: 'post', body: formData });

@@ -716,6 +716,7 @@
 							const token = this.currentToken();
 							if (token) formData.set(FetchIt.tokenField, token);
 							await this.untilReady();
+							if (this.destroyed) return;
 						}
 						await this.protectSubmission(formData);
 						let query = await fetch(this.request, {
