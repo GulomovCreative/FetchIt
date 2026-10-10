@@ -41,6 +41,9 @@ class GuardTest extends TestCase
 
     protected function tearDown(): void
     {
+        if ($this->modx->pdo !== null) {
+            (new FetchItDbStore($this->modx, function () {}))->uninstall();
+        }
         $this->modx->removeCache();
         $_POST = [];
         $_REQUEST = [];
@@ -629,11 +632,27 @@ class GuardTest extends TestCase
         $this->assertNull($this->guard()->store());
     }
 
-    public function testADatabaseStoreWithoutItsTableRefuses()
+    /**
+     * fetchit.protection.store db on the database of FETCHIT_TEST_DSN, or
+     * SQLite in memory; tearDown() drops the table.
+     *
+     * @param bool $install Whether the table is there
+     */
+    private function databaseStore($install = true)
     {
         $this->modx->options['fetchit.protection.store'] = 'db';
         $this->modx->options['table_prefix'] = 'fetchit_test_';
-        $this->modx->pdo = new PDO('sqlite::memory:');
+        $this->modx->pdo = fetchit_test_modx()->pdo;
+        $table = new FetchItDbStore($this->modx, function () {});
+        $table->uninstall();
+        if ($install) {
+            $this->assertTrue($table->install());
+        }
+    }
+
+    public function testADatabaseStoreWithoutItsTableRefuses()
+    {
+        $this->databaseStore(false);
 
         $this->assertRefused('store', 'fetchit_err_store', $this->submit());
         $this->assertLogged('[FetchIt] The table fetchit_test_fetchit_store failed on ');
@@ -642,11 +661,9 @@ class GuardTest extends TestCase
     public function testProblemsOfTheDatabaseStoreAreLoggedWhateverTheLogLevel()
     {
         // fetchit.protection.log is about refusals; a broken table refuses everyone.
-        $this->modx->options['fetchit.protection.store'] = 'db';
+        $this->databaseStore(false);
         $this->modx->options['fetchit.protection.log'] = 0;
         $this->modx->options['fetchit.protection.rate_limit'] = 10;
-        $this->modx->options['table_prefix'] = 'fetchit_test_';
-        $this->modx->pdo = new PDO('sqlite::memory:');
 
         $this->assertRefused('store', 'fetchit_err_store', $this->submit());
         $this->assertLogged('[FetchIt] The table fetchit_test_fetchit_store failed on hit');
@@ -655,9 +672,7 @@ class GuardTest extends TestCase
     public function testADatabaseStoreRefusesWhenOnlyTheCounterFails()
     {
         // Strict: the table was chosen for a limit that holds.
-        $this->modx->options['fetchit.protection.store'] = 'db';
-        $this->modx->options['table_prefix'] = 'fetchit_test_';
-        $this->modx->pdo = new PDO('sqlite::memory:');
+        $this->databaseStore(false);
         $this->modx->options['fetchit.protection.rate_limit'] = 10;
 
         $result = $this->submit();
@@ -668,10 +683,7 @@ class GuardTest extends TestCase
 
     public function testTheDatabaseStoreWorks()
     {
-        $this->modx->options['fetchit.protection.store'] = 'db';
-        $this->modx->options['table_prefix'] = 'fetchit_test_';
-        $this->modx->pdo = new PDO('sqlite::memory:');
-        $this->guard()->store()->install();
+        $this->databaseStore();
         $token = $this->token();
 
         $this->assertNull($this->submit([], 10, $token));
@@ -681,11 +693,8 @@ class GuardTest extends TestCase
     public function testADatabaseMarkOutlivesTheTokenByAMinute()
     {
         // As the marks in files: servers with clocks a little apart.
-        $this->modx->options['fetchit.protection.store'] = 'db';
-        $this->modx->options['table_prefix'] = 'fetchit_test_';
+        $this->databaseStore();
         $this->modx->options['fetchit.protection.token_ttl'] = 3600;
-        $this->modx->pdo = new PDO('sqlite::memory:');
-        $this->guard()->store()->install();
 
         $this->assertNull($this->submit());
 
@@ -786,12 +795,23 @@ class GuardTest extends TestCase
         $this->assertNull($this->submit(), 'Submissions keep their own limit');
     }
 
+    public function testAnExchangeRefusedForTheRateLeavesThePageTokenUsable()
+    {
+        $this->pageCache();
+        $this->modx->options['fetchit.protection.rate_limit'] = 1;
+        $token = $this->token();
+
+        $this->assertNotNull($this->exchange($token));
+        $this->assertNull($this->exchange($token));
+        $this->assertSame('rate', $this->guard()->reason());
+
+        $this->assertNull($this->submit([], 3, $token), 'Neither marked nor counted for submissions');
+    }
+
     public function testAnExchangeWithAFailingStrictStoreRefuses()
     {
         $this->pageCache();
-        $this->modx->options['fetchit.protection.store'] = 'db';
-        $this->modx->options['table_prefix'] = 'fetchit_test_';
-        $this->modx->pdo = new PDO('sqlite::memory:');
+        $this->databaseStore(false);
 
         $this->assertNull($this->exchange($this->token()));
         $this->assertSame('store', $this->guard()->reason());
