@@ -685,8 +685,9 @@
 		}
 	};
 	/**
-	* A request that brought no answer: fetch() rejected (error), or the
-	* timeout ran out (a TimeoutError). The attempt may be retried.
+	* A request that brought no answer: fetch() rejected or the connection
+	* dropped while the body was read (error), or the timeout ran out (a
+	* TimeoutError). The attempt may be retried.
 	*/
 	var NoAnswer = class {
 		constructor(error) {
@@ -1029,7 +1030,8 @@
 		* POST the form. Without a key and a timeout exactly as before; with
 		* them the X-FetchIt-Submission header and an abort after
 		* config.timeout, which also covers reading the body. A rejection, or a
-		* body read stopped by the timeout, becomes a NoAnswer.
+		* body read stopped by the timeout or a dropped connection, becomes a
+		* NoAnswer.
 		*/
 		async post(formData, submission) {
 			const timeout = Math.max(Number(this.config.timeout) || 0, 0);
@@ -1064,7 +1066,8 @@
 				try {
 					return await query.json();
 				} catch (error) {
-					throw timedOut ? new NoAnswer(new TimeoutError(timeout)) : error;
+					if (timedOut) throw new NoAnswer(new TimeoutError(timeout));
+					throw error instanceof TypeError ? new NoAnswer(error) : error;
 				} finally {
 					done();
 				}

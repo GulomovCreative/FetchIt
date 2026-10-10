@@ -2927,4 +2927,38 @@ describe('timeout and retries', () => {
     expect(fetch).toHaveBeenCalledTimes(3)
     expect(keyOf(fetch.mock.calls[2])).toBe(keyOf(fetch.mock.calls[0]))
   })
+
+  // Headers at once, then the connection drops while the body is read.
+  const dropped = new TypeError('network error')
+  function droppedBody() {
+    return Promise.resolve({ status: 200, url: actionUrl, headers: new Headers(), json: () => Promise.reject(dropped) })
+  }
+
+  it('retries a connection dropped while the answer is read, with the same key', async () => {
+    const form = mountForm()
+    FetchIt.create(config({ retries: 1 }))
+    const fetch = server({ body: sent })
+    fetch.mockImplementationOnce(() => droppedBody() as ReturnType<typeof fetch>)
+
+    await send(form)
+    await vi.advanceTimersByTimeAsync(1000)
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(keyOf(fetch.mock.calls[1])).toBe(keyOf(fetch.mock.calls[0]))
+    expect(element(form, '[data-success]').textContent).toBe('Sent')
+  })
+
+  it('tells of a connection dropped while the answer is read as of a request that failed', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountForm()
+    FetchIt.create(config({ requestErrorMessage: 'Could not send' }))
+    const errors: unknown[] = []
+    on('fetchit:error', event => errors.push((event.detail as FetchItErrorDetail).error))
+    vi.stubGlobal('fetch', vi.fn(droppedBody))
+
+    await send(form)
+
+    expect(errors).toEqual([dropped])
+    expect(element(form, '[data-validation-error]').textContent).toBe('Could not send')
+  })
 })
