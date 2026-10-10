@@ -263,7 +263,7 @@ interface FetchItStatic {
 }
 
 /**
- * Defined on pages with a FetchIt form or [[!FetchItScript]], once the
+ * Defined on pages with a FetchIt form or FetchItScript, once the
  * deferred fetchit.js has run: set FetchIt.Message from a deferred or module script, or on
  * DOMContentLoaded. Listeners of the events on document can be added any
  * time. With fetchit.frontend.js.classname the class has another name.

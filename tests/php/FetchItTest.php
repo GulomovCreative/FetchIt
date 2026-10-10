@@ -597,16 +597,82 @@ class FetchItTest extends TestCase
         $this->assertSame($page, $this->render($page, [], false));
     }
 
-    public function testScriptSnippetAsksForTheScriptsAndOutputsNothing()
+    private function scriptSnippet()
     {
         $modx = $this->modx;
         $scriptProperties = [];
-        $output = include MODX_CORE_PATH . 'components/fetchit/elements/snippets/fetchitscript.php';
 
-        $this->assertSame('', $output);
+        return include MODX_CORE_PATH . 'components/fetchit/elements/snippets/fetchitscript.php';
+    }
+
+    public function testScriptSnippetAsksForTheScriptsAndLeavesOnlyItsMarker()
+    {
+        $marker = $this->scriptSnippet();
+
+        $this->assertSame(FetchIt::SCRIPT_MARKER, $marker);
+        $html = $this->render("<html><head></head><body>{$marker}</body></html>", [], false);
+        // Asked for twice, by the call and by its marker: added once.
+        $this->assertSame(1, substr_count($html, 'js/fetchit.js'));
+        $this->assertSame(1, substr_count($html, 'DOMContentLoaded'));
+        $this->assertStringNotContainsString($marker, $html);
+    }
+
+    public function testAnUncachedScriptSnippetWorksWithoutItsMarker()
+    {
+        // An output filter escaped it, or another plugin stripped it.
+        $this->scriptSnippet();
+
         $html = $this->render('<html><head></head><body></body></html>', [], false);
+
         $this->assertStringContainsString('js/fetchit.js', $html);
-        $this->assertStringContainsString('.observe(', $html);
+    }
+
+    public function testACachedScriptSnippetIsFoundByItsMarker()
+    {
+        // The snippet ran when the page was cached, not in this request.
+        $marker = FetchIt::SCRIPT_MARKER;
+
+        $html = $this->render("<html><head></head><body>{$marker}<div>{$marker}</div></body></html>", [], false);
+
+        $this->assertSame(1, substr_count($html, 'js/fetchit.js'));
+        $this->assertStringNotContainsString($marker, $html);
+    }
+
+    public function testTheMarkerIsTakenOutOfAFragment()
+    {
+        $html = $this->render('<div class="modal">' . FetchIt::SCRIPT_MARKER . '</div>', [], false);
+
+        $this->assertSame('<div class="modal"></div>', $html);
+        $this->assertLogged('has no <head> or <body>');
+    }
+
+    public function testTheMarkerIsTakenOutOfAPageWithoutHead()
+    {
+        $html = $this->render('<body>' . FetchIt::SCRIPT_MARKER . '<form></form></body>', [], false);
+
+        $this->assertSame('<body><form></form></body>', $html);
+        $this->assertLogged('no <head>');
+    }
+
+    public function testNoPageOutputIsLoggedWhenTheScriptWasAskedFor()
+    {
+        $this->fetchit()->loadScript();
+        $this->modx->resource = null;
+
+        $this->fetchit()->registerScript();
+
+        $this->assertLogged('has no page output');
+    }
+
+    public function testNoPageOutputIsNothingForOtherPages()
+    {
+        $this->modx->resource = new FakeResource(1);
+        $this->modx->resource->_output = null;
+
+        $this->fetchit()->registerScript();
+
+        $this->assertNull($this->modx->resource->_output);
+        $this->assertSame([], $this->modx->logged);
     }
 
     public function testScriptsAreAddedWithoutASession()
@@ -678,6 +744,28 @@ class FetchItTest extends TestCase
         try {
             $page = str_repeat('<div>', 50) . '<form></form>';
             $html = $this->render($page);
+        } finally {
+            ini_set('pcre.backtrack_limit', $limit);
+            ini_set('pcre.jit', $jit);
+        }
+
+        $this->assertSame($page, $html);
+        $this->assertLogged('Could not add the script');
+    }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function testTheMarkerIsTakenOutWhenThePageCannotBeRead()
+    {
+        $limit = ini_get('pcre.backtrack_limit');
+        $jit = ini_get('pcre.jit');
+        ini_set('pcre.jit', '0');
+        ini_set('pcre.backtrack_limit', '1');
+        try {
+            $page = str_repeat('<div>', 50) . '<form></form>';
+            $html = $this->render($page . FetchIt::SCRIPT_MARKER, [], false);
         } finally {
             ini_set('pcre.backtrack_limit', $limit);
             ini_set('pcre.jit', $jit);

@@ -210,8 +210,9 @@ $pages['fragment'] = fixture_page(
     '[[!FetchIt? &snippet=`FetchItTestHandler` &form=`tpl.FetchIt.test`]]',
     0
 );
-$pages['host'] = fixture_page($modx, 'fetchit-host', <<<HTML
-[[!FetchItScript]]
+$host = function ($call) use ($pages) {
+    return <<<HTML
+{$call}
 <button type="button" id="open">Open the form</button>
 <button type="button" id="close">Close the form</button>
 <div id="modal"></div>
@@ -224,8 +225,12 @@ document.getElementById('close').addEventListener('click', () => {
   document.getElementById('modal').innerHTML = ''
 })
 </script>
-HTML
-);
+HTML;
+};
+$pages['host'] = fixture_page($modx, 'fetchit-host', $host('[[!FetchItScript]]'));
+// The same page with a cached call: views after the first come from the
+// cache of the resource, with only the marker of FetchItScript.
+$pages['cachedhost'] = fixture_page($modx, 'fetchit-host-cached', $host('[[FetchItScript]]'));
 
 $snippet = $modx->getObject(modx_class('modSnippet'), ['name' => 'FetchIt']);
 $plugin = $modx->getObject(modx_class('modPlugin'), ['name' => 'FetchIt']);

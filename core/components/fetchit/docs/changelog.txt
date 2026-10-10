@@ -16,7 +16,9 @@ FetchIt 4 replaces both with one package and installs over either of them.
   `data-fetchit-config`; the script picks up inserted forms and forgets
   removed ones.
 - The `FetchItScript` snippet adds the script to a page whose forms come
-  later.
+  later. A cached call works too: it leaves the marker
+  `<!--FetchItScript-->` in the page, and the plugin adds the script on every
+  view.
 - `FetchIt.observe()`, `FetchIt.init(root)` and `destroy()` of an instance. A
   form taken out of the page and put back later gets a new instance and is
   sent once.
@@ -34,6 +36,8 @@ FetchIt 4 replaces both with one package and installs over either of them.
 - Text that is not UTF-8 in a lexicon entry or a setting no longer breaks the
   config of the forms; what cannot be encoded is logged.
 - A fragment without `<head>` and `<body>` gets no script and logs no error.
+- The plugin runs at priority -10 on `OnWebPagePrerender`, before plugins
+  that minify the page.
 
 ## [4.0.0] - 2026-09-25
 

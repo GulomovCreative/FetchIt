@@ -5,6 +5,7 @@ const fixtures: {
   formit: number | null,
   mixed?: number | null,
   host?: number,
+  cachedhost?: number,
   pdopage?: number | null,
   pdopagelinks?: number | null,
 } = JSON.parse(process.env.FIXTURES ?? '{}')
@@ -271,6 +272,25 @@ test.describe('a form loaded into the page later', () => {
       await page.getByRole('button', { name: 'Close the form' }).click()
       await expect.poll(() => handled(page)).toBe(0)
     }
+  })
+})
+
+test.describe('a page with a cached FetchItScript', () => {
+  test.skip(!fixtures.cachedhost, 'no host page with a cached call')
+
+  test('gets the script on every view, also from the cache', async ({ page }) => {
+    for (const view of [1, 2]) {
+      const answer = await page.goto(`/index.php?id=${fixtures.cachedhost}`)
+      const html = await answer!.text()
+      expect(html, `view ${view}`).toContain('js/fetchit.js')
+      expect(html, `view ${view}`).not.toContain('<!--FetchItScript-->')
+    }
+
+    const modal = page.locator('#modal')
+    await page.getByRole('button', { name: 'Open the form' }).click()
+    await modal.locator('input[name="email"]').fill('ann@example.com')
+    await modal.getByRole('button', { name: 'Send' }).click()
+    await expect(modal.locator('[data-success]')).toHaveText('Thanks, ann@example.com')
   })
 })
 
