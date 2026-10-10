@@ -38,7 +38,8 @@ if (empty($_POST)) {
     echo $FetchIt->error('fetchit_err_action_ns');
 } elseif (!empty($_SERVER['HTTP_X_FETCHIT_EXCHANGE'])) {
     // A page from a full-page cache asks for a fresh token (fetchit.page_cache).
-    // POST only: proxies and CDNs may cache a GET.
+    // POST only (a GET has no fields and is redirected above): proxies and
+    // CDNs may cache a GET.
     header('Cache-Control: no-store, private');
     $guard = $FetchIt->guard();
     if ($next = $guard->exchange($_SERVER['HTTP_X_FETCHIT_ACTION'], $_POST)) {
