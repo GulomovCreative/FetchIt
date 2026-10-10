@@ -847,15 +847,29 @@ class FetchItTest extends TestCase
         $this->assertStringContainsString(json_encode('Закрыть'), $this->bootstrap($html));
     }
 
-    public function testACloseLabelCannotEndTheBootstrap()
+    /**
+     * @dataProvider labelsWithTags
+     */
+    public function testACloseLabelCannotEndTheBootstrap($label)
     {
-        $this->modx->lexicon->entries['fetchit_notifier_close'] = '</script><script>alert(1)</script>';
+        $this->modx->lexicon->entries['fetchit_notifier_close'] = $label;
 
         $html = $this->render('<html><head></head><body></body></html>', ['fetchit.frontend.default.notifier' => true]);
 
+        // "<!--<script" would keep the parser in the script past its end.
+        $this->assertStringNotContainsString('<!--', $html);
         // The script of FetchIt and the bootstrap, nothing more.
         $this->assertSame(2, substr_count($html, '</script>'));
-        $this->assertStringContainsString('"notifierCloseLabel":"<\\/script><script>alert(1)<\\/script>"', $this->bootstrap($html));
+        $this->assertSame(1, preg_match('#const options = (\{.*?\});#', $this->bootstrap($html), $options));
+        $this->assertSame($label, json_decode($options[1], true)['notifierCloseLabel']);
+    }
+
+    public function labelsWithTags()
+    {
+        return [
+            'an end tag' => ['</script><script>alert(1)</script>'],
+            'a comment' => ['<!--<script>'],
+        ];
     }
 
     private function assertLogged($needle)

@@ -38,6 +38,8 @@ FetchIt 4 replaces both with one package and installs over either of them.
 - A fragment without `<head>` and `<body>` gets no script and logs no error.
 - The plugin runs at priority -10 on `OnWebPagePrerender`, before plugins
   that minify the page.
+- The config of the forms and the options of the notifier have `<` and `>`
+  as `\u003C` and `\u003E`, so no text in them can end the inline script.
 
 ## [4.0.0] - 2026-09-25
 
