@@ -665,6 +665,175 @@ class GuardTest extends TestCase
         $this->assertRefused('token', 'fetchit_err_token', $this->submit([], 10, $token));
     }
 
+    // ----------------------------------------------------- the fresh token
+
+    private function pageCache()
+    {
+        $this->modx->options['fetchit.page_cache'] = true;
+    }
+
+    private function exchange($token, $action = self::ACTION)
+    {
+        return $this->guard()->exchange($action, [FetchItGuard::TOKEN => $token]);
+    }
+
+    public function testNoExchangeWithoutThePageCache()
+    {
+        $this->assertNull($this->exchange($this->token()));
+        $this->assertNull($this->guard()->reason());
+    }
+
+    public function testNoExchangeWithProtectionOff()
+    {
+        $this->pageCache();
+        $this->modx->options['fetchit.protection'] = false;
+
+        $this->assertNull($this->exchange($this->token()));
+        $this->assertNull($this->guard()->reason());
+    }
+
+    public function testAnExchangeGivesATokenOfNow()
+    {
+        $this->pageCache();
+        $old = $this->token();
+        $this->now += 5000;
+
+        $fresh = $this->exchange($old);
+
+        $this->assertSame((string)$this->now, $this->parts($fresh)[1]);
+        $this->assertNotSame($this->parts($old)[2], $this->parts($fresh)[2]);
+        $this->assertRefused('too_fast', 'fetchit_err_too_fast', $this->submit([], 1, $fresh));
+    }
+
+    public function testTheFreshTokenPassesAfterTheFillTime()
+    {
+        $this->pageCache();
+
+        $this->assertNull($this->submit([], 3, $this->exchange($this->token())));
+    }
+
+    public function testAnExchangeTakesUsedAndExpiredTokens()
+    {
+        // The token of a cached page was used by someone else, long ago.
+        $this->pageCache();
+        $token = $this->token();
+        $this->assertNull($this->submit([], 10, $token));
+        $this->now += 40 * 86400;
+
+        $this->assertNotNull($this->exchange($token));
+    }
+
+    public function testAnExchangeDoesNotMarkTheToken()
+    {
+        $this->pageCache();
+        $token = $this->token();
+        $this->exchange($token);
+
+        $this->assertNull($this->submit([], 10, $token));
+    }
+
+    public function testAnExchangeNeedsAWellSignedTokenOfTheForm()
+    {
+        $this->pageCache();
+        $parts = $this->parts($this->token());
+        $parts[3] = str_repeat('0', 64);
+
+        foreach (['', 'garbage', $this->token(self::OTHER), implode('.', $parts)] as $token) {
+            $this->assertNull($this->exchange($token), $token);
+            $this->assertSame('token', $this->guard()->reason());
+        }
+    }
+
+    public function testExchangesHaveALimitOfTheirOwn()
+    {
+        $this->pageCache();
+        $this->modx->options['fetchit.protection.rate_limit'] = 2;
+        $token = $this->token();
+
+        $this->assertNotNull($this->exchange($token));
+        $this->assertNotNull($this->exchange($token));
+        $this->assertNull($this->exchange($token));
+        $this->assertSame('rate', $this->guard()->reason());
+
+        $this->assertNull($this->submit(), 'Submissions keep their own limit');
+    }
+
+    public function testAnExchangeWithAFailingStrictStoreRefuses()
+    {
+        $this->pageCache();
+        $this->modx->options['fetchit.protection.store'] = 'db';
+        $this->modx->options['table_prefix'] = 'fetchit_test_';
+        $this->modx->pdo = new PDO('sqlite::memory:');
+
+        $this->assertNull($this->exchange($this->token()));
+        $this->assertSame('store', $this->guard()->reason());
+    }
+
+    public function testWithThePageCacheAUsedTokenGetsATokenOfNow()
+    {
+        // A bot replaying the token of a cached page waits min_time each time.
+        $this->pageCache();
+        $token = $this->token();
+        $this->assertNull($this->submit([], 10, $token));
+
+        $this->assertRefused('token', 'fetchit_err_token', $this->submit([], 10, $token));
+        $next = $this->guard()->nextToken();
+
+        $this->assertSame((string)$this->now, $this->parts($next)[1]);
+        $this->assertRefused('too_fast', 'fetchit_err_too_fast', $this->submit([], 1, $next));
+    }
+
+    public function testWithThePageCacheAnExpiredTokenGetsATokenOfNow()
+    {
+        $this->pageCache();
+        $this->modx->options['fetchit.protection.token_ttl'] = 3600;
+
+        $this->assertRefused('token', 'fetchit_err_token', $this->submit([], 3601));
+
+        $this->assertSame((string)$this->now, $this->parts($this->guard()->nextToken())[1]);
+    }
+
+    public function testWithThePageCacheARetryKeepsTheTimeOfTheFirstRender()
+    {
+        $this->pageCache();
+        $token = $this->token();
+
+        $this->assertRefused('too_fast', 'fetchit_err_too_fast', $this->submit([], 1, $token));
+
+        $this->assertSame($this->parts($token)[1], $this->parts($this->guard()->nextToken())[1]);
+    }
+
+    /**
+     * The time of the next token without fetchit.page_cache, as FetchIt 4.0
+     * gives it, for every outcome of a check.
+     */
+    public function testWithoutThePageCacheTheNextTokenIsAsBefore()
+    {
+        $render = $this->now;
+        $minTime = 3;
+        $cases = [
+            'passed' => function () { return $this->submit([], 10); },
+            'too fast' => function () { return $this->submit([], 1); },
+            'trap' => function () { return $this->submit([$this->guard()->trapName() => 'x'], 10); },
+        ];
+        foreach ($cases as $case => $send) {
+            $this->now = $render;
+            $send();
+            $this->assertSame((string)$render, $this->parts($this->guard()->nextToken())[1], $case);
+        }
+
+        $this->now = $render;
+        $token = $this->token();
+        $this->submit([], 10, $token);
+        $this->submit([], 10, $token);
+        $this->assertSame((string)$render, $this->parts($this->guard()->nextToken())[1], 'used');
+
+        $this->modx->options['fetchit.protection.token_ttl'] = 3600;
+        $this->now = $render;
+        $this->submit([], 3601);
+        $this->assertSame((string)($this->now - $minTime), $this->parts($this->guard()->nextToken())[1], 'expired');
+    }
+
     private function assertNotLogged($needle)
     {
         foreach (array_column($this->modx->logged, 1) as $message) {

@@ -36,6 +36,19 @@ if (empty($_POST)) {
     $modx->sendRedirect($modx->makeUrl($modx->getOption('site_start'), '', '', 'full'));
 } elseif (empty($_SERVER['HTTP_X_FETCHIT_ACTION'])) {
     echo $FetchIt->error('fetchit_err_action_ns');
+} elseif (!empty($_SERVER['HTTP_X_FETCHIT_EXCHANGE'])) {
+    // A page from a full-page cache asks for a fresh token (fetchit.page_cache).
+    // POST only: proxies and CDNs may cache a GET.
+    header('Cache-Control: no-store, private');
+    $guard = $FetchIt->guard();
+    if ($next = $guard->exchange($_SERVER['HTTP_X_FETCHIT_ACTION'], $_POST)) {
+        header('X-FetchIt-Token: ' . $next);
+        header('X-FetchIt-Pow: ' . $guard->pow());
+        header('X-FetchIt-Min-Time: ' . $guard->minTime());
+    } elseif ($reason = $guard->reason()) {
+        header('X-FetchIt-Refused: ' . $reason);
+    }
+    http_response_code(204);
 } else {
     $action = $_SERVER['HTTP_X_FETCHIT_ACTION'];
     // Only the posted form: $_REQUEST may also hold GET values and, with
