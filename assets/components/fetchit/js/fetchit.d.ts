@@ -41,8 +41,9 @@ interface FetchItConfig extends FetchItObserveOptions {
   /** Shown when the captcha gave no answer to send */
   captchaErrorMessage?: string | undefined;
   /**
-   * Exchange the token of the page for a fresh one when the visitor starts
-   * on the form: fetchit.page_cache, for pages from a full-page cache
+   * Exchange the token of the page for a fresh one on the first focus on
+   * the form, or before the first submission if there was none:
+   * fetchit.page_cache, for pages from a full-page cache
    */
   freshToken?: boolean | undefined;
   pageId: number | string;
