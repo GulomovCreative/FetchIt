@@ -94,8 +94,8 @@ class FetchIt implements FetchItInstance {
   // Date.now() from which the server takes the fresh token as filled in:
   // min_time counts from the exchange.
   freshTokenReadyAt = 0;
-  // The state of the submission shown on the form (setState()).
-  state: 'sending' | 'success' | 'error' | null = null;
+  // The state of the submission shown on the form (setSubmissionState()).
+  submissionState: 'sending' | 'success' | 'error' | null = null;
 
   constructor (form: unknown, config: FetchItConfig) {
     if (!(form instanceof HTMLFormElement)) {
@@ -106,6 +106,8 @@ class FetchIt implements FetchItInstance {
     FetchIt.instances.get(form)?.destroy();
     this.form = form;
     this.config = config;
+    // A form put back while it was sent, or a copy of one, is not sent now.
+    this.setSubmissionState(null);
 
     this.request = new Request(this.config.actionUrl, {
       method: 'post',
@@ -155,7 +157,7 @@ class FetchIt implements FetchItInstance {
 
       this.pending = true;
       this.disableFields();
-      this.setState('sending');
+      this.setSubmissionState('sending');
 
       // Set once the visitor has seen the outcome; a later error is only logged.
       let shown = false;
@@ -219,7 +221,7 @@ class FetchIt implements FetchItInstance {
 
         // Before the events: a listener that cancels them still leaves the
         // outcome to CSS.
-        this.setState(response.success ? 'success' : 'error');
+        this.setSubmissionState(response.success ? 'success' : 'error');
 
         FetchIt.notify('after', response.message);
 
@@ -284,8 +286,8 @@ class FetchIt implements FetchItInstance {
       } finally {
         // Nothing was shown (the form was taken off the page): it is not
         // sent any more.
-        if (this.state === 'sending') {
-          this.setState(null);
+        if (this.submissionState === 'sending') {
+          this.setSubmissionState(null);
         }
         this.enableFields();
         this.pending = false;
@@ -301,7 +303,7 @@ class FetchIt implements FetchItInstance {
         this.clearFormMessages();
         // A reset while the form is sent keeps sending: the answer sets it.
         if (!this.pending) {
-          this.setState(null);
+          this.setSubmissionState(null);
         }
       }
       FetchIt.notify('reset');
@@ -360,7 +362,7 @@ class FetchIt implements FetchItInstance {
     if (this.destroyed) {
       return;
     }
-    this.setState('error');
+    this.setSubmissionState('error');
     console.error(error);
 
     const message = (error instanceof CaptchaError && this.config.captchaErrorMessage)
@@ -516,10 +518,14 @@ class FetchIt implements FetchItInstance {
    * Show the state of the submission on the form, for CSS:
    * data-fetchit-state (config.formState) and aria-busy while it is sent
    * (config.ariaBusy). A config without them, from a page cached by an
-   * earlier version, has both on. Null removes the state.
+   * earlier version, has both on. Null removes the state. A destroyed
+   * instance leaves a form put back on the page to its new instance.
    */
-  setState (state: 'sending' | 'success' | 'error' | null) {
-    this.state = state;
+  setSubmissionState (state: 'sending' | 'success' | 'error' | null) {
+    if (this.destroyed && FetchIt.instances.has(this.form)) {
+      return;
+    }
+    this.submissionState = state;
     if (this.config.formState !== false) {
       if (state) {
         this.form.setAttribute('data-fetchit-state', state);

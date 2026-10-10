@@ -260,7 +260,7 @@ form[data-fetchit-state="sending"] button[type="submit"] {
 }
 ```
 
-`&formState=0` and `&ariaBusy=0` turn them off for a form. CSS frameworks that draw a spinner on any `[aria-busy="true"]` (Pico CSS, for example) draw it over the whole form: turn `&ariaBusy` off there if that is not wanted.
+`&formState=0` and `&ariaBusy=0` turn them off for a form. CSS that draws a spinner on any element with `[aria-busy="true"]` (Pico CSS 1, for example; Pico 2 leaves forms out) draws it over the whole form: turn `&ariaBusy` off there if that is not wanted.
 
 ## TypeScript
 
