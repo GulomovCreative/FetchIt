@@ -156,6 +156,7 @@ key="0f8fad5b-d9cb-469f-a165-$(printf '%012x' "$RANDOM$RANDOM")"
 first="$(submit "$action" -H "X-FetchIt-Submission: $key" -F email=ann@example.com -F "pageId=$counter")"
 check "the first attempt is processed" json '.success == true' "$first"
 again="$(submit "$action" -H "X-FetchIt-Submission: $key" -F email=ann@example.com -F "pageId=$counter")"
+check "the first attempt gave an answer" test -n "$first"
 check "a retry gets the same answer without a second run" test "$again" = "$first"
 check "a retry gets a new token" test -n "$(header x-fetchit-token)"
 other="$(submit "$action" -H "X-FetchIt-Submission: 1b4e28ba-2fa1-41d2-883f-$(printf '%012x' "$RANDOM$RANDOM")" -F email=ann@example.com -F "pageId=$counter")"
@@ -164,12 +165,12 @@ check "another submission runs again" test "$(jq -r '.data.run' <<< "$other")" -
 echo "# Redirect after a success (id $redirect)"
 action="$(open_page "$redirect")"
 response="$(submit "$action" -F email=ann@example.com -F "pageId=$redirect")"
-check "the answer leads to the page of redirectTo" json ".success == true and (.redirect | test(\"(id=$custom|fetchit-custom).*from=form\"))" "$response"
+check "the answer leads to the page of redirectTo" json ".success == true and (.redirect | test(\"(id=$custom([^0-9]|$)|fetchit-custom).*from=form\"))" "$response"
 
 echo "# A snippet that redirects itself (id $redirector)"
 action="$(open_page "$redirector")"
 response="$(submit "$action" -F email=ann@example.com -F "pageId=$redirector")"
-check "the redirect comes as an answer" json ".success == true and (.redirect | test(\"id=$custom|fetchit-custom\"))" "$response"
+check "the redirect comes as an answer" json ".success == true and (.redirect | test(\"id=$custom([^0-9]|$)|fetchit-custom\"))" "$response"
 check "with status 200" test "$(status)" = 200
 check "without Location" test -z "$(header location)"
 
@@ -177,7 +178,7 @@ if [ -n "$formitredirect" ]; then
     echo "# FormIt with the redirect hook (id $formitredirect)"
     action="$(open_page "$formitredirect")"
     response="$(submit "$action" -F email=ann@example.com -F "pageId=$formitredirect")"
-    check "FormIt's redirect comes as an answer with its message" json ".success == true and .message == \"Sent\" and (.redirect | test(\"id=$custom|fetchit-custom\"))" "$response"
+    check "FormIt's redirect comes as an answer with its message" json ".success == true and .message == \"Sent\" and (.redirect | test(\"id=$custom([^0-9]|$)|fetchit-custom\"))" "$response"
     check "with status 200" test "$(status)" = 200
 fi
 

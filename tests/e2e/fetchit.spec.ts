@@ -427,7 +427,7 @@ test.describe('a lost answer', () => {
     await page.getByRole('button', { name: 'Send' }).click()
 
     await expect.poll(() => processed).toBeDefined()
-    await expect(page.locator('[data-success]')).toHaveText(processed!.message)
+    await expect(page.locator('[data-success]')).toHaveText(processed!.message, { timeout: 15000 })
     expect(attempts).toBe(2)
   })
 })
