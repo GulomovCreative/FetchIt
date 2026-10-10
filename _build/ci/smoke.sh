@@ -31,6 +31,10 @@ custom="$(jq -r '.custom' <<< "$fixtures")"
 api="$(jq -r '.api' <<< "$fixtures")"
 probe="$(jq -r '.probe' <<< "$fixtures")"
 formit="$(jq -r '.formit // empty' <<< "$fixtures")"
+counter="$(jq -r '.counter' <<< "$fixtures")"
+redirect="$(jq -r '.redirect' <<< "$fixtures")"
+redirector="$(jq -r '.redirector' <<< "$fixtures")"
+formitredirect="$(jq -r '.formitredirect // empty' <<< "$fixtures")"
 mixed="$(jq -r '.mixed // empty' <<< "$fixtures")"
 pdotools="$(jq -r '.pdotools // empty' <<< "$fixtures")"
 fragment="$(jq -r '.fragment' <<< "$fixtures")"
@@ -144,6 +148,38 @@ check "the trap gets a success that does not reach the snippet" json '.success =
 response="$(submit "$action" -F email=blocked@example.com -F "pageId=$custom")"
 check "a plugin on OnFetchItBeforeProcess refuses" json '.success == false and .message == "Blocked by a plugin"' "$response"
 check "... as a plugin" test "$(header x-fetchit-refused)" = plugin
+
+echo "# A submission with retries (id $counter)"
+action="$(open_page "$counter")"
+check "the form gets the timeout and the retries" grep -q '&quot;retries&quot;:2' "$jar.html"
+key="0f8fad5b-d9cb-469f-a165-$(printf '%012x' "$RANDOM$RANDOM")"
+first="$(submit "$action" -H "X-FetchIt-Submission: $key" -F email=ann@example.com -F "pageId=$counter")"
+check "the first attempt is processed" json '.success == true' "$first"
+again="$(submit "$action" -H "X-FetchIt-Submission: $key" -F email=ann@example.com -F "pageId=$counter")"
+check "a retry gets the same answer without a second run" test "$again" = "$first"
+check "a retry gets a new token" test -n "$(header x-fetchit-token)"
+other="$(submit "$action" -H "X-FetchIt-Submission: 1b4e28ba-2fa1-41d2-883f-$(printf '%012x' "$RANDOM$RANDOM")" -F email=ann@example.com -F "pageId=$counter")"
+check "another submission runs again" test "$(jq -r '.data.run' <<< "$other")" -gt "$(jq -r '.data.run' <<< "$first")"
+
+echo "# Redirect after a success (id $redirect)"
+action="$(open_page "$redirect")"
+response="$(submit "$action" -F email=ann@example.com -F "pageId=$redirect")"
+check "the answer leads to the page of redirectTo" json ".success == true and (.redirect | test(\"(id=$custom|fetchit-custom).*from=form\"))" "$response"
+
+echo "# A snippet that redirects itself (id $redirector)"
+action="$(open_page "$redirector")"
+response="$(submit "$action" -F email=ann@example.com -F "pageId=$redirector")"
+check "the redirect comes as an answer" json ".success == true and (.redirect | test(\"id=$custom|fetchit-custom\"))" "$response"
+check "with status 200" test "$(status)" = 200
+check "without Location" test -z "$(header location)"
+
+if [ -n "$formitredirect" ]; then
+    echo "# FormIt with the redirect hook (id $formitredirect)"
+    action="$(open_page "$formitredirect")"
+    response="$(submit "$action" -F email=ann@example.com -F "pageId=$formitredirect")"
+    check "FormIt's redirect comes as an answer with its message" json ".success == true and .message == \"Sent\" and (.redirect | test(\"id=$custom|fetchit-custom\"))" "$response"
+    check "with status 200" test "$(status)" = 200
+fi
 
 if [ -n "$formit" ]; then
     echo "# Page processed by FormIt (id $formit)"

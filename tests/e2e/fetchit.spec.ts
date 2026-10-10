@@ -3,6 +3,9 @@ import { expect, test, type Browser, type Page } from '@playwright/test'
 const fixtures: {
   custom: number,
   formit: number | null,
+  counter?: number,
+  redirect?: number,
+  formitredirect?: number | null,
   mixed?: number | null,
   host?: number,
   cachedhost?: number,
@@ -380,5 +383,51 @@ test.describe('a page from a full-page cache @cache', () => {
     await expect(page.locator('[data-success]')).toHaveText('Thanks, quick@example.com', { timeout: 10000 })
     await expect(page.locator('[data-validation-error]')).toBeHidden()
     await context.close()
+  })
+})
+
+test.describe('redirect after a success', () => {
+  test('goes to the page of redirectTo', async ({ page }) => {
+    test.skip(!fixtures.redirect, 'no redirect page')
+    await page.goto(`/index.php?id=${fixtures.redirect}`)
+    await page.locator('input[name="email"]').fill('ann@example.com')
+    await page.getByRole('button', { name: 'Send' }).click()
+
+    await expect(page).toHaveURL(/from=form/)
+    await expect(page.locator(`form[data-fetchit]`)).toBeVisible()
+  })
+
+  test('FormIt with the redirect hook leads to its page', async ({ page }) => {
+    test.skip(!fixtures.formitredirect, 'FormIt is not installed')
+    await page.goto(`/index.php?id=${fixtures.formitredirect}`)
+    await page.locator('input[name="email"]').fill('ann@example.com')
+    await page.getByRole('button', { name: 'Send' }).click()
+
+    await expect(page).toHaveURL(new RegExp(`id=${fixtures.custom}\\b|fetchit-custom`))
+  })
+})
+
+test.describe('a lost answer', () => {
+  test('the retry gets the answer of the form already processed', async ({ page }) => {
+    test.skip(!fixtures.counter, 'no counter page')
+    await page.goto(`/index.php?id=${fixtures.counter}`)
+    let processed: { message: string } | undefined
+    let attempts = 0
+    await page.route('**/action.php', async route => {
+      attempts++
+      if (attempts === 1) {
+        // The server processes the form, the answer is lost on the way.
+        processed = await (await route.fetch()).json()
+        await route.abort('connectionreset')
+        return
+      }
+      await route.continue()
+    })
+    await page.locator('input[name="email"]').fill('ann@example.com')
+    await page.getByRole('button', { name: 'Send' }).click()
+
+    await expect.poll(() => processed).toBeDefined()
+    await expect(page.locator('[data-success]')).toHaveText(processed!.message)
+    expect(attempts).toBe(2)
   })
 })
