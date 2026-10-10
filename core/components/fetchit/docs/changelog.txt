@@ -22,7 +22,7 @@ FetchIt 4 replaces both with one package and installs over either of them.
 - `fetchit.page_cache`: forms work on pages from a full-page cache (nginx,
   CDN). The properties of a form are kept for 90 days after its last render,
   and the script exchanges the token of the page for a fresh one on the first
-  focus.
+  focus on the form, or before the first submission if there was no focus.
 - `fetchit.protection.store` = `db`: used tokens, rate counters and the forms
   of `fetchit.page_cache` in the table `fetchit_store`, shared by several
   servers (MySQL, MariaDB, SQL Server).
