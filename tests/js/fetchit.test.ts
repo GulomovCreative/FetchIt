@@ -2979,6 +2979,27 @@ describe('timeout and retries', () => {
     expect(keyOf(fetch.mock.calls[4])).not.toBe(keyOf(fetch.mock.calls[0]))
   })
 
+  it('keeps the key for a file field left empty', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    // A file input with no file adds an empty file, dated when the form data
+    // is made; jsdom adds none.
+    vi.stubGlobal('FormData', class extends FormData {
+      constructor (form?: HTMLFormElement) {
+        super(form)
+        if (form) {
+          this.append('cv', new File([], '', { type: 'application/octet-stream' }))
+        }
+      }
+    })
+    const form = mountForm()
+    const fetch = await timedOut(form, {}, { body: sent })
+
+    await send(form)
+
+    expect(fetch).toHaveBeenCalledTimes(3)
+    expect(keyOf(fetch.mock.calls[2])).toBe(keyOf(fetch.mock.calls[0]))
+  })
+
   it('keeps the key when only the token and the captcha answer changed', async () => {
     let answers = 0
     window.grecaptcha = { ready: callback => callback(), execute: vi.fn(async () => `answer-${++answers}`), reset: vi.fn() }

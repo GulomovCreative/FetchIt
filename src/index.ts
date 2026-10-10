@@ -96,16 +96,22 @@ function submissionKey (): string {
  * The data of a submission as a string, to tell whether the form is sent
  * again with the same data: the fields of the form, without the token, the
  * proof of work and the captcha answer, which are new for each submission.
- * A file counts by its name, size, type and date.
+ * A file counts by its name, size, type and date; a file field left empty
+ * (an empty file without a name, dated when the form data is made) counts
+ * by the name of the field alone.
  */
 function fingerprint (formData: FormData): string {
   const skipped = [FetchIt.tokenField, FetchIt.powField, ...captchaFields];
   const entries: string[][] = [];
   formData.forEach((value, name) => {
     if (!skipped.includes(name)) {
-      entries.push(typeof value === 'string'
-        ? [name, value]
-        : [name, value.name, String(value.size), value.type, String(value.lastModified)]);
+      if (typeof value === 'string') {
+        entries.push([name, value]);
+      } else if (value.name === '' && value.size === 0) {
+        entries.push([name]);
+      } else {
+        entries.push([name, value.name, String(value.size), value.type, String(value.lastModified)]);
+      }
     }
   });
   return JSON.stringify(entries);
