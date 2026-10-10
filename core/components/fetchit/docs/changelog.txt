@@ -39,12 +39,12 @@ FetchIt 4 replaces both with one package and installs over either of them.
   through `navigate()` of the instance, which a site may override.
 - `&timeout` and `&retries`: an attempt that gets no answer in time is
   stopped, and a network error, a timeout or a 502/503/504 of a proxy is
-  retried after 1, 2, 4 and 8 seconds. A retry does not process a form twice
-  (unless the protection store cannot be written, which is logged): the
-  server keeps the answer to a submission for an hour under its key
-  (`X-FetchIt-Submission`). A form sent again unchanged after a submission
-  that got no answer carries its key too. The event `fetchit:retry` tells
-  each retry and can stop them. Both are off by default.
+  retried after pauses of 1, 2 and 4 seconds, then 8 seconds each. A retry
+  does not process a form twice (unless the protection store cannot be
+  written, which is logged): the server keeps the answer to a submission for
+  an hour under its key (`X-FetchIt-Submission`). A form sent again unchanged
+  after a submission that got no answer carries its key too. The event
+  `fetchit:retry` tells each retry and can stop them. Both are off by default.
 
 ### Changed
 

@@ -507,9 +507,10 @@ class FetchIt implements FetchItInstance {
       if (this.destroyed) {
         return undefined;
       }
-      // A pending answer brought the next token: the retry needs it, with
-      // its proof of work. The captcha answer is not asked again: the
-      // server does not check it on a retry of a submission it has.
+      // The server may have sent a new token (a pending answer does): the
+      // retry needs it, with its proof of work. The captcha is not asked
+      // again: the retry carries the answer of the first attempt, which the
+      // server checks only when it has not got the submission yet.
       const token = this.currentToken();
       if (token && token !== formData.get(FetchIt.tokenField)) {
         formData.set(FetchIt.tokenField, token);
