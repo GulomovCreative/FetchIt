@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import '../../src/index'
 
 // Node's Request, which the class uses, needs an absolute URL.
@@ -1722,5 +1723,85 @@ describe('destroying a captcha', () => {
 
     expect(() => instance(form)!.captcha!.destroy()).not.toThrow()
     expect(window.grecaptcha.reset).not.toHaveBeenCalled()
+  })
+})
+
+// The bootstrap the plugin adds to a page, for the class name Forms
+// (FetchItTest checks that it is the one the plugin outputs).
+const bootstrap = readFileSync(`${process.cwd()}/tests/fixtures/bootstrap.html`, 'utf8')
+  .replace(/^<script>|<\/script>\s*$/g, '')
+
+function runBootstrap(forms: unknown) {
+  let started: (() => void) | undefined
+  vi.spyOn(window, 'addEventListener').mockImplementation(((type: string, listener: () => void) => {
+    if (type === 'DOMContentLoaded') {
+      started = listener
+    }
+  }) as typeof window.addEventListener)
+  const page = window as unknown as { Forms?: unknown }
+  page.Forms = forms
+  try {
+    new Function(bootstrap)()
+    started!()
+  } finally {
+    delete page.Forms
+  }
+}
+
+function mountForms(...actions: string[]) {
+  document.body.innerHTML = actions.map(key => `<form data-fetchit="${key}"></form>`).join('')
+  document.querySelectorAll('form').forEach((form, index) => {
+    form.setAttribute('data-fetchit-config', JSON.stringify(config({ action: actions[index]! })))
+  })
+}
+
+describe('the bootstrap of the page', () => {
+  it('observes the page with the options of the page', () => {
+    const observe = vi.fn()
+    runBootstrap({ observe, create: vi.fn() })
+
+    expect(observe).toHaveBeenCalledWith({ defaultNotifier: false, notifierCloseLabel: '' })
+  })
+
+  it('calls create() once per form key for a script without observe()', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    mountForms('a', 'a', 'b')
+    document.body.insertAdjacentHTML('beforeend', '<form data-fetchit="c" data-fetchit-config="{broken"></form>')
+    const create = vi.fn()
+    runBootstrap({ create })
+
+    expect(create.mock.calls.map(([options]) => options.action)).toEqual(['a', 'b'])
+    expect(console.error).toHaveBeenCalledTimes(1)
+    expect(String(vi.mocked(console.error).mock.calls[0]![0])).toContain('sent without FetchIt')
+  })
+
+  it('calls create() of a class of the site, then observes', () => {
+    mountForms('a')
+    const calls: string[] = []
+    class Forms extends FetchIt {
+      static override create (_config: Parameters<typeof FetchIt.create>[0]) { calls.push('create') }
+      static override observe (_options?: Parameters<typeof FetchIt.observe>[0]) { calls.push('observe') }
+    }
+    runBootstrap(Forms)
+
+    expect(calls).toEqual(['create', 'observe'])
+  })
+
+  it('only observes for a class of the site that keeps create()', () => {
+    mountForms('a')
+    const calls: string[] = []
+    class Forms extends FetchIt {
+      static override observe (_options?: Parameters<typeof FetchIt.observe>[0]) { calls.push('observe') }
+    }
+    runBootstrap(Forms)
+
+    expect(calls).toEqual(['observe'])
+  })
+
+  it('tells what to check when the class is missing', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    runBootstrap(undefined)
+
+    expect(String(vi.mocked(console.error).mock.calls[0]![0])).toContain('fetchit.frontend.js.classname')
   })
 })

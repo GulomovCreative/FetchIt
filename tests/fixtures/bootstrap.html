@@ -1,0 +1,32 @@
+<script>
+window.addEventListener('DOMContentLoaded', () => {
+  let FetchItClass;
+  let missing;
+  try { FetchItClass = Forms; } catch (e) { missing = e; }
+  const options = {"defaultNotifier":false,"notifierCloseLabel":""};
+  if (!FetchItClass || (typeof FetchItClass.observe !== 'function' && typeof FetchItClass.create !== 'function')) {
+    console.error('FetchIt: Forms is not loaded; check that its script loads and the setting fetchit.frontend.js.classname', missing || '');
+    return;
+  }
+  // A script of the site without observe(), or a class of the site with a
+  // create() of its own (FetchIt 4.0): one create() per form key, as before.
+  if (typeof FetchItClass.create === 'function' && (typeof FetchItClass.observe !== 'function'
+    || (FetchItClass !== window.FetchIt && Object.prototype.hasOwnProperty.call(FetchItClass, 'create')))) {
+    const actions = {};
+    document.querySelectorAll('form[data-fetchit-config]').forEach(form => {
+      try {
+        const config = JSON.parse(form.getAttribute('data-fetchit-config'));
+        if (!actions[config.action]) {
+          actions[config.action] = true;
+          FetchItClass.create(config);
+        }
+      } catch (e) {
+        console.error('FetchIt: could not start the form; it is sent without FetchIt', form, e);
+      }
+    });
+  }
+  if (typeof FetchItClass.observe === 'function') {
+    FetchItClass.observe(options);
+  }
+});
+</script>
