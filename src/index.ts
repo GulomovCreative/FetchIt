@@ -32,8 +32,13 @@ class FetchIt implements FetchItInstance {
   // Started once per page by observe(): it initialises inserted forms and
   // destroys removed ones.
   static observer: MutationObserver | undefined = undefined;
+  // The class that called observe(): a class of the site, or FetchIt.
+  static started: typeof FetchIt | undefined = undefined;
   // Where the snippet puts the config of a form.
-  static configAttribute = 'data-fetchit-config';
+  static readonly configAttribute = 'data-fetchit-config';
+  // The configs create() got on a page cached by FetchIt 4.0, by action: its
+  // forms have no config of their own, and one put back is started again.
+  static legacy = new Map<string, FetchItConfig>();
   // Used when the page config has no requestErrorMessage (a page cached by 1.1.3).
   static defaultRequestErrorMessage = 'Could not send the form. Please try again.';
   // The hidden field of the spam protection (FetchItGuard::TOKEN).
@@ -61,13 +66,17 @@ class FetchIt implements FetchItInstance {
   declare work?: { token: string; solution: Promise<string>; stop: AbortController };
   // Removes the listeners of the form when the instance is destroyed: a form
   // put back on the page later gets a new instance and must not be sent twice.
-  listening = new AbortController();
+  readonly listening = new AbortController();
+  // Set by destroy(): what the instance still has running ends quietly.
+  destroyed = false;
 
   constructor (form: unknown, config: FetchItConfig) {
     if (!(form instanceof HTMLFormElement)) {
       throw new Error('FetchIt: the element is not a form');
     }
 
+    // One instance per form: a new one replaces the old.
+    FetchIt.instances.get(form)?.destroy();
     this.form = form;
     this.config = config;
 
@@ -248,13 +257,15 @@ class FetchIt implements FetchItInstance {
 
   /**
    * The form is gone: forget it, remove its listeners, stop the proof of
-   * work, remove the captcha widget. An answer still on its way is handled
-   * as usual.
+   * work, remove the captcha widget. A submission waiting for the proof of
+   * work or the captcha ends without a message; an answer already on its
+   * way is handled as usual, but starts no new proof of work.
    */
   destroy () {
     if (FetchIt.instances.get(this.form) !== this) {
       return;
     }
+    this.destroyed = true;
     FetchIt.instances.delete(this.form);
     this.listening.abort();
     const index = FetchIt.forms.indexOf(this.form);
@@ -274,6 +285,11 @@ class FetchIt implements FetchItInstance {
    * FetchIt answer goes the normal way.
    */
   failRequest (error: unknown, formData: FormData) {
+    // A form taken off the page while it was being sent (a modal closed)
+    // tells nobody: destroy() stopped its proof of work or captcha.
+    if (this.destroyed) {
+      return;
+    }
     console.error(error);
 
     const message = (error instanceof CaptchaError && this.config.captchaErrorMessage)
@@ -325,6 +341,9 @@ class FetchIt implements FetchItInstance {
    * time the visitor sends it.
    */
   solveAhead () {
+    if (this.destroyed) {
+      return;
+    }
     const token = this.form.querySelector<HTMLInputElement>(`input[name="${FetchIt.tokenField}"]`)?.value;
     if (this.config.pow && token) {
       this.solution(token).catch(error => {
@@ -558,17 +577,25 @@ class FetchIt implements FetchItInstance {
     if (FetchIt.observer) {
       return;
     }
-    this.init(document);
+    FetchIt.started = this;
+    // Before the forms of the page: one that cannot start must not keep the
+    // forms loaded later from being picked up.
     FetchIt.observer = new MutationObserver(records => this.mutated(records));
     FetchIt.observer.observe(document.documentElement, { childList: true, subtree: true });
+    this.init(document);
   }
 
   /**
    * Handle the forms in root, root itself included, that carry their
-   * config and have no instance yet.
+   * config (or were started by create() on a page cached by FetchIt 4.0)
+   * and have no instance yet. A form that cannot start is logged and sent
+   * the usual way; the others start all the same.
    */
   static init (root: ParentNode = document) {
-    const selector = `form[data-fetchit][${FetchIt.configAttribute}]`;
+    // FetchIt.init() on a site with a class of its own makes instances of
+    // that class.
+    const Class = this === FetchIt && FetchIt.started ? FetchIt.started : this;
+    const selector = 'form[data-fetchit]';
     const forms = Array.from(root.querySelectorAll<HTMLFormElement>(selector));
     if (root instanceof HTMLFormElement && root.matches(selector)) {
       forms.unshift(root);
@@ -577,9 +604,16 @@ class FetchIt implements FetchItInstance {
       if (FetchIt.instances.has(form)) {
         return;
       }
-      const config = FetchIt.readConfig(form);
-      if (config) {
-        new this(form, config);
+      const config = form.hasAttribute(FetchIt.configAttribute)
+        ? FetchIt.readConfig(form)
+        : FetchIt.legacy.get(form.getAttribute('data-fetchit') ?? '');
+      if (!config) {
+        return;
+      }
+      try {
+        FetchIt.instances.set(form, new Class(form, config));
+      } catch (error) {
+        console.error(`FetchIt: could not start the form ${config.action}; it is sent without FetchIt`, form, error);
       }
     });
   }
@@ -589,16 +623,34 @@ class FetchIt implements FetchItInstance {
    * is then sent the usual way.
    */
   static readConfig (form: HTMLFormElement): FetchItConfig | null {
+    let reason = 'it has no action, actionUrl or pageId';
     try {
       const config: unknown = JSON.parse(form.getAttribute(FetchIt.configAttribute) ?? '');
-      if (config !== null && typeof config === 'object' && (config as Partial<FetchItConfig>).action) {
-        return config as FetchItConfig;
+      if (FetchIt.isConfig(config)) {
+        if (config.action === form.getAttribute('data-fetchit')) {
+          return config;
+        }
+        reason = 'its action is not the data-fetchit of the form';
       }
-    } catch {
-      // Reported below.
+    } catch (error) {
+      reason = error instanceof Error ? error.message : String(error);
     }
-    console.error(`FetchIt: the form has no valid ${FetchIt.configAttribute}`, form);
+    console.error(`FetchIt: the form has no valid ${FetchIt.configAttribute} (${reason}); it is sent without FetchIt`, form);
     return null;
+  }
+
+  /**
+   * What the script cannot do without: the key of the form, where to send
+   * it and the page it belongs to.
+   */
+  static isConfig (value: unknown): value is FetchItConfig {
+    if (value === null || typeof value !== 'object') {
+      return false;
+    }
+    const config = value as Record<string, unknown>;
+    return typeof config.action === 'string' && config.action !== ''
+      && typeof config.actionUrl === 'string'
+      && (typeof config.pageId === 'string' || typeof config.pageId === 'number');
   }
 
   /**
@@ -641,7 +693,9 @@ class FetchIt implements FetchItInstance {
       console.warn(`FetchIt: no form matches ${selector}`);
     }
 
-    // Identical snippet calls share an action and call create() twice.
+    // Pages cached by 4.0 call create() once per snippet call; identical
+    // calls share an action.
+    FetchIt.legacy.set(config.action, config);
     forms.forEach(form => FetchIt.instances.get(form) ?? new this(form, config));
     this.observe();
   }
