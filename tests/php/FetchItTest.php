@@ -1144,4 +1144,107 @@ class FetchItTest extends TestCase
         $this->modx->options['fetchit.protection'] = true;
         $this->assertTrue($this->fetchit()->clientConfig('abc')['freshToken']);
     }
+
+    // ----------------------------------------------------------------- redirect
+
+    private function handler($answer = '{"success":true,"message":"Sent","data":[]}')
+    {
+        return $this->addSnippet('Handler', function () use ($answer) {
+            return $answer;
+        });
+    }
+
+    public function testRedirectToOfTheCallGoesIntoASuccess()
+    {
+        $this->modx->urls[5] = 'https://example.com/thanks/';
+        $this->handler();
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'Handler', 'redirectTo' => '5', 'redirectParams' => '{"from":"form"}']);
+
+        $body = $fetchit->withRedirect('abc', '{"success":true,"message":"Sent","data":[]}');
+
+        $this->assertSame(['success' => true, 'message' => 'Sent', 'data' => [], 'redirect' => 'https://example.com/thanks/?from=form'], $this->decode($body));
+        $this->assertSame([5, '', ['from' => 'form'], 'full'], $this->modx->madeUrls[0]);
+    }
+
+    public function testRedirectToIsNotAddedToAnError()
+    {
+        $this->modx->urls[5] = 'https://example.com/thanks/';
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'Handler', 'redirectTo' => '5']);
+        $error = '{"success":false,"message":"Check the form","data":{"email":"Required"}}';
+
+        $this->assertSame($error, $fetchit->withRedirect('abc', $error));
+    }
+
+    public function testWithoutRedirectToTheAnswerIsLeftAsItIs()
+    {
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'Handler']);
+        $body = '{"success":true,"message":"Sent é","data":[]}';
+
+        $this->assertSame($body, $fetchit->withRedirect('abc', $body));
+    }
+
+    public function testRedirectToIsLeftToFormIt()
+    {
+        $this->modx->urls[5] = 'https://example.com/thanks/';
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'formit@contact', 'redirectTo' => '5']);
+        $body = '{"success":true,"message":"Sent","data":[]}';
+
+        $this->assertSame($body, $fetchit->withRedirect('abc', $body));
+        $this->assertSame([], $this->modx->madeUrls);
+    }
+
+    public function testRedirectToAsAPathOrAUrl()
+    {
+        $this->modx->options['site_url'] = 'https://site.test/';
+        $fetchit = $this->fetchit();
+
+        $this->assertSame('https://site.test/thanks/?a=b', $fetchit->redirectUrl(['redirectTo' => '/thanks/', 'redirectParams' => '{"a":"b"}']));
+        $this->assertSame('https://site.test/thanks/', $fetchit->redirectUrl(['redirectTo' => 'thanks/']));
+        $this->assertSame('https://example.com/x?y=1&a=b', $fetchit->redirectUrl(['redirectTo' => 'https://example.com/x?y=1', 'redirectParams' => ['a' => 'b']]));
+        $this->assertSame('', $fetchit->redirectUrl(['redirectTo' => '  ']));
+        $this->assertSame('', $fetchit->redirectUrl([]));
+    }
+
+    public function testRedirectToAMissingResourceIsLogged()
+    {
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'Handler', 'redirectTo' => '404']);
+        $body = '{"success":true,"message":"Sent","data":[]}';
+
+        $this->assertSame($body, $fetchit->withRedirect('abc', $body));
+        $this->assertStringContainsString('redirectTo', $this->modx->logged[0][1]);
+    }
+
+    public function testRedirectParamsThatAreNotAnObjectAreLogged()
+    {
+        $this->modx->urls[5] = 'https://example.com/thanks/';
+
+        $this->assertSame('https://example.com/thanks/', $this->fetchit()->redirectUrl(['redirectTo' => '5', 'redirectParams' => '{oops']));
+        $this->assertStringContainsString('redirectParams', $this->modx->logged[0][1]);
+    }
+
+    public function testACaughtRedirectOfFormItIsASuccessWithItsMessage()
+    {
+        $this->formit();
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'FormIt', 'successMessage' => 'Sent', 'hooks' => 'redirect']);
+
+        $body = $fetchit->redirectAnswer('abc', 'https://example.com/thanks/', ['email' => 'a@b.c']);
+
+        $this->assertSame(['success' => true, 'message' => 'Sent', 'data' => [], 'redirect' => 'https://example.com/thanks/'], $this->decode($body));
+    }
+
+    public function testACaughtRedirectOfAnotherSnippetIsASuccess()
+    {
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'Handler']);
+
+        $body = $fetchit->redirectAnswer('abc', '/thanks/', []);
+
+        $this->assertSame(['success' => true, 'message' => 'fetchit_success_submit', 'data' => [], 'redirect' => '/thanks/'], $this->decode($body));
+    }
 }

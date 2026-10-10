@@ -1043,6 +1043,144 @@ HTML;
 
 
     /**
+     * Add the page of &redirectTo to a successful answer of a processing
+     * snippet other than FormIt: FormIt has &redirectTo of its own, used
+     * only with its redirect hook (see redirectAnswer()). Any other answer
+     * is left as it is.
+     *
+     * @param string $action
+     * @param string $body The answer as JSON
+     *
+     * @return string
+     */
+    public function withRedirect($action, $body)
+    {
+        $properties = $this->loadActionProperties($action);
+        if (!is_array($properties) || $this->isFormIt($properties)) {
+            return $body;
+        }
+        $url = $this->redirectUrl($properties);
+
+        return $url !== '' ? $this->addRedirect($body, $url) : $body;
+    }
+
+
+    /**
+     * The address of &redirectTo with &redirectParams: a resource id (its
+     * full URL in the context of the page) or an address, a path of the
+     * site made absolute. '' when there is none or the resource is missing
+     * (logged).
+     *
+     * @param array $properties
+     *
+     * @return string
+     */
+    public function redirectUrl(array $properties)
+    {
+        $to = isset($properties['redirectTo']) ? trim((string)$properties['redirectTo']) : '';
+        if ($to === '') {
+            return '';
+        }
+        $params = isset($properties['redirectParams']) ? $properties['redirectParams'] : [];
+        if (is_string($params)) {
+            $params = trim($params) !== '' ? json_decode($params, true) : [];
+        }
+        if (!is_array($params)) {
+            $this->modx->log(modX::LOG_LEVEL_ERROR, '[FetchIt] &redirectParams is not a JSON object; the redirect goes without them');
+            $params = [];
+        }
+
+        if (ctype_digit($to)) {
+            $url = (string)$this->modx->makeUrl((int)$to, '', $params, 'full');
+            if ($url === '') {
+                $this->modx->log(modX::LOG_LEVEL_ERROR, "[FetchIt] &redirectTo is resource {$to}, which has no URL; the visitor stays on the page");
+            }
+
+            return $url;
+        }
+
+        $url = $to;
+        if ($params) {
+            $url .= (strpos($url, '?') === false ? '?' : '&') . http_build_query($params);
+        }
+        if (!preg_match('#^[a-z][a-z0-9+.-]*://#i', $url)) {
+            $url = rtrim((string)$this->modx->getOption('site_url', null, '/'), '/') . '/' . ltrim($url, '/');
+        }
+
+        return $url;
+    }
+
+
+    /**
+     * The answer for a redirect the processing sent ($modx->sendRedirect(),
+     * as the redirect hook of FormIt does): a success with the message of
+     * FormIt, or of FetchIt, and the address.
+     *
+     * @param string $action
+     * @param string $location The address of the Location header
+     * @param array $fields The fields that were processed
+     *
+     * @return string JSON
+     */
+    public function redirectAnswer($action, $location, array $fields)
+    {
+        $properties = $this->loadActionProperties($action);
+        if (is_array($properties) && $this->isFormIt($properties)) {
+            $answer = $this->handleFormIt(array_merge($properties, ['fields' => $fields]));
+        } else {
+            $answer = $this->success('fetchit_success_submit');
+        }
+
+        return $this->addRedirect($this->json($answer), $location);
+    }
+
+
+    /**
+     * @param string $body A successful answer as JSON
+     * @param string $url
+     *
+     * @return string The answer with redirect; any other answer as it is
+     */
+    protected function addRedirect($body, $url)
+    {
+        $answer = json_decode($body, true);
+        if (!is_array($answer) || !isset($answer['success']) || $answer['success'] !== true) {
+            return $body;
+        }
+        $answer['redirect'] = $url;
+
+        return $this->json($answer);
+    }
+
+
+    /**
+     * @param array|string $response
+     *
+     * @return string
+     */
+    protected function json($response)
+    {
+        return is_array($response) ? (string)$this->modx->toJSON($response) : (string)$response;
+    }
+
+
+    /**
+     * Whether the form is processed by FormIt (the snippet may carry a
+     * property set: FormIt@contact).
+     *
+     * @param array $properties
+     *
+     * @return bool
+     */
+    protected function isFormIt(array $properties)
+    {
+        $name = isset($properties['snippet']) ? explode('@', (string)$properties['snippet'])[0] : 'FormIt';
+
+        return strtolower($name) === 'formit';
+    }
+
+
+    /**
      * This method returns an success of the order
      *
      * @param string $message A lexicon key for success message
