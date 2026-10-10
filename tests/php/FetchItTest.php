@@ -1247,4 +1247,132 @@ class FetchItTest extends TestCase
 
         $this->assertSame(['success' => true, 'message' => 'fetchit_success_submit', 'data' => [], 'redirect' => '/thanks/'], $this->decode($body));
     }
+
+    // ------------------------------------------------------------- submissions
+
+    const UUID = '0f8fad5b-d9cb-469f-a165-70867728950e';
+
+    /** @var string[] */
+    private $headers = [];
+
+    private function counted()
+    {
+        $runs = 0;
+        $snippet = $this->addSnippet('Handler', function () use (&$runs) {
+            $runs++;
+
+            return json_encode(['success' => true, 'message' => 'Run ' . $runs, 'data' => []]);
+        });
+        $snippet->runs = &$runs;
+
+        return $snippet;
+    }
+
+    private function send(FetchIt $fetchit, $submission = '', array $post = ['email' => 'a@b.c'])
+    {
+        $this->headers = [];
+
+        return $fetchit->submit('abc', $post, $submission, function ($line) {
+            $this->headers[] = $line;
+        });
+    }
+
+    public function testSubmitProcessesTheForm()
+    {
+        $snippet = $this->counted();
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'Handler']);
+
+        $answer = $this->send($fetchit);
+
+        $this->assertSame(200, $answer['status']);
+        $this->assertSame('Run 1', $this->decode($answer['body'])['message']);
+        $this->assertSame(['email' => 'a@b.c'], $snippet->received['fields']);
+        $this->assertSame([], $this->headers);
+    }
+
+    public function testARetryOfASubmissionGetsTheKeptAnswer()
+    {
+        $snippet = $this->counted();
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'Handler']);
+
+        $first = $this->send($fetchit, self::UUID);
+        $retry = $this->send($this->fetchit(), self::UUID);
+
+        $this->assertSame(1, $snippet->runs);
+        $this->assertSame($first, $retry);
+        $this->assertSame('Run 2', $this->decode($this->send($fetchit, '1b4e28ba-2fa1-41d2-883f-0016d3cca427')['body'])['message']);
+    }
+
+    public function testWithoutAKeyNothingIsKept()
+    {
+        $snippet = $this->counted();
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'Handler']);
+
+        $this->send($fetchit);
+        $this->send($fetchit, 'not-a-uuid');
+
+        $this->assertSame(2, $snippet->runs);
+        $this->assertDirectoryDoesNotExist($this->modx->getCachePath() . 'fetchit/answers');
+    }
+
+    public function testASubmissionStillProcessedIsPending()
+    {
+        $snippet = $this->counted();
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'Handler']);
+        $fetchit->guard()->claim($fetchit->guard()->submissionKey('abc', self::UUID));
+
+        $answer = $this->send($fetchit, self::UUID);
+
+        $this->assertSame(0, $snippet->runs);
+        $this->assertSame(409, $answer['status']);
+        $this->assertSame(['X-FetchIt-Refused: pending'], $this->headers);
+        $this->assertSame(['success' => false, 'message' => 'fetchit_err_pending', 'data' => []], $this->decode($answer['body']));
+    }
+
+    public function testARefusedSubmissionDoesNotTakeTheKey()
+    {
+        $snippet = $this->counted();
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'Handler']);
+        $this->modx->plugins['OnFetchItBeforeProcess'][] = function () {
+            $this->modx->event->output('Blocked');
+        };
+
+        $refused = $this->send($fetchit, self::UUID);
+        $this->modx->plugins = [];
+        $retry = $this->send($fetchit, self::UUID);
+
+        $this->assertSame('Blocked', $this->decode($refused['body'])['message']);
+        $this->assertSame('Run 1', $this->decode($retry['body'])['message']);
+        $this->assertSame(1, $snippet->runs);
+    }
+
+    public function testTheKeptAnswerHasTheRedirect()
+    {
+        $this->modx->urls[5] = 'https://example.com/thanks/';
+        $this->counted();
+        $fetchit = $this->fetchit();
+        $fetchit->storeActionProperties('abc', ['snippet' => 'Handler', 'redirectTo' => '5']);
+
+        $first = $this->send($fetchit, self::UUID);
+        $retry = $this->send($fetchit, self::UUID);
+
+        $this->assertSame('https://example.com/thanks/', $this->decode($first['body'])['redirect']);
+        $this->assertSame($first['body'], $retry['body']);
+    }
+
+    public function testAnArrayAnswerIsSentAsJson()
+    {
+        $this->addSnippet('Handler', function () {
+            return ['success' => true, 'message' => 'Sent', 'data' => []];
+        });
+        $fetchit = $this->fetchit(['json_response' => false]);
+        $fetchit->storeActionProperties('abc', ['snippet' => 'Handler']);
+
+        $this->assertSame('{"success":true,"message":"Sent","data":[]}', $this->send($fetchit)['body']);
+    }
 }

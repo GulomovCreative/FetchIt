@@ -504,6 +504,9 @@ class FakeSnippet
     /** @var array|null The properties the last process() call received */
     public $received;
 
+    /** @var int|null How many times a counting handler of a test ran */
+    public $runs;
+
     /** @var callable */
     private $handler;
 

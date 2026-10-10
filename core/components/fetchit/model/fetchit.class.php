@@ -54,6 +54,17 @@ class FetchIt
      */
     protected static $handled = [];
 
+    /**
+     * What submit() is processing, for finishRedirect(): action, key (of
+     * the kept answer, or null) and fields. Null outside processing.
+     *
+     * @var array|null
+     */
+    protected $processing;
+
+    /** @var bool Whether finishRedirect() is registered in this request */
+    protected static $catching = false;
+
 
     /**
      * The shared instance, the one custom snippets should use. On MODX 3 it
@@ -264,6 +275,163 @@ class FetchIt
         $method = $refused['status'] === 'success' ? 'success' : 'error';
 
         return $this->$method($refused['message']);
+    }
+
+
+    /**
+     * Answer a submission sent to action.php: the protection, then the
+     * processing. With the X-FetchIt-Submission UUID of the script
+     * (config.retries) the answer is kept for an hour: a retry of the same
+     * submission gets it again, and one sent while the first attempt is still
+     * processed is answered pending, so the form is never processed twice. A
+     * redirect sent by the processing becomes an answer with redirect
+     * (finishRedirect()).
+     *
+     * @param string $action
+     * @param array $post The POST of the form; its service fields are removed
+     * @param mixed $submission The X-FetchIt-Submission header, '' when none
+     * @param callable|null $header Sends a header line; header() by default.
+     *     Headers go out before the processing, which may end the request.
+     *
+     * @return array status (HTTP) and body (JSON)
+     */
+    public function submit($action, array $post, $submission = '', $header = null)
+    {
+        $header = $header ?: 'header';
+        $guard = $this->guard();
+        $key = $guard->submissionKey($action, $submission);
+
+        if ($key !== null) {
+            $kept = $guard->loadAnswer($key);
+            if (is_string($kept)) {
+                if ($next = $guard->renew($action, $post)) {
+                    call_user_func($header, 'X-FetchIt-Token: ' . $next);
+                }
+
+                return $kept !== '' ? ['status' => 200, 'body' => $kept] : $this->pending($header);
+            }
+        }
+
+        $refused = $this->protect($action, $post);
+        // Every token is single-use: the script sends this one next time. Only a
+        // request with a well-signed token of the form gets one.
+        if ($next = $guard->nextToken()) {
+            call_user_func($header, 'X-FetchIt-Token: ' . $next);
+        }
+        // The script retries once by itself when the page's token was stale, or
+        // when the page asked for no proof of work or a smaller one (a page from
+        // a cache made before it was turned on or raised).
+        if ($reason = $guard->reason()) {
+            call_user_func($header, 'X-FetchIt-Refused: ' . $reason);
+            if ($reason === 'pow') {
+                call_user_func($header, 'X-FetchIt-Pow: ' . $guard->pow());
+            }
+            // With fetchit.page_cache the next token of a used or expired one is
+            // timed now: the script waits this long before it sends it.
+            if ($reason === 'token' && $guard->freshToken()) {
+                call_user_func($header, 'X-FetchIt-Min-Time: ' . $guard->minTime());
+            }
+        }
+        if ($refused !== null) {
+            return ['status' => 200, 'body' => $this->json($refused)];
+        }
+
+        if ($key !== null) {
+            $claim = $guard->claim($key);
+            if ($claim === FetchItStore::USED) {
+                return $this->pending($header);
+            }
+            if ($claim === FetchItStore::FAILED) {
+                // Logged by the store: better a possible second run than a lost form.
+                $key = null;
+            }
+        }
+
+        $fields = array_merge($_FILES, $post);
+        $this->processing = ['action' => $action, 'key' => $key, 'fields' => $fields];
+        $this->catchRedirect();
+        $response = $this->process($action, $fields);
+        $this->processing = null;
+
+        $body = $this->withRedirect($action, $this->json($response));
+        if ($key !== null) {
+            $guard->saveAnswer($key, $body);
+        }
+
+        return ['status' => 200, 'body' => $body];
+    }
+
+
+    /**
+     * The answer to a retry that came while the first attempt of the
+     * submission is still processed: the script waits and sends it again.
+     *
+     * @param callable $header
+     *
+     * @return array
+     */
+    protected function pending($header)
+    {
+        call_user_func($header, 'X-FetchIt-Refused: pending');
+
+        return ['status' => 409, 'body' => $this->json($this->error('fetchit_err_pending'))];
+    }
+
+
+    /**
+     * Register finishRedirect() once per request.
+     */
+    protected function catchRedirect()
+    {
+        if (!self::$catching) {
+            self::$catching = true;
+            register_shutdown_function([$this, 'finishRedirect']);
+        }
+    }
+
+
+    /**
+     * $modx->sendRedirect() during the processing (the redirect hook of
+     * FormIt, or a snippet of the site) sends a Location header and ends the
+     * request: fetch() would follow it to a page of HTML, and the visitor
+     * would read that the form failed, though it was processed. At the end
+     * of such a request this turns the redirect into a FetchIt answer with
+     * redirect, kept for the retries as any other.
+     */
+    public function finishRedirect()
+    {
+        if ($this->processing === null) {
+            return;
+        }
+        $processing = $this->processing;
+        $this->processing = null;
+        $location = null;
+        foreach (headers_list() as $line) {
+            if (stripos($line, 'Location:') === 0) {
+                $location = trim(substr($line, strlen('Location:')));
+            }
+        }
+        if ($location === null || $location === '') {
+            return;
+        }
+        if (headers_sent()) {
+            $this->modx->log(modX::LOG_LEVEL_ERROR, '[FetchIt] The processing of form ' . substr($processing['action'], 0, 8)
+                . ' sent a redirect after its output began; the script gets HTML instead of an answer');
+
+            return;
+        }
+
+        header_remove('Location');
+        http_response_code(200);
+        header('Content-Type: application/json; charset=utf-8');
+        while (ob_get_level() > 0) {
+            ob_end_clean();
+        }
+        $body = $this->redirectAnswer($processing['action'], $location, $processing['fields']);
+        if ($processing['key'] !== null) {
+            $this->guard()->saveAnswer($processing['key'], $body);
+        }
+        echo $body;
     }
 
 
