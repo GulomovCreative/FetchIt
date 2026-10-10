@@ -33,6 +33,16 @@ FetchIt 4 replaces both with one package and installs over either of them.
   sent and after the answer, and `aria-busy` while it is sent, for spinners
   and styles in CSS alone. On by default; `&formState=0` and `&ariaBusy=0`
   turn them off.
+- `&redirectTo` and `&redirectParams`: the page to go to after a successful
+  submission, for a processing snippet other than FormIt. The script goes
+  there after `fetchit:success` (the address is in `event.detail.redirect`)
+  through `navigate()` of the instance, which a site may override.
+- `&timeout` and `&retries`: an attempt that gets no answer in time is
+  stopped, and a network error, a timeout or a 502/503/504 of a proxy is
+  retried after 1, 2, 4 and 8 seconds. A retry never processes a form twice:
+  the server keeps the answer to a submission for an hour under its key
+  (`X-FetchIt-Submission`). The event `fetchit:retry` tells each retry and
+  can stop them. Both are off by default.
 
 ### Changed
 
@@ -56,6 +66,10 @@ FetchIt 4 replaces both with one package and installs over either of them.
 
 ### Fixed
 
+- A form processed by FormIt with the `redirect` hook, or by a snippet that
+  calls `$modx->sendRedirect()`, showed that it could not be sent though it
+  was processed, and the visitor sent it again. The redirect now comes as an
+  answer, and the script goes to its page.
 - The README said a full-page cache works through the retry of a stale token;
   without `fetchit.page_cache` a form from a cached page is not found.
 

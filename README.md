@@ -23,6 +23,8 @@ FetchIt submits the forms of a MODX site with the Fetch API: no page reload, no 
 - [Installation](#installation)
 - [Quick start](#quick-start)
 - [Snippet properties](#snippet-properties)
+  - [Redirect after a submission](#redirect-after-a-submission)
+  - [Reliable submission](#reliable-submission)
 - [Spam protection](#spam-protection)
 - [Notifications](#notifications)
 - [Events and JavaScript](#events-and-javascript)
@@ -105,6 +107,10 @@ The [documentation](https://docs.modx.pro/components/fetchit/) (in Russian) has 
 | `clearFieldsOnSuccess` | `1` | Clear the fields after a successful submission |
 | `formState` | `1` | Put the state of the submission into `data-fetchit-state` of the form |
 | `ariaBusy` | `1` | Put `aria-busy="true"` on the form while it is sent |
+| `redirectTo` | | Where to go after a successful submission: a resource id or an address. For FormIt it is the property of its `redirect` hook, see [Redirect after a submission](#redirect-after-a-submission) |
+| `redirectParams` | | The parameters of the `redirectTo` address, a JSON object |
+| `timeout` | `0` | How many seconds to wait for the answer to one attempt; `0` means no limit |
+| `retries` | `0` | How many times to send the form again after a network failure, `0` to `5`, see [Reliable submission](#reliable-submission) |
 
 All other properties go to the processing snippet: for FormIt, `&hooks`, `&validate`, `&emailTo`, `&successMessage`, `&placeholderPrefix` and the rest.
 
@@ -126,6 +132,27 @@ return $FetchIt->success('Thank you, we got your request');
 ```
 
 The `empty($fields)` check is a must: the snippet also runs on every output of the form, with an empty `$fields`, and without the check it would, for example, send an empty email on every page view. A form sent without JavaScript does not show what the snippet returns: a message appears on the page only if the snippet sets placeholders itself.
+
+### Redirect after a submission
+
+After a successful submission FetchIt can take the visitor to another page:
+
+- **FormIt:** the `redirect` hook and `&redirectTo` work as usual: `[[!FetchIt? &hooks=`email,redirect` &redirectTo=`15`]]`. Before, such a form showed "could not send" though the email went out.
+- **A snippet of your own:** `&redirectTo` (a resource id or an address) and `&redirectParams` (a JSON object with the parameters of the address) in the FetchIt call; the server adds `redirect` to a successful answer. Your snippet may also call `$modx->sendRedirect()` itself: like the `redirect` hook, it reaches the script as a successful answer with the address, not as a redirect to HTML.
+
+The script goes there after the `fetchit:success` event; the address is in `event.detail.redirect`, and cancelling the event keeps the visitor on the page. It goes through the instance method `navigate(url)`, which you can override for a router of your own. The script goes only to `http:` and `https:` addresses, resolves relative ones against the page, and does not count a change of only the hash of the same page as leaving: the form is given back. While the page is being left, the form stays disabled; if the visitor comes back with the Back button and the browser restores the page from its cache, the form is given back. Without JavaScript a snippet of your own with `&redirectTo` shows its answer on the same page.
+
+### Reliable submission
+
+On a poor connection `&timeout` limits the wait for the answer to one attempt (reading its body included), and `&retries` sends the form again after a network error, a timeout or a 502/503/504 of a proxy that is not a FetchIt answer:
+
+```
+[[!FetchIt? &form=`myForm` &timeout=`15` &retries=`2`]]
+```
+
+A retry does not process the form twice. Each submission carries a key (the `X-FetchIt-Submission` header), and the server keeps the answer to it for an hour in the protection store (`fetchit.protection.store`: files in `core/cache/fetchit/answers/` or the `fetchit_store` table). If the first attempt reached the server and the answer was lost, the retry gets the same answer. If the first one is still being processed, the retry is refused with HTTP 409 and `X-FetchIt-Refused: pending` (the message `fetchit_err_pending`) and waits. The pauses between attempts are 1, 2, 4 and 8 seconds. A FetchIt answer and other errors are not retried. The cancelable event `fetchit:retry` (`attempt` from 1, `error`) comes before each retry; a destroyed form sends no retry.
+
+If the last attempt timed out, the visitor sees `fetchit_err_timeout`: the form may have been sent. `timeout` and `retries` are off by default, and forms are sent as before.
 
 ## Spam protection
 
@@ -156,7 +183,7 @@ For a development site Turnstile has [test keys](https://developers.cloudflare.c
 
 ### What the visitor sees
 
-A refusal comes as an ordinary error of the form: the lexicon message `fetchit_err_token` (the form has expired), `fetchit_err_too_fast`, `fetchit_err_rate`, `fetchit_err_store`, `fetchit_err_pow`, `fetchit_err_captcha` or `fetchit_err_captcha_unavailable`, the `fetchit:error` event and a notification. When the token of the page is stale (a page from a cache, a page open for long, a new key), FetchIt sends the form once more with a new token by itself, and the visitor notices nothing. Without JavaScript the message goes to `[[+fi.validation_error_message]]`, and the values entered are kept, as in the `tpl.FetchIt.example` chunk.
+A refusal comes as an ordinary error of the form: the lexicon message `fetchit_err_token` (the form has expired), `fetchit_err_too_fast`, `fetchit_err_rate`, `fetchit_err_store`, `fetchit_err_pow`, `fetchit_err_captcha`, `fetchit_err_captcha_unavailable`, `fetchit_err_pending` or `fetchit_err_timeout`, the `fetchit:error` event and a notification. When the token of the page is stale (a page from a cache, a page open for long, a new key), FetchIt sends the form once more with a new token by itself, and the visitor notices nothing. Without JavaScript the message goes to `[[+fi.validation_error_message]]`, and the values entered are kept, as in the `tpl.FetchIt.example` chunk.
 
 ### Things to keep in mind
 
@@ -222,7 +249,8 @@ The events are dispatched on `document` and do not bubble. Their `event.detail` 
 |---|---|---|
 | `fetchit:before` | before sending; fields can be added to `formData` | the form is not sent |
 | `fetchit:after` | a FetchIt answer came | the answer is not handled: no field errors, no message, no notification, no `fetchit:success` or `fetchit:error`, no clearing |
-| `fetchit:success` | the form was accepted | the fields are not cleared |
+| `fetchit:success` | the form was accepted; the address to go to, if any, is in `detail.redirect` | the fields are not cleared, no redirect |
+| `fetchit:retry` | before a retry of the submission (`&retries`); `detail` also has `attempt` (the number of the retry, from 1) and `error` | the retry is not sent, the visitor sees the error |
 | `fetchit:error` | the form was refused or could not be sent; `response` is `null` when no FetchIt answer came, the cause is in `error` | the field errors and the message of the form are not shown |
 | `fetchit:reset` | the form is being reset: its button, `form.reset()` or after a success; the fields still hold their values | not possible |
 
@@ -245,7 +273,7 @@ FetchIt.Message = {
 }
 ```
 
-The global `FetchIt` exists once the deferred `fetchit.js` has run, so set `FetchIt.Message` from a deferred script added after it, or on `DOMContentLoaded`. The instance of a form is `FetchIt.instances.get(form)`, with `setError(name, message)`, `clearErrors()`, `setFormMessage(type, message)` and other methods.
+The global `FetchIt` exists once the deferred `fetchit.js` has run, so set `FetchIt.Message` from a deferred script added after it, or on `DOMContentLoaded`. The instance of a form is `FetchIt.instances.get(form)`, with `setError(name, message)`, `clearErrors()`, `setFormMessage(type, message)`, `navigate(url)` and other methods.
 
 The page starts FetchIt with `FetchIt.observe()` on `DOMContentLoaded`. It handles the forms on the page and those inserted later, and calls `destroy()` on forms taken out of the page: the instance leaves `FetchIt.instances`, its proof of work stops, its captcha widget is removed. `FetchIt.init(root)` handles the forms in `root` right away, with the class that observes the page. A form whose config is broken or that cannot start is logged in the console and sent the usual way; the other forms start all the same. A form removed while it is being sent ends quietly, without an error message. `FetchIt.create(config)` still works for pages cached by FetchIt 4.0. A class of your own in `fetchit.frontend.js.classname` with a `create()` of its own gets a `create(config)` call per form key first, as in FetchIt 4.0, and then `observe()`; a script of your own without `observe()` gets only the `create()` calls, for the forms on the page when it loads.
 
@@ -398,7 +426,7 @@ BASE_URL=http://localhost:8052 FIXTURES="$fixtures" npm run e2e
 - **`FetchItScript`** asks for the script on a page whose forms come later, and leaves the `<!--FetchItScript-->` marker, which a cached call keeps in the cached page.
 - **The plugin** on `OnWebPagePrerender` adds the script and the bootstrap that calls `FetchIt.observe()` to `<head>` when either snippet ran in the request or the page has the marker of `FetchItScript`, which it takes out. It runs at priority -10, before plugins that minify the page. A fragment without `<head>` and `<body>` gets nothing.
 - **The script** (`src/`, built into `assets/components/fetchit/js/`) picks up the forms with their config, also those inserted later, sends the form to `action.php` with an `X-FetchIt-Action` header, solves the proof of work, gets the captcha's answer, shows the errors and messages, and dispatches the events.
-- **`action.php`** finds the properties of the form by its key, checks the protection and runs FormIt or your snippet.
+- **`action.php`** finds the properties of the form by its key, checks the protection and runs FormIt or your snippet. The answer to a submission with an `X-FetchIt-Submission` header is kept for an hour, so a retry gets the same one; a redirect during processing becomes a successful answer with `redirect`.
 - **`FetchItGuard`** checks the token, the limit, the trap, the proof of work, the fill time and the captcha (`FetchItCaptcha`), then fires `OnFetchItBeforeProcess`.
 
 ### Checks and releases
