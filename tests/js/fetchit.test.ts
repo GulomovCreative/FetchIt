@@ -869,6 +869,159 @@ describe('reset', () => {
   })
 })
 
+describe('the state of the form', () => {
+  const state = (form: HTMLFormElement) => form.getAttribute('data-fetchit-state')
+  const busy = (form: HTMLFormElement) => form.getAttribute('aria-busy')
+
+  // config() has neither formState nor ariaBusy, as on a page cached by an
+  // earlier version: both are on.
+  it('is sending and busy while the request is in flight', async () => {
+    const form = mountForm()
+    FetchIt.create(config())
+    let during: (string | null)[] | undefined
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      during = [state(form), busy(form)]
+      return { json: async () => ({ success: true, message: '', data: [] }) }
+    }))
+
+    await submit(form)
+
+    expect(during).toEqual(['sending', 'true'])
+    expect(busy(form)).toBeNull()
+  })
+
+  it('is success after an accepted form, also when its fields are cleared', async () => {
+    const form = mountForm()
+    FetchIt.create(config({ clearFieldsOnSuccess: true }))
+    respond({ success: true, message: 'Thanks', data: [] })
+
+    await submit(form)
+
+    expect(state(form)).toBe('success')
+    expect(busy(form)).toBeNull()
+  })
+
+  it('is error after a refusal', async () => {
+    const form = mountForm()
+    FetchIt.create(config())
+    respond({ success: false, message: 'Check the form', data: { email: 'Enter your email' } })
+
+    await submit(form)
+
+    expect(state(form)).toBe('error')
+    expect(busy(form)).toBeNull()
+  })
+
+  it('is error after a failed request', async () => {
+    const form = mountForm()
+    FetchIt.create(config())
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('Failed to fetch') }))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await submit(form)
+
+    expect(state(form)).toBe('error')
+    expect(busy(form)).toBeNull()
+  })
+
+  it('holds the outcome when a listener cancels fetchit:after', async () => {
+    const form = mountForm()
+    FetchIt.create(config())
+    respond({ success: true, message: 'Thanks', data: [] })
+    on('fetchit:after', event => event.preventDefault())
+
+    await submit(form)
+
+    expect(state(form)).toBe('success')
+  })
+
+  it('stays as it was when fetchit:before is cancelled', async () => {
+    const form = mountForm()
+    FetchIt.create(config())
+    respond({ success: true, message: 'Thanks', data: [] })
+    await submit(form)
+    on('fetchit:before', event => event.preventDefault())
+
+    await submit(form)
+
+    expect(state(form)).toBe('success')
+    expect(busy(form)).toBeNull()
+  })
+
+  it('is removed when the visitor resets the form', async () => {
+    const form = mountForm()
+    FetchIt.create(config({ clearFieldsOnSuccess: false }))
+    respond({ success: true, message: 'Thanks', data: [] })
+    await submit(form)
+
+    form.reset()
+
+    expect(state(form)).toBeNull()
+  })
+
+  it('keeps sending through a reset during the request', async () => {
+    const form = mountForm()
+    FetchIt.create(config())
+    let during: (string | null)[] | undefined
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      form.reset()
+      during = [state(form), busy(form)]
+      return { json: async () => ({ success: true, message: '', data: [] }) }
+    }))
+
+    await submit(form)
+
+    expect(during).toEqual(['sending', 'true'])
+    expect(state(form)).toBe('success')
+  })
+
+  it('is cleared when the form is destroyed during the request', async () => {
+    const form = mountForm()
+    FetchIt.create(config())
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      instance(form)!.destroy()
+      throw new TypeError('Failed to fetch')
+    }))
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await submit(form)
+
+    expect(state(form)).toBeNull()
+    expect(busy(form)).toBeNull()
+  })
+
+  it('leaves out data-fetchit-state with formState off', async () => {
+    const form = mountForm()
+    FetchIt.create(config({ formState: false }))
+    let during: (string | null)[] | undefined
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      during = [state(form), busy(form)]
+      return { json: async () => ({ success: true, message: '', data: [] }) }
+    }))
+
+    await submit(form)
+
+    expect(during).toEqual([null, 'true'])
+    expect(state(form)).toBeNull()
+    expect(busy(form)).toBeNull()
+  })
+
+  it('leaves out aria-busy with ariaBusy off', async () => {
+    const form = mountForm()
+    FetchIt.create(config({ ariaBusy: false }))
+    let during: (string | null)[] | undefined
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      during = [state(form), busy(form)]
+      return { json: async () => ({ success: true, message: '', data: [] }) }
+    }))
+
+    await submit(form)
+
+    expect(during).toEqual(['sending', null])
+    expect(state(form)).toBe('success')
+  })
+})
+
 describe('binding and fields', () => {
   it('ignores a second submit while the first request is in flight', async () => {
     const form = mountForm()
