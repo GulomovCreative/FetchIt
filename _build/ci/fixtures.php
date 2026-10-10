@@ -199,6 +199,7 @@ $pages = [
     'mixed' => null,
     'pdotools' => null,
     'pdopage' => null,
+    'pdopagelinks' => null,
 ];
 
 // A form loaded into another page: the fragment has no template, the host
@@ -288,6 +289,19 @@ HTML
     );
     fixture_page($modx, 'fetchit-pdopage-1', '', null, $pages['pdopage']);
     fixture_page($modx, 'fetchit-pdopage-2', '', null, $pages['pdopage']);
+
+    // pdoPage in its default mode replaces the rows with those of the page
+    // whose link is clicked.
+    $pages['pdopagelinks'] = fixture_page($modx, 'fetchit-pdopage-links', <<<'HTML'
+<script src="https://code.jquery.com/jquery-3.7.1.min.js" integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+<div id="pdopage">
+  <div class="rows">[[!pdoPage? &element=`pdoResources` &parents=`[[*id]]` &limit=`1` &tpl=`tpl.FetchIt.row` &ajaxMode=`default`]]</div>
+  [[!+page.nav]]
+</div>
+HTML
+    );
+    fixture_page($modx, 'fetchit-pdopage-links-1', '', null, $pages['pdopagelinks']);
+    fixture_page($modx, 'fetchit-pdopage-links-2', '', null, $pages['pdopagelinks']);
 }
 
 if ($modx->getObject(modx_class('modSnippet'), ['name' => 'FormIt'])) {

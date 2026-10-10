@@ -6,6 +6,7 @@ const fixtures: {
   mixed?: number | null,
   host?: number,
   pdopage?: number | null,
+  pdopagelinks?: number | null,
 } = JSON.parse(process.env.FIXTURES ?? '{}')
 
 test.describe('form with its own handler', () => {
@@ -285,5 +286,28 @@ test.describe('a form in rows pdoPage loads over AJAX', () => {
     await second.getByRole('button', { name: 'Send' }).click()
 
     await expect(second.locator('[data-success]')).toHaveText('Thanks, ann@example.com')
+  })
+})
+
+test.describe('a form on a page pdoPage replaces over AJAX', () => {
+  test.skip(!fixtures.pdopagelinks, 'pdoTools is not installed')
+
+  test('the form of the new page is sent, the one replaced is forgotten', async ({ page }) => {
+    await page.goto(`/index.php?id=${fixtures.pdopagelinks}`)
+    await expect.poll(() => handled(page)).toBe(1)
+    const rows = page.locator('#pdopage .row')
+    await rows.evaluate(row => row.setAttribute('data-replaced', ''))
+    // Lost if the link loads a new page instead.
+    await page.evaluate(() => { (window as unknown as { samePage: boolean }).samePage = true })
+    await page.locator('#pdopage .pagination').getByRole('link', { name: '2', exact: true }).click()
+    await expect(page.locator('#pdopage .row[data-replaced]')).toHaveCount(0)
+    await expect(rows).toHaveCount(1)
+    expect(await page.evaluate(() => (window as unknown as { samePage?: boolean }).samePage)).toBe(true)
+
+    await rows.locator('input[name="email"]').fill('ann@example.com')
+    await rows.getByRole('button', { name: 'Send' }).click()
+
+    await expect(rows.locator('[data-success]')).toHaveText('Thanks, ann@example.com')
+    await expect.poll(() => handled(page)).toBe(1)
   })
 })
