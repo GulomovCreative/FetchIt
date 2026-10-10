@@ -1572,6 +1572,60 @@ class FetchItTest extends TestCase
         $this->assertSame([], $fetchit->responses);
     }
 
+    public function testAFailedProcessingWithAKeptAnswerIsLoggedAndGoesOnUp()
+    {
+        $fetchit = $this->catching();
+        $this->addSnippet('Handler', function () {
+            throw new RuntimeException('Mail server down');
+        });
+        try {
+            $this->send($fetchit, self::UUID);
+            $this->fail('The error was lost');
+        } catch (RuntimeException $e) {
+            $this->assertSame('Mail server down', $e->getMessage());
+        }
+        $retry = $this->send($this->fetchit(), self::UUID);
+
+        $this->assertCount(1, $this->modx->logged);
+        $this->assertStringContainsString('form abc failed: Mail server down', $this->modx->logged[0][1]);
+        $this->assertStringContainsString('still processed for an hour', $this->modx->logged[0][1]);
+        $this->assertSame(409, $retry['status'], 'The snippet may have done part of its work');
+    }
+
+    public function testARedirectAfterTheOutputBeganLeavesTheRetriesPending()
+    {
+        $fetchit = $this->catching();
+        $fetchit->headersSent = true;
+        $this->redirecting($fetchit);
+
+        $this->sendAndExit($fetchit, self::UUID);
+
+        $this->assertStringContainsString('still processed for an hour', $this->modx->logged[0][1]);
+    }
+
+    public function testAProcessingThatReadsAnotherFormFromAFailingStoreKeepsItsAnswer()
+    {
+        // The store failed for the other form only: this one was processed.
+        $this->modx->options['fetchit.page_cache'] = true;
+        $this->storedForm('not a form file');
+        $runs = 0;
+        $fetchit = $this->fetchit();
+        $this->addSnippet('Handler', function () use (&$runs, $fetchit) {
+            $runs++;
+            $fetchit->loadActionProperties(self::ACTION);
+
+            return '{"success":true,"message":"Sent","data":[]}';
+        });
+        $fetchit->storeActionProperties('abc', ['snippet' => 'Handler']);
+
+        $first = $this->send($fetchit, self::UUID);
+        $retry = $this->send($this->fetchit(), self::UUID);
+
+        $this->assertSame(1, $runs);
+        $this->assertSame($first['body'], $retry['body']);
+        $this->modx->removeCache();
+    }
+
     public function testTheSnippetDoesNotDeclarePropertiesOfTheProcessingSnippet()
     {
         $snippets = require dirname(MODX_CORE_PATH) . '/_build/elements/snippets.php';
