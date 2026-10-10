@@ -2498,6 +2498,17 @@ describe('redirect after a success', () => {
     window.location.hash = ''
   })
 
+  it('navigate() leaves for the address of the page itself without a hash', () => {
+    const assign = vi.fn()
+    vi.stubGlobal('location', { href: 'http://localhost/contacts/#form', assign })
+    const form = mountForm()
+    FetchIt.create(config())
+    const fetchit = instance(form) as unknown as Navigating
+
+    expect(fetchit.navigate('http://localhost/contacts/')).toBe(true)
+    expect(assign).toHaveBeenCalledWith('http://localhost/contacts/')
+  })
+
   it('navigate() turns down what is not an http(s) address', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const form = mountForm()
@@ -2960,5 +2971,61 @@ describe('timeout and retries', () => {
 
     expect(errors).toEqual([dropped])
     expect(element(form, '[data-validation-error]').textContent).toBe('Could not send')
+  })
+
+  it('goes to the redirect of a retry once, leaving the fields disabled', async () => {
+    type Navigating = { navigate (url: string): boolean }
+    const leave = vi.spyOn(FetchIt.prototype as unknown as Navigating, 'navigate').mockReturnValue(true)
+    const form = mountForm()
+    FetchIt.create(config({ retries: 2 }))
+    const failure = new TypeError('Failed to fetch')
+    const retries: unknown[] = []
+    on('fetchit:retry', event => retries.push((event.detail as FetchItRetryDetail).error))
+    const fetch = server(failure, { body: { ...sent, redirect: '/thanks/' } })
+
+    await send(form)
+    await vi.advanceTimersByTimeAsync(10000)
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(leave).toHaveBeenCalledTimes(1)
+    expect(leave).toHaveBeenCalledWith('/thanks/')
+    expect(retries).toEqual([failure])
+    expect(field(form, 'email').disabled).toBe(true)
+    expect(form.querySelector('button')!.disabled).toBe(true)
+  })
+
+  it('sends nothing more for a submit during the pause before a retry', async () => {
+    const form = mountForm()
+    FetchIt.create(config({ retries: 1 }))
+    const fetch = server(new TypeError('Failed to fetch'), { body: sent }, { body: sent })
+
+    await send(form)
+    form.requestSubmit()
+    await send(form)
+    await vi.advanceTimersByTimeAsync(10000)
+
+    expect(fetch).toHaveBeenCalledTimes(2)
+    expect(keyOf(fetch.mock.calls[1])).toBe(keyOf(fetch.mock.calls[0]))
+    expect(element(form, '[data-success]').textContent).toBe('Sent')
+  })
+
+  it('keeps the captcha answer in the retry, under the same key', async () => {
+    const execute = vi.fn(async () => 'recaptcha-answer')
+    window.grecaptcha = { ready: callback => callback(), execute, reset: vi.fn() }
+    try {
+      const form = mountProtectedForm()
+      FetchIt.create(config({ retries: 1, captcha: { provider: 'recaptcha', siteKey: 'site-key' } }))
+      const fetch = server(new TypeError('Failed to fetch'), { body: sent })
+
+      await send(form)
+      await vi.advanceTimersByTimeAsync(1000)
+
+      expect(fetch).toHaveBeenCalledTimes(2)
+      expect(execute).toHaveBeenCalledTimes(1)
+      expect(((fetch.mock.calls[1][1] as RequestInit).body as FormData).get('g-recaptcha-response')).toBe('recaptcha-answer')
+      expect(keyOf(fetch.mock.calls[1])).toBe(keyOf(fetch.mock.calls[0]))
+    } finally {
+      delete window.grecaptcha
+    }
   })
 })
