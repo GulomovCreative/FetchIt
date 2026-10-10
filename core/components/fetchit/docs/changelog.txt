@@ -19,6 +19,13 @@ FetchIt 4 replaces both with one package and installs over either of them.
   later. A cached call works too: it leaves the marker
   `<!--FetchItScript-->` in the page, and the plugin adds the script on every
   view.
+- `fetchit.page_cache`: forms work on pages from a full-page cache (nginx,
+  CDN). The properties of a form are kept for 90 days after its last render,
+  and the script exchanges the token of the page for a fresh one on the first
+  focus.
+- `fetchit.protection.store` = `db`: used tokens, rate counters and the forms
+  of `fetchit.page_cache` in the table `fetchit_store`, shared by several
+  servers (MySQL, MariaDB, SQL Server).
 - `FetchIt.observe()`, `FetchIt.init(root)` and `destroy()` of an instance. A
   form taken out of the page and put back later gets a new instance and is
   sent once.
@@ -40,6 +47,13 @@ FetchIt 4 replaces both with one package and installs over either of them.
   that minify the page.
 - The config of the forms and the options of the notifier have `<` and `>`
   as `\u003C` and `\u003E`, so no text in them can end the inline script.
+- The rate limit counters are keyed by an HMAC instead of an md5 of the
+  client address; the counters start anew once after the upgrade.
+
+### Fixed
+
+- The README said a full-page cache works through the retry of a stale token;
+  without `fetchit.page_cache` a form from a cached page is not found.
 
 ## [4.0.0] - 2026-09-25
 
