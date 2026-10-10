@@ -102,7 +102,7 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
-          extensions: pdo_mysql, pdo_sqlsrv
+          extensions: pdo_mysql, pdo_sqlsrv, pdo_sqlite
           coverage: none
           tools: composer
 

@@ -1261,6 +1261,9 @@ class GuardTest extends TestCase
 
     public function testAStoreFailureWhileRenewingTheTokenKeepsTheAnswer()
     {
+        if (!extension_loaded('pdo_sqlite')) {
+            $this->markTestSkipped('The failing counter is a trigger of SQLite, and pdo_sqlite is not loaded');
+        }
         // The table of the db store, whose counters are strict; SQLite in memory
         // whatever FETCHIT_TEST_DSN says, for the trigger below.
         $this->modx->pdo = new PDO('sqlite::memory:');
@@ -1273,7 +1276,11 @@ class GuardTest extends TestCase
         $snippet = $this->counted();
         $post = $this->filled($this->token());
         $first = $this->send($this->fetchit, $post);
-        // From now on a rate counter cannot be stored; the answers can.
+        // From now on every write to the table fails: SQLite compiles the body
+        // of a trigger, which names a missing table, for each INSERT or UPDATE,
+        // whatever its WHEN says. Reads still work. A retry that finds its
+        // answer writes nothing before the counter of renew(), so the counter
+        // is what fails here.
         foreach (['INSERT', 'UPDATE'] as $statement) {
             $this->modx->pdo->exec("CREATE TRIGGER no_counters_{$statement} BEFORE {$statement} ON fetchit_test_fetchit_store"
                 . " WHEN NEW.k LIKE 'r:%' BEGIN SELECT 1 FROM no_counters; END");
