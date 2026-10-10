@@ -640,6 +640,9 @@ class GuardTest extends TestCase
      */
     private function databaseStore($install = true)
     {
+        // mark() prunes at random against the real clock: the fake one goes
+        // to the future so that no mark is already expired for it.
+        $this->now = time() + 86400;
         $this->modx->options['fetchit.protection.store'] = 'db';
         $this->modx->options['table_prefix'] = 'fetchit_test_';
         $this->modx->pdo = fetchit_test_modx()->pdo;
