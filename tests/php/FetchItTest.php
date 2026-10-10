@@ -1412,6 +1412,149 @@ class FetchItTest extends TestCase
         $this->assertArrayNotHasKey('redirectParams', $config);
     }
 
+    // ------------------------------------------------------ a caught redirect
+
+    /**
+     * A FetchIt whose response headers are given, and whose response is
+     * recorded instead of sent: PHPUnit's own output buffer must stay.
+     */
+    private function catching()
+    {
+        $fetchit = new CatchingFetchIt($this->modx);
+        $fetchit->storeActionProperties('abc', ['snippet' => 'Handler']);
+
+        return $fetchit;
+    }
+
+    /**
+     * A processing snippet that sends a redirect as $modx->sendRedirect()
+     * does: a Location header, then exit, which runs finishRedirect() at
+     * the shutdown. FetchItTestExit stands for exit; a null location is a
+     * processing that ends with no answer.
+     */
+    private function redirecting(CatchingFetchIt $fetchit, $location = 'https://example.com/thanks/')
+    {
+        $this->addSnippet('Handler', function () use ($fetchit, $location) {
+            if ($location !== null) {
+                $fetchit->sentHeaders[] = 'Location: ' . $location;
+            }
+            $fetchit->finishRedirect();
+
+            throw new FetchItTestExit();
+        });
+    }
+
+    private function sendAndExit(FetchIt $fetchit, $submission = '')
+    {
+        try {
+            $this->send($fetchit, $submission);
+        } catch (FetchItTestExit $exit) {
+            return;
+        }
+        $this->fail('The processing did not end the request');
+    }
+
+    public function testACaughtRedirectIsAnsweredAndKeptForTheRetries()
+    {
+        $fetchit = $this->catching();
+        $this->redirecting($fetchit);
+
+        $this->sendAndExit($fetchit, self::UUID);
+        $retry = $this->send($this->fetchit(), self::UUID);
+
+        $this->assertCount(1, $fetchit->responses);
+        $this->assertSame(['success' => true, 'message' => 'fetchit_success_submit', 'data' => [], 'redirect' => 'https://example.com/thanks/'], $this->decode($fetchit->responses[0]));
+        $this->assertSame($fetchit->responses[0], $retry['body']);
+        $this->assertSame([], $this->modx->logged);
+    }
+
+    public function testACaughtRedirectIsAnsweredEvenWhenItsAnswerCannotBeBuilt()
+    {
+        $fetchit = $this->catching();
+        $fetchit->failAnswer = true;
+        $this->redirecting($fetchit);
+
+        $this->sendAndExit($fetchit, self::UUID);
+        $retry = $this->send($this->fetchit(), self::UUID);
+
+        $this->assertCount(1, $fetchit->responses);
+        $this->assertSame(['success' => true, 'message' => '', 'data' => [], 'redirect' => 'https://example.com/thanks/'], $this->decode($fetchit->responses[0]));
+        $this->assertSame($fetchit->responses[0], $retry['body']);
+        $this->assertCount(1, $this->modx->logged);
+        $this->assertStringContainsString('form abc', $this->modx->logged[0][1]);
+        $this->assertStringContainsString('https://example.com/thanks/', $this->modx->logged[0][1]);
+        $this->assertStringContainsString('No answer here', $this->modx->logged[0][1]);
+    }
+
+    public function testAProcessingThatEndsWithoutAnAnswerIsLoggedWhenItsAnswerIsKept()
+    {
+        $fetchit = $this->catching();
+        $this->redirecting($fetchit, null);
+
+        $this->sendAndExit($fetchit, self::UUID);
+
+        $this->assertSame([], $fetchit->responses);
+        $this->assertCount(1, $this->modx->logged);
+        $this->assertStringContainsString('form abc ended without an answer', $this->modx->logged[0][1]);
+    }
+
+    public function testAProcessingThatEndsWithoutAnAnswerIsNotLoggedWhenNothingIsKept()
+    {
+        $fetchit = $this->catching();
+        $this->redirecting($fetchit, null);
+
+        $this->sendAndExit($fetchit);
+
+        $this->assertSame([], $fetchit->responses);
+        $this->assertSame([], $this->modx->logged);
+    }
+
+    public function testARedirectAfterTheOutputBeganIsLogged()
+    {
+        $fetchit = $this->catching();
+        $fetchit->headersSent = true;
+        $this->redirecting($fetchit);
+
+        $this->sendAndExit($fetchit, self::UUID);
+
+        $this->assertSame([], $fetchit->responses);
+        $this->assertCount(1, $this->modx->logged);
+        $this->assertStringContainsString('https://example.com/thanks/', $this->modx->logged[0][1]);
+        $this->assertStringContainsString('echo or a BOM', $this->modx->logged[0][1]);
+    }
+
+    public function testNothingIsCaughtOutsideTheProcessing()
+    {
+        $fetchit = $this->catching();
+        $fetchit->sentHeaders[] = 'Location: https://example.com/thanks/';
+        $this->counted();
+
+        $this->send($fetchit, self::UUID);
+        $fetchit->finishRedirect();
+
+        $this->assertSame([], $fetchit->responses);
+        $this->assertSame([], $this->modx->logged);
+    }
+
+    public function testAnErrorOfTheProcessingEndsTheCatching()
+    {
+        $fetchit = $this->catching();
+        $this->addSnippet('Handler', function () {
+            throw new RuntimeException('Broken');
+        });
+        try {
+            $this->send($fetchit, self::UUID);
+            $this->fail('The error was lost');
+        } catch (RuntimeException $e) {
+            $this->assertSame('Broken', $e->getMessage());
+        }
+        $fetchit->sentHeaders[] = 'Location: https://example.com/thanks/';
+
+        $fetchit->finishRedirect();
+
+        $this->assertSame([], $fetchit->responses);
+    }
+
     public function testTheSnippetDoesNotDeclarePropertiesOfTheProcessingSnippet()
     {
         $snippets = require dirname(MODX_CORE_PATH) . '/_build/elements/snippets.php';
@@ -1420,5 +1563,54 @@ class FetchItTest extends TestCase
         foreach (['redirectTo', 'redirectParams', 'timeout', 'retries'] as $name) {
             $this->assertArrayNotHasKey($name, $snippets['FetchIt']['properties']);
         }
+    }
+}
+
+/**
+ * As exit in a processing snippet.
+ */
+class FetchItTestExit extends Exception
+{
+}
+
+/**
+ * FetchIt with the response headers of a test and its response recorded.
+ */
+class CatchingFetchIt extends FetchIt
+{
+    /** @var string[] As headers_list() */
+    public $sentHeaders = [];
+
+    /** @var bool As headers_sent() */
+    public $headersSent = false;
+
+    /** @var string[] What respond() was given */
+    public $responses = [];
+
+    /** @var bool Whether redirectAnswer() fails */
+    public $failAnswer = false;
+
+    public function redirectAnswer($action, $location, array $fields)
+    {
+        if ($this->failAnswer) {
+            throw new RuntimeException('No answer here');
+        }
+
+        return parent::redirectAnswer($action, $location, $fields);
+    }
+
+    protected function sentHeaders()
+    {
+        return $this->sentHeaders;
+    }
+
+    protected function headersSent()
+    {
+        return $this->headersSent;
+    }
+
+    protected function respond($body)
+    {
+        $this->responses[] = $body;
     }
 }

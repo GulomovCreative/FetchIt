@@ -56,7 +56,8 @@ class FetchIt
 
     /**
      * What submit() is processing, for finishRedirect(): action, key (of
-     * the kept answer, or null) and fields. Null outside processing.
+     * the stored submission, null when the answer is not kept) and fields.
+     * Null outside processing.
      *
      * @var array|null
      */
@@ -350,8 +351,12 @@ class FetchIt
         $fields = array_merge($_FILES, $post);
         $this->processing = ['action' => $action, 'key' => $key, 'fields' => $fields];
         $this->catchRedirect();
-        $response = $this->process($action, $fields);
-        $this->processing = null;
+        try {
+            $response = $this->process($action, $fields);
+        } finally {
+            // An exception goes on up: finishRedirect() at the shutdown must not answer for it.
+            $this->processing = null;
+        }
 
         $body = $this->withRedirect($action, $this->json($response));
         if ($key !== null) {
@@ -396,7 +401,13 @@ class FetchIt
      * request: fetch() would follow it to a page of HTML, and the visitor
      * would read that the form failed, though it was processed. At the end
      * of such a request this turns the redirect into a FetchIt answer with
-     * redirect, kept for the retries as any other.
+     * redirect, kept for the retries as any other. It relies on the output
+     * buffer action.php starts before submit(): output of the processing
+     * must not send the headers before the redirect can be taken back.
+     *
+     * A processing that ends without a redirect (an error or an exit) gets
+     * no answer; when its answer was to be kept, that is logged, since its
+     * retries are answered as still processed until the key expires.
      */
     public function finishRedirect()
     {
@@ -405,31 +416,78 @@ class FetchIt
         }
         $processing = $this->processing;
         $this->processing = null;
+        $form = substr($processing['action'], 0, 8);
         $location = null;
-        foreach (headers_list() as $line) {
+        foreach ($this->sentHeaders() as $line) {
             if (stripos($line, 'Location:') === 0) {
                 $location = trim(substr($line, strlen('Location:')));
             }
         }
         if ($location === null || $location === '') {
+            if ($processing['key'] !== null) {
+                $this->modx->log(modX::LOG_LEVEL_ERROR, "[FetchIt] The processing of form {$form} ended without an answer (an error or an exit);"
+                    . ' retries of this submission are answered that it is still processed for an hour');
+            }
+
             return;
         }
-        if (headers_sent()) {
-            $this->modx->log(modX::LOG_LEVEL_ERROR, '[FetchIt] The processing of form ' . substr($processing['action'], 0, 8)
-                . ' sent a redirect after its output began; the script gets HTML instead of an answer');
+        if ($this->headersSent()) {
+            $this->modx->log(modX::LOG_LEVEL_ERROR, "[FetchIt] The processing of form {$form} sent a redirect to {$location} after its output began;"
+                . ' the script gets HTML instead of an answer. Output before the redirect: check the processing snippet for echo or a BOM');
 
             return;
         }
 
+        // The answer first: the response is changed only when there is one to send.
+        try {
+            $body = $this->redirectAnswer($processing['action'], $location, $processing['fields']);
+        } catch (Throwable $e) {
+            $this->modx->log(modX::LOG_LEVEL_ERROR, "[FetchIt] Could not build the answer to the redirect of form {$form} to {$location}: "
+                . $e->getMessage() . '; the visitor gets an empty success message');
+            $body = (string)json_encode(['success' => true, 'message' => '', 'data' => [], 'redirect' => $location], JSON_INVALID_UTF8_SUBSTITUTE);
+        }
+        if ($processing['key'] !== null) {
+            $this->guard()->saveAnswer($processing['key'], $body);
+        }
+        $this->respond($body);
+    }
+
+
+    /**
+     * The response headers so far; tests replace it.
+     *
+     * @return string[]
+     */
+    protected function sentHeaders()
+    {
+        return headers_list();
+    }
+
+
+    /**
+     * Whether the headers went out already; tests replace it.
+     *
+     * @return bool
+     */
+    protected function headersSent()
+    {
+        return headers_sent();
+    }
+
+
+    /**
+     * Send $body as the answer instead of the redirect and of any output
+     * buffered so far; tests replace it.
+     *
+     * @param string $body JSON
+     */
+    protected function respond($body)
+    {
         header_remove('Location');
         http_response_code(200);
         header('Content-Type: application/json; charset=utf-8');
         while (ob_get_level() > 0) {
             ob_end_clean();
-        }
-        $body = $this->redirectAnswer($processing['action'], $location, $processing['fields']);
-        if ($processing['key'] !== null) {
-            $this->guard()->saveAnswer($processing['key'], $body);
         }
         echo $body;
     }
