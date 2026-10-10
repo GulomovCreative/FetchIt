@@ -12,10 +12,14 @@ type Config = ConstructorParameters<typeof FetchIt>[1]
 type Handler = (event: CustomEvent) => void
 
 // What the tests look at beyond the public types.
+type Internals = {
+  observer?: MutationObserver
+}
 type InstanceInternals = FetchItInstance & {
   work?: { stop: AbortController }
   captcha: { destroy (): void } | null
 }
+const internals = FetchIt as typeof FetchIt & Internals
 const instance = (form: HTMLFormElement) => FetchIt.instances.get(form) as InstanceInternals | undefined
 
 function config(overrides: Partial<Config> = {}): Config {
@@ -181,6 +185,188 @@ describe('FetchIt.create', () => {
   it('rejects anything but a form', () => {
     // For scripts without types: the types allow only a form.
     expect(() => new FetchIt(document.createElement('div') as unknown as HTMLFormElement, config())).toThrow()
+  })
+})
+
+// A form as the snippet outputs it: the config in data-fetchit-config.
+function configuredForm(overrides: Partial<Config> = {}) {
+  const host = document.createElement('div')
+  host.innerHTML = `
+    <form data-fetchit="${action}">
+      <input name="email" value="ann@example.com">
+      <button type="submit">Send</button>
+      <div data-success style="display: none"></div>
+      <div data-validation-error style="display: none"></div>
+    </form>`
+  const form = host.querySelector('form') as HTMLFormElement
+  form.setAttribute('data-fetchit-config', JSON.stringify(config(overrides)))
+  return { host, form }
+}
+
+// Let the MutationObserver deliver its records.
+const settle = () => new Promise(resolve => setTimeout(resolve, 0))
+
+describe('forms loaded after the page', () => {
+  beforeEach(() => FetchIt.observe())
+
+  it('init() takes the config from the form', () => {
+    const { host, form } = configuredForm({ pageId: 42 })
+    document.body.append(host)
+    FetchIt.init(host)
+
+    expect(FetchIt.instances.get(form)?.config.pageId).toBe(42)
+  })
+
+  it('init() takes the root itself when it is a form', () => {
+    const { form } = configuredForm()
+    FetchIt.init(form)
+
+    expect(FetchIt.instances.get(form)).toBeInstanceOf(FetchIt)
+  })
+
+  it('init() leaves a form with a broken config to the browser', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { host, form } = configuredForm()
+    form.setAttribute('data-fetchit-config', '{broken')
+    FetchIt.init(host)
+
+    expect(FetchIt.instances.has(form)).toBe(false)
+    expect(console.error).toHaveBeenCalled()
+  })
+
+  it('init() leaves a config without an action', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { host, form } = configuredForm({ action: '' })
+    FetchIt.init(host)
+
+    expect(FetchIt.instances.has(form)).toBe(false)
+  })
+
+  it('init() makes no second instance', () => {
+    const { host, form } = configuredForm()
+    FetchIt.init(host)
+    const first = FetchIt.instances.get(form)
+    FetchIt.init(host)
+
+    expect(FetchIt.instances.get(form)).toBe(first)
+    expect(FetchIt.forms.filter(item => item === form)).toHaveLength(1)
+  })
+
+  it('picks up a form inserted later and sends it', async () => {
+    const { host, form } = configuredForm()
+    document.body.append(host)
+    await settle()
+    const fetch = respond({ success: true, message: 'Thanks', data: [] })
+
+    await submit(form)
+
+    expect(fetch).toHaveBeenCalledTimes(1)
+    expect(element(form, '[data-success]').textContent).toBe('Thanks')
+  })
+
+  it('picks up a form inside an inserted element', async () => {
+    const wrapper = document.createElement('section')
+    const { host, form } = configuredForm()
+    wrapper.append(host)
+    document.body.append(wrapper)
+    await settle()
+
+    expect(FetchIt.instances.has(form)).toBe(true)
+  })
+
+  it('destroys a removed form', async () => {
+    const { host, form } = configuredForm()
+    document.body.append(host)
+    await settle()
+
+    host.remove()
+    await settle()
+
+    expect(FetchIt.instances.has(form)).toBe(false)
+    expect(FetchIt.forms).not.toContain(form)
+  })
+
+  it('keeps a form moved within the page', async () => {
+    const { host, form } = configuredForm()
+    const other = document.createElement('div')
+    document.body.append(host, other)
+    await settle()
+    const kept = FetchIt.instances.get(form)
+
+    other.append(form)
+    await settle()
+
+    expect(FetchIt.instances.get(form)).toBe(kept)
+  })
+
+  it('keeps the other copy of the same form', async () => {
+    const one = configuredForm()
+    const two = configuredForm()
+    document.body.append(one.host, two.host)
+    await settle()
+
+    one.host.remove()
+    await settle()
+
+    expect(FetchIt.instances.has(one.form)).toBe(false)
+    expect(FetchIt.instances.has(two.form)).toBe(true)
+  })
+
+  it('destroying while solving stops the work quietly', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { host, form } = configuredForm({ pow: 24 })
+    form.insertAdjacentHTML('afterbegin', '<input type="hidden" name="fetchit_token" value="t">')
+    document.body.append(host)
+    await settle()
+    const busy = instance(form)!
+    form.dispatchEvent(new FocusEvent('focusin'))
+    const stop = busy.work!.stop
+
+    host.remove()
+    await settle()
+
+    expect(stop.signal.aborted).toBe(true)
+    expect(busy.work).toBeUndefined()
+    expect(console.error).not.toHaveBeenCalled()
+    // The observer still works for the next form.
+    const next = configuredForm()
+    document.body.append(next.host)
+    await settle()
+    expect(FetchIt.instances.has(next.form)).toBe(true)
+  })
+
+  it('destroy() twice does nothing more', async () => {
+    const { host, form } = configuredForm()
+    document.body.append(host)
+    await settle()
+    const destroyed = FetchIt.instances.get(form)!
+
+    destroyed.destroy()
+    expect(() => destroyed.destroy()).not.toThrow()
+    expect(FetchIt.instances.has(form)).toBe(false)
+  })
+
+  it('observe() starts one observer', () => {
+    const first = internals.observer
+    FetchIt.observe()
+
+    expect(first).toBeInstanceOf(MutationObserver)
+    expect(internals.observer).toBe(first)
+  })
+
+  it('observe() turns the built-in notifier on', () => {
+    FetchIt.observe({ defaultNotifier: true, notifierCloseLabel: 'Закрыть' })
+
+    expect(FetchIt.Message?.success).toBeTypeOf('function')
+  })
+
+  it('create() still binds a form without the attribute', () => {
+    // A page cached by FetchIt 4.0.
+    const form = mountForm()
+    FetchIt.create(config())
+
+    expect(FetchIt.instances.get(form)).toBeInstanceOf(FetchIt)
+    expect(internals.observer).toBeInstanceOf(MutationObserver)
   })
 })
 

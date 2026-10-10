@@ -101,11 +101,11 @@ if (form && instance) {
 export const instanceApi: Record<keyof FetchItInstance, true> = {
   form: true, config: true, formData: true, setError: true, clearError: true, clearErrors: true,
   setFormMessage: true, clearFormMessages: true, enableFields: true, disableFields: true,
-  getFields: true, getErrors: true, getCustomErrors: true, elements: true, fields: true,
+  getFields: true, getErrors: true, getCustomErrors: true, elements: true, fields: true, destroy: true,
 }
 export const staticApi: Record<keyof FetchItStatic, true> = {
   Message: true, forms: true, instances: true, events: true, defaultRequestErrorMessage: true,
-  tokenField: true, powField: true, create: true, createNotifier: true, notify: true,
+  tokenField: true, powField: true, observe: true, init: true, create: true, createNotifier: true, notify: true,
   isResponse: true, sanitizeHTML: true, hasErrorMessage: true, escapeAttribute: true,
 }
 
@@ -138,3 +138,12 @@ if (FetchIt.isResponse(answer)) {
   const message: string = answer.message
   console.log(message)
 }
+
+// ---------------------------------------------------------- loaded forms
+
+FetchIt.observe({ defaultNotifier: true, notifierCloseLabel: 'Close' })
+FetchIt.init()
+FetchIt.init(document.createElement('div'))
+FetchIt.instances.get(document.createElement('form'))?.destroy()
+// @ts-expect-error: the options are an object
+FetchIt.observe(true)
