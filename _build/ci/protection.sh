@@ -20,6 +20,18 @@
 #               the test answer passes. Needs access to Cloudflare.
 #   captcha-refused  the same with the secret that always fails: the answer
 #               is refused by Cloudflare itself, not taken for an outage.
+#   page-cache  fetchit.page_cache 1, fetchit.protection.min_time 4: a page
+#               rendered for one session is sent from another; the token is
+#               exchanged for a fresh one (204, not cached, with the proof of
+#               work and the fill time), which passes 4.5 s later; a replayed
+#               token gets a next one timed now, refused as too fast; a bad
+#               token and a GET get none.
+#   no-page-cache  the defaults: no exchange, and a page rendered for another
+#               session is not found (why fetchit.page_cache exists).
+#   db-store    fetchit.protection.store db, fetchit.page_cache 1,
+#               fetchit.protection.rate_limit 2: a page rendered for another
+#               session passes, its token is refused the second time, and the
+#               limit holds after the MODX cache is cleared.
 #
 # Refusals are recognised by the X-FetchIt-Refused header, whatever the
 # language of the site.
@@ -30,7 +42,7 @@ set -euo pipefail
 
 base="${1:?base URL is required}"
 fixtures="${2:?fixtures JSON is required}"
-what="${3:?too-fast, rate-limit, pow, captcha or captcha-refused}"
+what="${3:?too-fast, rate-limit, pow, captcha, captcha-refused, page-cache, no-page-cache or db-store}"
 # shellcheck source=_build/ci/lib.sh
 . "$(dirname "$0")/lib.sh"
 
@@ -97,6 +109,64 @@ case "$what" in
         action="$(open_page "$custom")"
         response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom" -F cf-turnstile-response=XXXX.DUMMY.TOKEN.XXXX)"
         check "the answer is refused by the provider" test "$(header x-fetchit-refused)" = captcha
+        ;;
+    page-cache)
+        echo "# A page from a full-page cache (id $custom)"
+        action="$(open_page "$custom")"
+        page_token="$(cat "$jar.token")"
+        forget_session
+        exchange "$action"
+        check "the exchange answers 204" test "$(status)" = 204
+        check "it brings a fresh token" test "$(cat "$jar.token")" != "$page_token"
+        check "it tells the proof of work" test -n "$(header x-fetchit-pow)"
+        check "it tells the fill time" test "$(header x-fetchit-min-time)" = 4
+        check "it is not cached" grep -qi '^cache-control:.*no-store' "$jar.headers"
+        sleep 4.5
+        response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom")"
+        check "the fresh token passes 4.5 s later, from another session" json '.success == true' "$response"
+
+        echo "# The token of the cached page, used and replayed"
+        printf '%s' "$page_token" > "$jar.token"
+        response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom")"
+        check "its first use passes" json '.success == true' "$response"
+        printf '%s' "$page_token" > "$jar.token"
+        submit "$action" -F email=ann@example.com -F "pageId=$custom" > /dev/null
+        check "the replay is refused" test "$(header x-fetchit-refused)" = token
+        submit "$action" -F email=ann@example.com -F "pageId=$custom" > /dev/null
+        check "its next token, sent at once, is too fast" test "$(header x-fetchit-refused)" = too_fast
+
+        echo "# Exchanges that get nothing"
+        printf 'garbage' > "$jar.token"
+        exchange "$action"
+        check "a bad token gets no token" test -z "$(header x-fetchit-token)"
+        check "and is refused as a token" test "$(header x-fetchit-refused)" = token
+        : > "$jar.headers"
+        curl -sS -D "$jar.headers" -o /dev/null -H "X-FetchIt-Action: $action" -H "X-FetchIt-Exchange: 1" \
+            "$base/assets/components/fetchit/action.php?fetchit_token=$page_token" || true
+        check "a GET gets no token" test -z "$(header x-fetchit-token)"
+        ;;
+    no-page-cache)
+        echo "# Without fetchit.page_cache (id $custom)"
+        action="$(open_page "$custom")"
+        exchange "$action"
+        check "the exchange gives no token" test -z "$(header x-fetchit-token)"
+        forget_session
+        response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom")"
+        check "a page rendered for another session is not found" json '.success == false' "$response"
+        ;;
+    db-store)
+        echo "# Tokens, counters and forms in the database (id $custom)"
+        action="$(open_page "$custom")"
+        page_token="$(cat "$jar.token")"
+        forget_session
+        response="$(submit "$action" -F email=ann@example.com -F "pageId=$custom")"
+        check "a page rendered for another session passes" json '.success == true' "$response"
+        printf '%s' "$page_token" > "$jar.token"
+        submit "$action" -F email=ann@example.com -F "pageId=$custom" > /dev/null
+        check "its token is refused the second time" test "$(header x-fetchit-refused)" = token
+        php "$(dirname "$0")/setting.php" fetchit.protection.rate_limit 2 > /dev/null
+        submit "$action" -F email=ann@example.com -F "pageId=$custom" > /dev/null
+        check "the limit holds after the MODX cache is cleared" test "$(header x-fetchit-refused)" = rate
         ;;
     *)
         echo "Unknown check: $what" >&2

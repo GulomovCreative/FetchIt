@@ -175,6 +175,35 @@ jobs:
         if: always()
         run: php _build/ci/setting.php fetchit.protection.pow 0
 
+      - name: Pages from a full-page cache
+        run: |
+          php _build/ci/setting.php fetchit.page_cache 1
+          php _build/ci/setting.php fetchit.protection.min_time 4
+          _build/ci/protection.sh "$BASE_URL" "$(cat fixtures.json)" page-cache
+
+      - name: Turn the page cache back off
+        if: always()
+        run: |
+          php _build/ci/setting.php fetchit.page_cache 0
+          php _build/ci/setting.php fetchit.protection.min_time 0
+
+      - name: No exchange without the page cache
+        run: _build/ci/protection.sh "$BASE_URL" "$(cat fixtures.json)" no-page-cache
+
+      - name: Protection keeps its state in the database
+        run: |
+          php _build/ci/setting.php fetchit.protection.store db
+          php _build/ci/setting.php fetchit.page_cache 1
+          php _build/ci/setting.php fetchit.protection.rate_limit 2
+          _build/ci/protection.sh "$BASE_URL" "$(cat fixtures.json)" db-store
+
+      - name: Turn the database store back off
+        if: always()
+        run: |
+          php _build/ci/setting.php fetchit.protection.store files
+          php _build/ci/setting.php fetchit.page_cache 0
+          php _build/ci/setting.php fetchit.protection.rate_limit 0
+
       - name: Protection checks the answer of Turnstile
         # The test keys of Cloudflare: the widget and the secret always pass.
         run: |

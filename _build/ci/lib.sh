@@ -51,6 +51,28 @@ submit() {
     fi
 }
 
+# Exchanges the token in $jar.token for a fresh one (fetchit.page_cache) and
+# keeps it there; the headers of the answer go to $jar.headers.
+exchange() {
+    local action="$1"
+    : > "$jar.headers"
+    curl -sS -c "$jar" -b "$jar" -D "$jar.headers" -o /dev/null \
+        -H "X-FetchIt-Action: $action" \
+        -H "X-FetchIt-Exchange: 1" \
+        -F "fetchit_token=$(cat "$jar.token")" "$base/assets/components/fetchit/action.php" || true
+    local next
+    next="$(header x-fetchit-token)"
+    if [ -n "$next" ]; then
+        printf '%s' "$next" > "$jar.token"
+    fi
+}
+
+# The HTTP status of the last answer of submit() or exchange().
+status() { head -n1 "$jar.headers" | cut -d' ' -f2; }
+
+# Forgets the session, as a visitor served a page from a full-page cache.
+forget_session() { : > "$jar"; }
+
 # Succeeds when a file does not match a pattern.
 lacks() { ! grep -q "$1" "$2"; }
 
