@@ -84,30 +84,77 @@ class FetchItTest extends TestCase
 
     // ------------------------------------------------------------ form markup
 
+    /**
+     * The prepared chunk without data-fetchit-config, for the tests of the
+     * other attributes.
+     */
+    private function prepare($chunk, $action)
+    {
+        return preg_replace('/ data-fetchit-config="[^"]*"/', '', $this->fetchit()->prepareForm($chunk, $action));
+    }
+
+    private function formConfig($html)
+    {
+        $this->assertSame(1, preg_match('/ data-fetchit-config="([^"]*)"/', $html, $match), $html);
+
+        return json_decode(html_entity_decode($match[1], ENT_QUOTES, 'UTF-8'), true);
+    }
+
+    public function testFormCarriesItsConfig()
+    {
+        $this->modx->resource = new FakeResource(7);
+        $fetchit = $this->fetchit(['actionUrl' => '[[+assetsUrl]]action.php']);
+
+        $html = $fetchit->prepareForm('<form class="f">', 'abc');
+
+        $this->assertStringContainsString(' method="post" data-fetchit="abc" data-fetchit-config="', $html);
+        $this->assertSame($fetchit->clientConfig('abc'), $this->formConfig($html));
+        $this->assertSame('abc', $this->formConfig($html)['action']);
+        $this->assertSame(7, $this->formConfig($html)['pageId']);
+    }
+
+    public function testConfigOfTheChunkIsReplaced()
+    {
+        $html = $this->fetchit()->prepareForm('<form data-fetchit-config=\'{"action":"x"}\' class="f">', 'abc');
+
+        $this->assertSame(1, substr_count($html, 'data-fetchit-config'));
+        $this->assertSame('abc', $this->formConfig($html)['action']);
+    }
+
+    public function testConfigSurvivesQuotesAndMarkup()
+    {
+        $this->modx->lexicon->entries['fetchit_err_request'] = 'Не удалось "отправить" <форму> & всё';
+
+        $html = $this->fetchit()->prepareForm('<form>', 'abc');
+
+        $this->assertStringNotContainsString('<форму>', $html);
+        $this->assertSame('Не удалось "отправить" <форму> & всё', $this->formConfig($html)['requestErrorMessage']);
+    }
+
     public function testFormGetsPostMethodAndActionKey()
     {
-        $html = $this->fetchit()->prepareForm('<form class="f"><input name="a"></form>', 'abc');
+        $html = $this->prepare('<form class="f"><input name="a"></form>', 'abc');
 
         $this->assertSame('<form class="f" method="post" data-fetchit="abc"><input name="a"></form>', $html);
     }
 
     public function testExistingMethodIsReplaced()
     {
-        $html = $this->fetchit()->prepareForm("<form method='get' class=\"f\">", 'abc');
+        $html = $this->prepare("<form method='get' class=\"f\">", 'abc');
 
         $this->assertSame('<form class="f" method="post" data-fetchit="abc">', $html);
     }
 
     public function testExistingActionKeyIsReplacedKeepingOtherAttributes()
     {
-        $html = $this->fetchit()->prepareForm('<form id="x" data-fetchit="old" class="f">', 'abc');
+        $html = $this->prepare('<form id="x" data-fetchit="old" class="f">', 'abc');
 
         $this->assertSame('<form id="x" class="f" method="post" data-fetchit="abc">', $html);
     }
 
     public function testAttributesOfNestedElementsAreLeftAlone()
     {
-        $html = $this->fetchit()->prepareForm(
+        $html = $this->prepare(
             '<form class="f"><button formmethod="get" data-fetchit="keep">Go</button></form>',
             'abc'
         );
@@ -120,14 +167,14 @@ class FetchItTest extends TestCase
 
     public function testFormTagIsFoundInAnyCaseButNotInLookalikes()
     {
-        $html = $this->fetchit()->prepareForm("<FORM\n  action=\"/x\"><form-field></form-field></FORM>", 'abc');
+        $html = $this->prepare("<FORM\n  action=\"/x\"><form-field></form-field></FORM>", 'abc');
 
         $this->assertSame("<FORM\n  action=\"/x\" method=\"post\" data-fetchit=\"abc\"><form-field></form-field></FORM>", $html);
     }
 
     public function testGreaterThanInsideAValueDoesNotEndTheTag()
     {
-        $html = $this->fetchit()->prepareForm(
+        $html = $this->prepare(
             '<form x-data="{ step: 1 }" @submit="step > 1 && send()" onsubmit=\'return a>b\' class="f">',
             'abc'
         );
@@ -140,14 +187,14 @@ class FetchItTest extends TestCase
 
     public function testAttributeNamesInsideValuesAreLeftAlone()
     {
-        $html = $this->fetchit()->prepareForm('<form class="a method=get" title=\'data-fetchit="x"\'>', 'abc');
+        $html = $this->prepare('<form class="a method=get" title=\'data-fetchit="x"\'>', 'abc');
 
         $this->assertSame('<form class="a method=get" title=\'data-fetchit="x"\' method="post" data-fetchit="abc">', $html);
     }
 
     public function testBareAndUnquotedAttributesAreReplaced()
     {
-        $html = $this->fetchit()->prepareForm('<form data-fetchit METHOD=GET class=f>', 'abc');
+        $html = $this->prepare('<form data-fetchit METHOD=GET class=f>', 'abc');
 
         $this->assertSame('<form class=f method="post" data-fetchit="abc">', $html);
     }
@@ -400,19 +447,15 @@ class FetchItTest extends TestCase
 
     // ------------------------------------------------------------------ scripts
 
-    public function testLoadScriptRegistersTheInitialisation()
+    public function testClientConfig()
     {
         $this->modx->resource = new FakeResource(7);
         $this->modx->options['fetchit.frontend.input.invalid.class'] = "  is-invalid \n  error ";
         $this->modx->options['fetchit.frontend.custom.invalid.class'] = '';
         $fetchit = $this->fetchit(['actionUrl' => '[[+assetsUrl]]action.php']);
 
-        $fetchit->loadScript('abc');
+        $config = $fetchit->clientConfig('abc');
 
-        $this->assertCount(1, $this->modx->htmlBlocks);
-        $this->assertMatchesRegularExpression('/\.create\((\{.*?\})\);/', $this->modx->htmlBlocks[0]);
-        preg_match('/\.create\((\{.*?\})\);/', $this->modx->htmlBlocks[0], $match);
-        $config = $this->decode($match[1]);
         $this->assertSame('abc', $config['action']);
         $this->assertSame('/assets/components/fetchit/action.php', $config['actionUrl']);
         $this->assertSame('is-invalid error', $config['inputInvalidClass']);
@@ -476,11 +519,7 @@ class FetchItTest extends TestCase
 
     private function scriptConfig()
     {
-        $this->modx->htmlBlocks = [];
-        $this->fetchit()->loadScript('abc');
-        preg_match('/\.create\((\{.*?\})\);/', $this->modx->htmlBlocks[0], $match);
-
-        return json_decode($match[1], true);
+        return $this->fetchit()->clientConfig('abc');
     }
 
     public function testTheScriptGetsTheNotifierAndItsCloseLabel()
