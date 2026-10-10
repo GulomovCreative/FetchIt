@@ -195,4 +195,25 @@ class DbStoreTest extends TestCase
         $this->assertFalse($store->saveForm(self::ACTION, '{}', 1000));
         $this->assertNull($store->loadForm(self::ACTION));
     }
+
+    public function testOneOfManyAtOnceGetsTheMark()
+    {
+        if (!getenv('FETCHIT_TEST_DSN')) {
+            $this->markTestSkipped('Needs a database server: FETCHIT_TEST_DSN');
+        }
+        $start = microtime(true) + 1;
+        $processes = [];
+        for ($i = 0; $i < 4; $i++) {
+            $processes[] = popen(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(__DIR__ . '/store-race.php')
+                . ' ' . self::NONCE . ' ' . $start, 'r');
+        }
+        $results = [];
+        foreach ($processes as $process) {
+            $results[] = stream_get_contents($process);
+            pclose($process);
+        }
+        sort($results);
+
+        $this->assertSame(['marked', 'used', 'used', 'used'], $results);
+    }
 }

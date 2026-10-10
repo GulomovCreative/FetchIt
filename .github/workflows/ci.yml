@@ -58,12 +58,85 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
+          extensions: pdo_sqlite
           coverage: none
           tools: composer
 
       - run: composer install --no-interaction --no-progress
 
       - run: vendor/bin/phpunit
+
+  php-store:
+    name: Database store on MySQL, MariaDB and SQL Server
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: fetchit
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: fetchit
+        ports: ['3307:3306']
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: 'Y'
+          MSSQL_SA_PASSWORD: FetchIt-Test-2026
+        ports: ['1433:1433']
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_mysql, pdo_sqlsrv
+          coverage: none
+          tools: composer
+
+      - run: composer install --no-interaction --no-progress
+
+      - name: Wait for SQL Server
+        run: |
+          for _ in $(seq 1 60); do
+            php -r 'new PDO("sqlsrv:Server=127.0.0.1,1433;TrustServerCertificate=1", "sa", "FetchIt-Test-2026");' 2>/dev/null && exit 0
+            sleep 2
+          done
+          echo "::error::SQL Server did not start"
+          exit 1
+
+      - name: MySQL 8
+        env:
+          FETCHIT_TEST_DSN: mysql:host=127.0.0.1;port=3306;dbname=fetchit
+          FETCHIT_TEST_USER: root
+          FETCHIT_TEST_PASSWORD: root
+        run: vendor/bin/phpunit --filter 'DbStoreTest|StoreResolverTest'
+
+      - name: MariaDB 11
+        env:
+          FETCHIT_TEST_DSN: mysql:host=127.0.0.1;port=3307;dbname=fetchit
+          FETCHIT_TEST_USER: root
+          FETCHIT_TEST_PASSWORD: root
+        run: vendor/bin/phpunit --filter 'DbStoreTest|StoreResolverTest'
+
+      - name: SQL Server 2022
+        env:
+          FETCHIT_TEST_DSN: sqlsrv:Server=127.0.0.1,1433;Database=master;TrustServerCertificate=1
+          FETCHIT_TEST_USER: sa
+          FETCHIT_TEST_PASSWORD: FetchIt-Test-2026
+        run: vendor/bin/phpunit --filter 'DbStoreTest|StoreResolverTest'
 
   frontend:
     name: Frontend
