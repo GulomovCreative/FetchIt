@@ -9,4 +9,4 @@ $_lang['fetchit_prop_ariaBusy'] = 'Put aria-busy="true" on the form while it is 
 $_lang['fetchit_prop_redirectTo'] = 'The page to go to after a successful submission: a resource id or an address. With FormIt, use its redirect hook instead.';
 $_lang['fetchit_prop_redirectParams'] = 'The parameters of the redirectTo address as a JSON object.';
 $_lang['fetchit_prop_timeout'] = 'Seconds to wait for the answer of the server to one attempt; 0 waits as long as the browser does.';
-$_lang['fetchit_prop_retries'] = 'How many times to send the form again after a network error or a timeout, from 0 to 5. A retry never processes the form twice.';
+$_lang['fetchit_prop_retries'] = 'How many times to send the form again after a network error or a timeout, from 0 to 5. A retry does not process the form twice, unless the protection store cannot be written.';
