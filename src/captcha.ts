@@ -33,7 +33,7 @@ const CHALLENGE_WAIT = 180_000
 /**
  * Wait until read() gives something, such as the global of the provider's
  * script, checking every 100 ms; undefined after `ms`. What read() throws
- * ends the wait.
+ * ends the wait, and so does null: a destroyed captcha waits for nothing.
  */
 async function waitFor<T> (read: () => T | undefined, ms = SCRIPT_WAIT): Promise<T | undefined> {
   for (let waited = 0; ; waited += 100) {
@@ -55,6 +55,11 @@ function withTimeout<T> (promise: Promise<T>, ms: number, what: string): Promise
 
 function notLoaded (provider: string, host: string): CaptchaError {
   return new CaptchaError(`FetchIt: the script of ${provider} did not load; is ${host} blocked?`)
+}
+
+// The form was taken off the page during the check.
+function removed (): CaptchaError {
+  return new CaptchaError('FetchIt: the form was removed')
 }
 
 function safely (action: () => void) {
@@ -92,9 +97,10 @@ function turnstile (form: HTMLFormElement, siteKey: string): Captcha {
   let widget: string | undefined
   let failure: string | undefined
   let gone = false
+  let box: HTMLElement | undefined
 
   const render = (api: Turnstile): string => {
-    widget ??= api.render(container(form), {
+    widget ??= api.render(box ??= container(form), {
       sitekey: siteKey,
       callback: () => { failure = undefined },
       // E.g. 110200: the domain is not allowed for the site key.
@@ -109,13 +115,19 @@ function turnstile (form: HTMLFormElement, siteKey: string): Captcha {
 
   return {
     async answer (formData) {
-      const api = await waitFor(() => window.turnstile)
+      const api = await waitFor(() => gone ? null : window.turnstile)
+      if (gone) {
+        throw removed()
+      }
       if (!api) {
         throw notLoaded('Turnstile', 'challenges.cloudflare.com')
       }
       const id = render(api)
       // The widget may still be checking the visitor, or wait for a click.
       const response = await waitFor(() => {
+        if (gone) {
+          throw removed()
+        }
         const current = api.getResponse(id)
         if (current) {
           return current
@@ -143,6 +155,8 @@ function turnstile (form: HTMLFormElement, siteKey: string): Captcha {
         widget = undefined
         safely(() => window.turnstile?.remove?.(id))
       }
+      box?.remove()
+      box = undefined
     },
   }
 }
@@ -179,6 +193,7 @@ function smartcaptcha (form: HTMLFormElement, siteKey: string): Captcha {
   let widget: number | undefined
   let pending: { resolve (token: string): void; reject (error: Error): void } | undefined
   let gone = false
+  let box: HTMLElement | undefined
 
   const settle = (token: string | undefined, error?: Error) => {
     const waiting = pending
@@ -192,7 +207,7 @@ function smartcaptcha (form: HTMLFormElement, siteKey: string): Captcha {
 
   const render = (api: SmartCaptcha): number => {
     if (widget === undefined) {
-      const id = api.render(container(form), {
+      const id = api.render(box ??= container(form), {
         sitekey: siteKey,
         invisible: true,
         callback: token => settle(token),
@@ -214,7 +229,10 @@ function smartcaptcha (form: HTMLFormElement, siteKey: string): Captcha {
 
   return {
     async answer (formData) {
-      const api = await waitFor(() => window.smartCaptcha)
+      const api = await waitFor(() => gone ? null : window.smartCaptcha)
+      if (gone) {
+        throw removed()
+      }
       if (!api) {
         throw notLoaded('SmartCaptcha', 'smartcaptcha.yandexcloud.net')
       }
@@ -234,12 +252,15 @@ function smartcaptcha (form: HTMLFormElement, siteKey: string): Captcha {
     },
     destroy () {
       gone = true
-      pending = undefined
+      // The submission waiting for the answer ends now, not at the timeout.
+      settle(undefined, removed())
       if (widget !== undefined) {
         const id = widget
         widget = undefined
         safely(() => window.smartCaptcha?.destroy?.(id))
       }
+      box?.remove()
+      box = undefined
     },
   }
 }

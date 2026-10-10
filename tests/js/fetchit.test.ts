@@ -14,8 +14,11 @@ type Handler = (event: CustomEvent) => void
 // What the tests look at beyond the public types.
 type Internals = {
   observer?: MutationObserver
+  started?: typeof FetchIt
 }
 type InstanceInternals = FetchItInstance & {
+  pending: boolean
+  destroyed: boolean
   work?: { stop: AbortController }
   captcha: { destroy (): void } | null
 }
@@ -242,6 +245,104 @@ describe('forms loaded after the page', () => {
     expect(FetchIt.instances.has(form)).toBe(false)
   })
 
+  it.each([
+    ['an array', '[]'],
+    ['null', 'null'],
+    ['a string', '"abc"'],
+    ['an action that is not a string', JSON.stringify({ ...config(), action: 0 })],
+    ['no actionUrl', JSON.stringify({ ...config(), actionUrl: undefined })],
+    ['no pageId', JSON.stringify({ ...config(), pageId: undefined })],
+    ['the action of another form', JSON.stringify({ ...config(), action: 'other' })],
+  ])('init() leaves a config that is %s', (_, value) => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { host, form } = configuredForm()
+    form.setAttribute('data-fetchit-config', value)
+    FetchIt.init(host)
+
+    expect(FetchIt.instances.has(form)).toBe(false)
+    expect(console.error).toHaveBeenCalledTimes(1)
+  })
+
+  it('init() starts the other forms when one cannot start', () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const broken = configuredForm({ actionUrl: 'http://[bad' })
+    const good = configuredForm()
+    const host = document.createElement('div')
+    host.append(broken.form, good.form)
+    FetchIt.init(host)
+
+    expect(FetchIt.instances.has(broken.form)).toBe(false)
+    expect(FetchIt.instances.has(good.form)).toBe(true)
+    expect(String(vi.mocked(console.error).mock.calls[0]![0])).toContain('sent without FetchIt')
+  })
+
+  it('init() of FetchIt makes instances of the class that observes', () => {
+    class Forms extends FetchIt {}
+    const started = internals.started
+    internals.started = Forms
+    try {
+      const { host, form } = configuredForm()
+      FetchIt.init(host)
+
+      expect(FetchIt.instances.get(form)).toBeInstanceOf(Forms)
+    } finally {
+      internals.started = started
+    }
+  })
+
+  it('a second instance of a form replaces the first', () => {
+    const { host, form } = configuredForm()
+    FetchIt.init(host)
+    const first = instance(form)!
+    const second = new FetchIt(form, config())
+
+    expect(first.destroyed).toBe(true)
+    expect(FetchIt.instances.get(form)).toBe(second)
+    expect(FetchIt.forms.filter(item => item === form)).toHaveLength(1)
+  })
+
+  it('replaces a form swapped in with innerHTML', async () => {
+    const { host, form } = configuredForm()
+    document.body.append(host)
+    await settle()
+    const next = configuredForm()
+
+    host.innerHTML = next.host.innerHTML
+    await settle()
+    const swapped = host.querySelector('form') as HTMLFormElement
+    const fetch = respond({ success: true, message: 'Thanks', data: [] })
+    await submit(swapped)
+
+    expect(FetchIt.instances.has(form)).toBe(false)
+    expect(FetchIt.instances.has(swapped)).toBe(true)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('create() and observe() make one instance of a form', async () => {
+    const { host, form } = configuredForm()
+    document.body.append(host)
+    FetchIt.create(config())
+    FetchIt.observe()
+    await settle()
+    const fetch = respond({ success: true, message: 'Thanks', data: [] })
+    await submit(form)
+
+    expect(FetchIt.forms.filter(item => item === form)).toHaveLength(1)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
+  it('picks up a form of a page cached by 4.0 put back later', async () => {
+    const form = mountForm()
+    FetchIt.create(config())
+    const host = form.parentElement!
+    form.remove()
+    await settle()
+    host.append(form)
+    await settle()
+
+    expect(FetchIt.instances.has(form)).toBe(true)
+  })
+
   it('init() makes no second instance', () => {
     const { host, form } = configuredForm()
     FetchIt.init(host)
@@ -350,6 +451,70 @@ describe('forms loaded after the page', () => {
 
     expect(fetch).toHaveBeenCalledTimes(1)
     expect(FetchIt.instances.has(form)).toBe(true)
+  })
+
+  it('a form removed while solving for its submission ends quietly', async () => {
+    const errors = vi.fn()
+    on('fetchit:error', errors)
+    FetchIt.Message = { error: vi.fn() }
+    const { host, form } = configuredForm({ pow: 24 })
+    form.insertAdjacentHTML('afterbegin', '<input type="hidden" name="fetchit_token" value="t">')
+    document.body.append(host)
+    await settle()
+    const busy = instance(form)!
+    const fetch = respond({ success: true, message: 'Thanks', data: [] })
+
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    host.remove()
+    await vi.waitFor(() => expect(busy.pending).toBe(false))
+
+    expect(fetch).not.toHaveBeenCalled()
+    expect(errors).not.toHaveBeenCalled()
+    expect(FetchIt.Message.error).not.toHaveBeenCalled()
+  })
+
+  it('the answer to a removed form is handled and starts no new work', async () => {
+    const { host, form } = configuredForm({ pow: 1 })
+    form.insertAdjacentHTML('afterbegin', '<input type="hidden" name="fetchit_token" value="t">')
+    document.body.append(host)
+    await settle()
+    const busy = instance(form)!
+    let answer: ((value: unknown) => void) | undefined
+    const fetch = vi.fn(() => new Promise(resolve => { answer = resolve }))
+    vi.stubGlobal('fetch', fetch)
+    const success = vi.fn()
+    on('fetchit:success', success)
+
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalled())
+    host.remove()
+    await settle()
+    answer!({
+      headers: new Headers({ 'X-FetchIt-Token': 'next' }),
+      json: async () => ({ success: true, message: 'Thanks', data: [] }),
+    })
+    await vi.waitFor(() => expect(busy.pending).toBe(false))
+
+    expect(success).toHaveBeenCalled()
+    expect(busy.work).toBeUndefined()
+  })
+
+  it('a form put back before the answer can be sent again', async () => {
+    const { host, form } = configuredForm()
+    document.body.append(host)
+    await settle()
+    const fetch = vi.fn(() => new Promise(() => {}))
+    vi.stubGlobal('fetch', fetch)
+
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    host.remove()
+    await settle()
+    document.body.append(host)
+    await settle()
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    await settle()
+
+    expect(fetch).toHaveBeenCalledTimes(2)
   })
 
   it('destroy() twice does nothing more', async () => {
@@ -1470,6 +1635,84 @@ describe('destroying a captcha', () => {
     instance(form)!.captcha!.destroy()
 
     expect(smartCaptcha.destroy).toHaveBeenCalledWith(7)
+  })
+
+  it('renders no SmartCaptcha widget when its script comes after', async () => {
+    const form = mountForm()
+    FetchIt.create(captchaConfig('smartcaptcha'))
+    instance(form)!.captcha!.destroy()
+
+    const smartCaptcha = fakeSmartCaptcha()
+    window.smartCaptcha = smartCaptcha
+    await new Promise(resolve => setTimeout(resolve, 250))
+
+    expect(smartCaptcha.render).not.toHaveBeenCalled()
+  })
+
+  it('ends a submission waiting for SmartCaptcha quietly', async () => {
+    const smartCaptcha = fakeSmartCaptcha()
+    window.smartCaptcha = smartCaptcha
+    const form = mountForm()
+    FetchIt.create(captchaConfig('smartcaptcha'))
+    await vi.waitFor(() => expect(smartCaptcha.render).toHaveBeenCalled())
+    const busy = instance(form)!
+    const errors = vi.fn()
+    on('fetchit:error', errors)
+    const fetch = respond({ success: true, message: 'Thanks', data: [] })
+
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    await vi.waitFor(() => expect(smartCaptcha.execute).toHaveBeenCalled())
+    busy.destroy()
+    await vi.waitFor(() => expect(busy.pending).toBe(false))
+
+    expect(fetch).not.toHaveBeenCalled()
+    expect(errors).not.toHaveBeenCalled()
+  })
+
+  it('renders no Turnstile widget for a submission of a destroyed form', async () => {
+    const form = mountForm()
+    FetchIt.create(captchaConfig('turnstile'))
+    // The observer has seen the form: it would start the form, still on
+    // the page, again.
+    await settle()
+    const busy = instance(form)!
+    const errors = vi.fn()
+    on('fetchit:error', errors)
+    const fetch = respond({ success: true, message: 'Thanks', data: [] })
+
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    busy.destroy()
+    const turnstile = fakeTurnstile()
+    window.turnstile = turnstile
+    await vi.waitFor(() => expect(busy.pending).toBe(false))
+
+    expect(turnstile.render).not.toHaveBeenCalled()
+    expect(fetch).not.toHaveBeenCalled()
+    expect(errors).not.toHaveBeenCalled()
+  })
+
+  it('takes the block of the widget out of the form', async () => {
+    const turnstile = fakeTurnstile()
+    window.turnstile = turnstile
+    const form = mountForm()
+    FetchIt.create(captchaConfig('turnstile'))
+    await vi.waitFor(() => expect(turnstile.render).toHaveBeenCalled())
+
+    instance(form)!.captcha!.destroy()
+
+    expect(form.querySelector('.fetchit-captcha')).toBeNull()
+  })
+
+  it('copes with a provider that cannot remove widgets', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const turnstile = fakeTurnstile()
+    window.turnstile = turnstile
+    const form = mountForm()
+    FetchIt.create(captchaConfig('turnstile'))
+    await vi.waitFor(() => expect(turnstile.render).toHaveBeenCalled())
+
+    expect(() => instance(form)!.captcha!.destroy()).not.toThrow()
+    expect(console.error).not.toHaveBeenCalled()
   })
 
   it('leaves reCAPTCHA alone', () => {

@@ -51,7 +51,7 @@
 	/**
 	* Wait until read() gives something, such as the global of the provider's
 	* script, checking every 100 ms; undefined after `ms`. What read() throws
-	* ends the wait.
+	* ends the wait, and so does null: a destroyed captcha waits for nothing.
 	*/
 	async function waitFor(read, ms = SCRIPT_WAIT) {
 		for (let waited = 0;; waited += 100) {
@@ -69,6 +69,9 @@
 	}
 	function notLoaded(provider, host) {
 		return new CaptchaError(`FetchIt: the script of ${provider} did not load; is ${host} blocked?`);
+	}
+	function removed() {
+		return new CaptchaError("FetchIt: the form was removed");
 	}
 	function safely(action) {
 		try {
@@ -97,9 +100,10 @@
 		let widget;
 		let failure;
 		let gone = false;
+		let box;
 		const render = (api) => {
-			var _widget;
-			(_widget = widget) !== null && _widget !== void 0 || (widget = api.render(container(form), {
+			var _widget, _box;
+			(_widget = widget) !== null && _widget !== void 0 || (widget = api.render((_box = box) !== null && _box !== void 0 ? _box : box = container(form), {
 				sitekey: siteKey,
 				callback: () => {
 					failure = void 0;
@@ -114,10 +118,12 @@
 		waitFor(() => gone ? null : window.turnstile).then((api) => api && render(api)).catch((error) => console.error(error));
 		return {
 			async answer(formData) {
-				const api = await waitFor(() => window.turnstile);
+				const api = await waitFor(() => gone ? null : window.turnstile);
+				if (gone) throw removed();
 				if (!api) throw notLoaded("Turnstile", "challenges.cloudflare.com");
 				const id = render(api);
 				const response = await waitFor(() => {
+					if (gone) throw removed();
 					const current = api.getResponse(id);
 					if (current) return current;
 					if (failure !== void 0) throw new CaptchaError(`FetchIt: Turnstile failed with error ${failure}`);
@@ -144,6 +150,8 @@
 						return (_window$turnstile2 = window.turnstile) === null || _window$turnstile2 === void 0 || (_window$turnstile2$re = _window$turnstile2.remove) === null || _window$turnstile2$re === void 0 ? void 0 : _window$turnstile2$re.call(_window$turnstile2, id);
 					});
 				}
+				box === null || box === void 0 || box.remove();
+				box = void 0;
 			}
 		};
 	}
@@ -178,6 +186,7 @@
 		let widget;
 		let pending;
 		let gone = false;
+		let box;
 		const settle = (token, error) => {
 			const waiting = pending;
 			pending = void 0;
@@ -186,8 +195,8 @@
 		};
 		const render = (api) => {
 			if (widget === void 0) {
-				var _api$subscribe, _api$subscribe2, _api$subscribe3;
-				const id = api.render(container(form), {
+				var _box2, _api$subscribe, _api$subscribe2, _api$subscribe3;
+				const id = api.render((_box2 = box) !== null && _box2 !== void 0 ? _box2 : box = container(form), {
 					sitekey: siteKey,
 					invisible: true,
 					callback: (token) => settle(token)
@@ -204,7 +213,8 @@
 		waitFor(() => gone ? null : window.smartCaptcha).then((api) => api && render(api)).catch((error) => console.error(error));
 		return {
 			async answer(formData) {
-				const api = await waitFor(() => window.smartCaptcha);
+				const api = await waitFor(() => gone ? null : window.smartCaptcha);
+				if (gone) throw removed();
 				if (!api) throw notLoaded("SmartCaptcha", "smartcaptcha.yandexcloud.net");
 				const id = render(api);
 				const token = api.getResponse(id) || await withTimeout(new Promise((resolve, reject) => {
@@ -228,7 +238,7 @@
 			},
 			destroy() {
 				gone = true;
-				pending = void 0;
+				settle(void 0, removed());
 				if (widget !== void 0) {
 					const id = widget;
 					widget = void 0;
@@ -237,6 +247,8 @@
 						return (_window$smartCaptcha2 = window.smartCaptcha) === null || _window$smartCaptcha2 === void 0 || (_window$smartCaptcha3 = _window$smartCaptcha2.destroy) === null || _window$smartCaptcha3 === void 0 ? void 0 : _window$smartCaptcha3.call(_window$smartCaptcha2, id);
 					});
 				}
+				box === null || box === void 0 || box.remove();
+				box = void 0;
 			}
 		};
 	}
@@ -651,9 +663,12 @@
 	}
 	var FetchIt = class FetchIt {
 		constructor(form, config) {
+			var _FetchIt$instances$ge;
 			_defineProperty(this, "formData", void 0);
 			_defineProperty(this, "listening", new AbortController());
+			_defineProperty(this, "destroyed", false);
 			if (!(form instanceof HTMLFormElement)) throw new Error("FetchIt: the element is not a form");
+			(_FetchIt$instances$ge = FetchIt.instances.get(form)) === null || _FetchIt$instances$ge === void 0 || _FetchIt$instances$ge.destroy();
 			this.form = form;
 			this.config = config;
 			this.request = new Request(this.config.actionUrl, {
@@ -798,12 +813,14 @@
 		}
 		/**
 		* The form is gone: forget it, remove its listeners, stop the proof of
-		* work, remove the captcha widget. An answer still on its way is handled
-		* as usual.
+		* work, remove the captcha widget. A submission waiting for the proof of
+		* work or the captcha ends without a message; an answer already on its
+		* way is handled as usual, but starts no new proof of work.
 		*/
 		destroy() {
 			var _this$work, _this$captcha2;
 			if (FetchIt.instances.get(this.form) !== this) return;
+			this.destroyed = true;
 			FetchIt.instances.delete(this.form);
 			this.listening.abort();
 			const index = FetchIt.forms.indexOf(this.form);
@@ -820,6 +837,7 @@
 		* FetchIt answer goes the normal way.
 		*/
 		failRequest(error, formData) {
+			if (this.destroyed) return;
 			console.error(error);
 			const message = error instanceof CaptchaError && this.config.captchaErrorMessage || this.config.requestErrorMessage || FetchIt.defaultRequestErrorMessage;
 			FetchIt.notify("error", message);
@@ -873,6 +891,7 @@
 		*/
 		solveAhead() {
 			var _this$form$querySelec;
+			if (this.destroyed) return;
 			const token = (_this$form$querySelec = this.form.querySelector(`input[name="${FetchIt.tokenField}"]`)) === null || _this$form$querySelec === void 0 ? void 0 : _this$form$querySelec.value;
 			if (this.config.pow && token) this.solution(token).catch((error) => {
 				var _this$work4;
@@ -1039,25 +1058,35 @@
 		static observe(options = {}) {
 			FetchIt.useNotifier(options);
 			if (FetchIt.observer) return;
-			this.init(document);
+			FetchIt.started = this;
 			FetchIt.observer = new MutationObserver((records) => this.mutated(records));
 			FetchIt.observer.observe(document.documentElement, {
 				childList: true,
 				subtree: true
 			});
+			this.init(document);
 		}
 		/**
 		* Handle the forms in root, root itself included, that carry their
-		* config and have no instance yet.
+		* config (or were started by create() on a page cached by FetchIt 4.0)
+		* and have no instance yet. A form that cannot start is logged and sent
+		* the usual way; the others start all the same.
 		*/
 		static init(root = document) {
-			const selector = `form[data-fetchit][${FetchIt.configAttribute}]`;
+			const Class = this === FetchIt && FetchIt.started ? FetchIt.started : this;
+			const selector = "form[data-fetchit]";
 			const forms = Array.from(root.querySelectorAll(selector));
 			if (root instanceof HTMLFormElement && root.matches(selector)) forms.unshift(root);
 			forms.forEach((form) => {
+				var _form$getAttribute;
 				if (FetchIt.instances.has(form)) return;
-				const config = FetchIt.readConfig(form);
-				if (config) new this(form, config);
+				const config = form.hasAttribute(FetchIt.configAttribute) ? FetchIt.readConfig(form) : FetchIt.legacy.get((_form$getAttribute = form.getAttribute("data-fetchit")) !== null && _form$getAttribute !== void 0 ? _form$getAttribute : "");
+				if (!config) return;
+				try {
+					FetchIt.instances.set(form, new Class(form, config));
+				} catch (error) {
+					console.error(`FetchIt: could not start the form ${config.action}; it is sent without FetchIt`, form, error);
+				}
 			});
 		}
 		/**
@@ -1065,13 +1094,28 @@
 		* is then sent the usual way.
 		*/
 		static readConfig(form) {
+			let reason = "it has no action, actionUrl or pageId";
 			try {
-				var _form$getAttribute;
-				const config = JSON.parse((_form$getAttribute = form.getAttribute(FetchIt.configAttribute)) !== null && _form$getAttribute !== void 0 ? _form$getAttribute : "");
-				if (config !== null && typeof config === "object" && config.action) return config;
-			} catch {}
-			console.error(`FetchIt: the form has no valid ${FetchIt.configAttribute}`, form);
+				var _form$getAttribute2;
+				const config = JSON.parse((_form$getAttribute2 = form.getAttribute(FetchIt.configAttribute)) !== null && _form$getAttribute2 !== void 0 ? _form$getAttribute2 : "");
+				if (FetchIt.isConfig(config)) {
+					if (config.action === form.getAttribute("data-fetchit")) return config;
+					reason = "its action is not the data-fetchit of the form";
+				}
+			} catch (error) {
+				reason = error instanceof Error ? error.message : String(error);
+			}
+			console.error(`FetchIt: the form has no valid ${FetchIt.configAttribute} (${reason}); it is sent without FetchIt`, form);
 			return null;
+		}
+		/**
+		* What the script cannot do without: the key of the form, where to send
+		* it and the page it belongs to.
+		*/
+		static isConfig(value) {
+			if (value === null || typeof value !== "object") return false;
+			const config = value;
+			return typeof config.action === "string" && config.action !== "" && typeof config.actionUrl === "string" && (typeof config.pageId === "string" || typeof config.pageId === "number");
 		}
 		/**
 		* Inserted forms get an instance; removed ones are destroyed. The
@@ -1098,9 +1142,10 @@
 			const selector = `form[data-fetchit="${FetchIt.escapeAttribute(config.action)}"]`;
 			const forms = document.querySelectorAll(selector);
 			if (!forms.length) console.warn(`FetchIt: no form matches ${selector}`);
+			FetchIt.legacy.set(config.action, config);
 			forms.forEach((form) => {
-				var _FetchIt$instances$ge;
-				return (_FetchIt$instances$ge = FetchIt.instances.get(form)) !== null && _FetchIt$instances$ge !== void 0 ? _FetchIt$instances$ge : new this(form, config);
+				var _FetchIt$instances$ge2;
+				return (_FetchIt$instances$ge2 = FetchIt.instances.get(form)) !== null && _FetchIt$instances$ge2 !== void 0 ? _FetchIt$instances$ge2 : new this(form, config);
 			});
 			this.observe();
 		}
@@ -1108,7 +1153,9 @@
 	_defineProperty(FetchIt, "forms", []);
 	_defineProperty(FetchIt, "instances", /* @__PURE__ */ new Map());
 	_defineProperty(FetchIt, "observer", void 0);
+	_defineProperty(FetchIt, "started", void 0);
 	_defineProperty(FetchIt, "configAttribute", "data-fetchit-config");
+	_defineProperty(FetchIt, "legacy", /* @__PURE__ */ new Map());
 	_defineProperty(FetchIt, "defaultRequestErrorMessage", "Could not send the form. Please try again.");
 	_defineProperty(FetchIt, "tokenField", "fetchit_token");
 	_defineProperty(FetchIt, "powField", "fetchit_pow");

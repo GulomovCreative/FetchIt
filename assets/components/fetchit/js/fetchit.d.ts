@@ -4,15 +4,18 @@
 //   /// <reference path="path/to/assets/components/fetchit/js/fetchit.d.ts" />
 //
 // document.addEventListener('fetchit:success', event => ...) then knows
-// event.detail, and FetchIt.Message and FetchIt.create() their arguments.
+// event.detail, and FetchIt.Message, FetchIt.observe() and FetchIt.init()
+// their arguments.
 // The script is type-checked against this file: FetchIt, its instances and
 // the detail of every event it dispatches. Remove any FetchIt declaration of
 // your own (declare var FetchIt: any): the two would clash.
 
 /**
  * The config of a form: the snippet writes it into data-fetchit-config.
+ * Its notifier options are read by create() only (pages cached by FetchIt
+ * 4.0); otherwise the page passes them to observe().
  */
-interface FetchItConfig {
+interface FetchItConfig extends FetchItObserveOptions {
   /** The key of the form: its data-fetchit attribute and the X-FetchIt-Action header */
   action: string;
   actionUrl: string;
@@ -22,10 +25,6 @@ interface FetchItConfig {
   /** Classes for [data-custom] elements of an invalid field, separated by spaces */
   customInvalidClass?: string | undefined;
   clearFieldsOnSuccess?: boolean | undefined;
-  /** Show the answers with the built-in notifier; see FetchItStatic.Message */
-  defaultNotifier?: boolean | undefined;
-  /** The label of the close button of the built-in notifier */
-  notifierCloseLabel?: string | undefined;
   /**
    * Shown when the form could not be sent: a network error, an answer that
    * is not FetchIt's, a failed proof of work (and a captcha that gave no
@@ -240,12 +239,18 @@ interface FetchItStatic {
    */
   observe(options?: FetchItObserveOptions): void;
   /**
-   * Handle the forms with data-fetchit-config in root (document by default),
-   * root included, right away: e.g. right after inserting a form, before
-   * the observer sees it.
+   * Handle the forms with data-fetchit and data-fetchit-config in root
+   * (document by default), root included, right away: e.g. right after
+   * inserting a form, before the observer sees it. A form that cannot start
+   * is logged and sent the usual way. FetchIt.init() makes instances of the
+   * class that observes the page, a class of the site included.
    */
   init(root?: ParentNode): void;
-  /** Handle the forms of this config; pages cached by FetchIt 4.0 call it */
+  /**
+   * Handle the forms of this config, then observe() the page. Pages cached
+   * by FetchIt 4.0 call it, and so does the page for a class of the site
+   * with a create() of its own.
+   */
   create(config: FetchItConfig): void;
   /** The built-in notifier, e.g. for FetchIt.Message without the setting */
   createNotifier(options?: FetchItNotifierOptions): FetchItNotifier;
@@ -258,8 +263,8 @@ interface FetchItStatic {
 }
 
 /**
- * Defined on pages with a FetchIt form, once the deferred fetchit.js has
- * run: set FetchIt.Message from a deferred or module script, or on
+ * Defined on pages with a FetchIt form or [[!FetchItScript]], once the
+ * deferred fetchit.js has run: set FetchIt.Message from a deferred or module script, or on
  * DOMContentLoaded. Listeners of the events on document can be added any
  * time. With fetchit.frontend.js.classname the class has another name.
  */
