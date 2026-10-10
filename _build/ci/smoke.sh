@@ -41,7 +41,8 @@ action="$(open_page "$custom")"
 check "the form gets a data-fetchit key" test -n "$action"
 check "the script is linked in <head>" grep -q 'components/fetchit/js/fetchit\.js?v=' "$jar.html"
 check "the form carries its config" grep -q "data-fetchit-config=\"&#123;&quot;action&quot;:&quot;$action&quot;" "$jar.html"
-check "the page starts the forms" grep -q "FetchItClass = FetchIt; .*FetchItClass.observe({" "$jar.html"
+check "the page looks up the class of the forms" grep -q 'try { FetchItClass = FetchIt; }' "$jar.html"
+check "the page starts the forms" grep -q 'FetchItClass.observe(options);' "$jar.html"
 
 status="$(curl -s -o /dev/null -w '%{http_code}' "$base/assets/components/fetchit/action.php" || true)"
 check "GET action.php redirects" test "$status" = 302
@@ -80,7 +81,7 @@ response="$(submit "$action" -F email=ann@example.com -F "pageId=$fragment")"
 check "the form of the fragment is sent" json '.success == true and .message == "Thanks, ann@example.com"' "$response"
 open_page "$host" > /dev/null
 check "the host page links the script" grep -q 'components/fetchit/js/fetchit\.js?v=' "$jar.html"
-check "the host page starts the forms" grep -q 'FetchItClass.observe({' "$jar.html"
+check "the host page starts the forms" grep -q 'FetchItClass.observe(options);' "$jar.html"
 
 echo "# The installed package"
 check "the snippet and plugin in the database are FetchIt 4" json '.installed.elements == true' "$fixtures"
