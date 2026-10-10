@@ -419,7 +419,10 @@ class FetchItGuard
      * well-signed token of the form, as nextToken(). Its time keeps the fill
      * time going on, as the next token of checkProtection() does: timed now
      * with fetchit.page_cache, timed now less min_time when the token has
-     * expired, and otherwise the time of the token sent.
+     * expired, and otherwise the time of the token sent. It counts against
+     * the limit of exchanges: a replayed retry would mint tokens without
+     * end. Past the limit, or when the counter cannot be stored, there is
+     * none, and the retry gets the kept answer only.
      *
      * @param string $action
      * @param array $post
@@ -433,6 +436,13 @@ class FetchItGuard
         }
         $token = $this->read($post);
         if (!$this->valid($action, $token)) {
+            return null;
+        }
+        if (!$this->withinRateLimit($action, 'exchange')) {
+            if (!$this->storeFailed) {
+                $this->log(self::LOG_PROBLEMS, 'renew: rate limit reached', $action);
+            }
+
             return null;
         }
 

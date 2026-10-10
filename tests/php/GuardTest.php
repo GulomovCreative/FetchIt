@@ -962,6 +962,43 @@ class GuardTest extends TestCase
         $this->assertNull($this->fetchit()->guard()->renew(self::ACTION, [FetchItGuard::TOKEN => $token]));
     }
 
+    public function testRenewCountsAgainstTheLimitOfExchanges()
+    {
+        $this->modx->options['fetchit.protection.rate_limit'] = 1;
+        $this->modx->options['fetchit.protection.rate_window'] = 600;
+        $token = $this->token();
+
+        $this->assertNotNull($this->guard()->renew(self::ACTION, [FetchItGuard::TOKEN => $token]));
+        $this->assertNull($this->guard()->renew(self::ACTION, [FetchItGuard::TOKEN => $token]));
+        $this->assertNotNull($this->guard()->renew(self::OTHER, [FetchItGuard::TOKEN => $this->token(self::OTHER)]), 'Each form has its own counter');
+    }
+
+    public function testARetryPastTheLimitGetsTheKeptAnswerWithoutAToken()
+    {
+        $this->modx->options['fetchit.protection.rate_limit'] = 1;
+        $this->modx->options['fetchit.protection.rate_window'] = 600;
+        $this->modx->snippets['Handler'] = new FakeSnippet('Handler', function () {
+            return '{"success":true,"message":"Sent","data":[]}';
+        });
+        $this->fetchit->storeActionProperties(self::ACTION, ['snippet' => 'Handler']);
+        $token = $this->token();
+        $this->now += 10;
+        $post = [FetchItGuard::TOKEN => $token, $this->guard()->trapName() => ''];
+        $headers = [];
+        $header = function ($line) use (&$headers) {
+            $headers[] = $line;
+        };
+        $first = $this->fetchit->submit(self::ACTION, $post, self::UUID, $header);
+        $this->fetchit()->submit(self::ACTION, $post, self::UUID, $header);
+        $headers = [];
+
+        $retry = $this->fetchit()->submit(self::ACTION, $post, self::UUID, $header);
+
+        $this->assertTrue(json_decode($first['body'], true)['success']);
+        $this->assertSame($first, $retry);
+        $this->assertSame([], $headers);
+    }
+
     public function testAnAnswerIsKeptByTheKeyOnTheClockOfTheGuard()
     {
         $key = $this->guard()->submissionKey(self::ACTION, self::UUID);
