@@ -472,7 +472,7 @@ class FetchItGuard
         // time starts anew, or a bot replaying it would never wait.
         // Otherwise a retry keeps the time of the first render, and an
         // expired page starts anew, as if it had been filled in already.
-        if ($restart && ($expired || $mark === 'used')) {
+        if ($restart && ($expired || $mark === FetchItStore::USED)) {
             $this->next = $this->issue($action);
         } elseif ($expired) {
             $this->next = $this->issue($action, $this->now() - $minTime);
@@ -486,12 +486,12 @@ class FetchItGuard
             return $this->refuse('token', 'fetchit_err_token');
         }
 
-        if ($mark === 'used') {
+        if ($mark === FetchItStore::USED) {
             $this->log(self::LOG_ALL, 'used token', $action);
 
             return $this->refuse('token', 'fetchit_err_token');
         }
-        if ($mark === 'failed') {
+        if ($mark === FetchItStore::FAILED) {
             // Fail closed: without the mark the token could be used again.
             return $this->refuse('store', 'fetchit_err_store');
         }
@@ -567,13 +567,16 @@ class FetchItGuard
     {
         if ($this->store === false) {
             $setting = strtolower(trim((string)$this->modx->getOption('fetchit.protection.store', null, 'files')));
-            $log = function ($what) {
-                $this->log(self::LOG_PROBLEMS, $what);
-            };
             if ($setting === '' || $setting === 'files') {
-                $this->store = new FetchItFileStore($this->modx, $log, $this->ttl());
+                // As FetchIt 4.0: subject to fetchit.protection.log.
+                $this->store = new FetchItFileStore($this->modx, function ($what) {
+                    $this->log(self::LOG_PROBLEMS, $what);
+                }, $this->ttl());
             } elseif ($setting === 'db') {
-                $this->store = new FetchItDbStore($this->modx, $log);
+                // Always logged: a broken table refuses every form.
+                $this->store = new FetchItDbStore($this->modx, function ($what) {
+                    $this->modx->log(modX::LOG_LEVEL_ERROR, '[FetchIt] ' . $what);
+                });
             } else {
                 // Fail closed: a typo must not quietly drop to the files of one server.
                 $this->store = null;
@@ -587,8 +590,8 @@ class FetchItGuard
 
 
     /**
-     * Mark a nonce as used: "marked", "used" when it was already, or "failed"
-     * when the mark could not be written; see FetchItStore::mark().
+     * Mark a nonce as used: FetchItStore::MARKED, USED when it was already,
+     * or FAILED when the mark could not be written; see FetchItStore::mark().
      *
      * @param string $nonce
      *
@@ -600,7 +603,7 @@ class FetchItGuard
 
         // A minute past the token, as the marks in files: the clocks of
         // several servers may be a little apart.
-        return $store !== null ? $store->mark($nonce, $this->now() + $this->ttl() + 60) : 'failed';
+        return $store !== null ? $store->mark($nonce, $this->now() + $this->ttl() + 60) : FetchItStore::FAILED;
     }
 
 

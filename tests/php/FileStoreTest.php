@@ -134,13 +134,29 @@ class FileStoreTest extends TestCase
         $this->assertSame(1000 + 86401, filemtime($file));
     }
 
-    public function testAFormFileWithoutTheGuardIsIgnored()
+    public function testAFormFileWithoutTheGuardIsAFailure()
     {
         $dir = $this->modx->getCachePath() . 'fetchit/forms/01/';
         mkdir($dir, 0775, true);
         file_put_contents($dir . self::ACTION . '.php', '{"snippet":"Evil"}');
+        $store = $this->store();
 
-        $this->assertNull($this->store()->loadForm(self::ACTION));
+        $this->assertFalse($store->loadForm(self::ACTION));
+        $this->assertFalse($store->loadForm(self::ACTION));
+        $this->assertCount(1, $this->logged, 'Logged once');
+        $this->assertStringContainsString('cannot be read', $this->logged[0]);
+    }
+
+    public function testAFormFileThatCannotBeReadIsAFailure()
+    {
+        $this->store()->saveForm(self::ACTION, '{}', 1000);
+        chmod($this->store()->formFile(self::ACTION), 0);
+        if (is_readable($this->store()->formFile(self::ACTION))) {
+            $this->markTestSkipped('Root reads any file');
+        }
+
+        $this->assertFalse($this->store()->loadForm(self::ACTION));
+        $this->assertStringContainsString('cannot be read', $this->logged[0]);
     }
 
     public function testNoTemporaryFilesAreLeft()

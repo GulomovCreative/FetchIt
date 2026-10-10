@@ -636,7 +636,20 @@ class GuardTest extends TestCase
         $this->modx->pdo = new PDO('sqlite::memory:');
 
         $this->assertRefused('store', 'fetchit_err_store', $this->submit());
-        $this->assertLogged('cannot be used');
+        $this->assertLogged('[FetchIt] The table fetchit_test_fetchit_store failed on ');
+    }
+
+    public function testProblemsOfTheDatabaseStoreAreLoggedWhateverTheLogLevel()
+    {
+        // fetchit.protection.log is about refusals; a broken table refuses everyone.
+        $this->modx->options['fetchit.protection.store'] = 'db';
+        $this->modx->options['fetchit.protection.log'] = 0;
+        $this->modx->options['fetchit.protection.rate_limit'] = 10;
+        $this->modx->options['table_prefix'] = 'fetchit_test_';
+        $this->modx->pdo = new PDO('sqlite::memory:');
+
+        $this->assertRefused('store', 'fetchit_err_store', $this->submit());
+        $this->assertLogged('[FetchIt] The table fetchit_test_fetchit_store failed on hit');
     }
 
     public function testADatabaseStoreRefusesWhenOnlyTheCounterFails()

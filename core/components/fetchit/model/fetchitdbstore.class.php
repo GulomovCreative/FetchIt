@@ -8,7 +8,9 @@
  *
  * The SQL is the part MySQL, MariaDB, SQL Server and SQLite share, with
  * positional parameters only: named ones used twice need emulated prepares.
- * Any error fails closed and is logged once per request, without the query.
+ * Any error fails closed and is logged once per request and operation, with
+ * the SQLSTATE and the driver code only: neither the query nor the message
+ * of the driver, which may hold its values.
  */
 class FetchItDbStore implements FetchItStore
 {
@@ -18,14 +20,25 @@ class FetchItDbStore implements FetchItStore
     /** Driver codes of a duplicate key: MySQL and MariaDB; SQL Server (2); SQLite */
     const DUPLICATE = [1062, 2627, 2601, 19];
 
+    /** The longest properties of a form in bytes: TEXT of MySQL, the smallest of the databases */
+    const MAX_FORM = 65535;
+
+    /** What a failure of each operation means for the site, for the log */
+    const CONSEQUENCES = [
+        'mark' => '; forms are refused',
+        'hit' => '; forms are refused',
+        'saveForm' => '; the form does not work from a full-page cache',
+        'loadForm' => '; the form is answered with fetchit_err_store',
+    ];
+
     /** @var modX */
     protected $modx;
 
     /** @var callable Logs a problem, given what went wrong */
     protected $log;
 
-    /** @var bool Whether a problem was logged in this request */
-    protected $warned = false;
+    /** @var bool[] The operations whose problems were logged in this request */
+    protected $warned = [];
 
 
     /**
@@ -50,19 +63,19 @@ class FetchItDbStore implements FetchItStore
         $result = $this->run('INSERT INTO ' . $this->table() . ' (k, since, ' . $this->count() . ', expires, v) VALUES (?, 0, 0, ?, NULL)', [
             'm:' . $nonce,
             (int)$expires,
-        ]);
+        ], 'mark');
         if ($result === 'duplicate') {
-            return 'used';
+            return self::USED;
         }
         if (!$result instanceof PDOStatement) {
-            return 'failed';
+            return self::FAILED;
         }
 
         if (mt_rand(1, 100) === 1) {
             $this->prune(time());
         }
 
-        return 'marked';
+        return self::MARKED;
     }
 
 
@@ -89,7 +102,7 @@ class FetchItDbStore implements FetchItStore
             $updated = $this->run("UPDATE {$table} SET {$count} = CASE WHEN since <= ? THEN 1 ELSE {$count} + 1 END,"
                 . ' since = CASE WHEN since <= ? THEN ? ELSE since END, expires = ? WHERE k = ?', [
                 $start, $start, $now, $expires, $row,
-            ]);
+            ], 'hit');
             if (!$updated instanceof PDOStatement) {
                 return null;
             }
@@ -97,7 +110,7 @@ class FetchItDbStore implements FetchItStore
                 break;
             }
 
-            $inserted = $this->run("INSERT INTO {$table} (k, since, {$count}, expires, v) VALUES (?, ?, 1, ?, NULL)", [$row, $now, $expires]);
+            $inserted = $this->run("INSERT INTO {$table} (k, since, {$count}, expires, v) VALUES (?, ?, 1, ?, NULL)", [$row, $now, $expires], 'hit');
             if ($inserted instanceof PDOStatement) {
                 return 1;
             }
@@ -106,7 +119,7 @@ class FetchItDbStore implements FetchItStore
             }
         }
 
-        $read = $this->run("SELECT {$count} FROM {$table} WHERE k = ?", [$row]);
+        $read = $this->run("SELECT {$count} FROM {$table} WHERE k = ?", [$row], 'hit');
         $value = $read instanceof PDOStatement ? $read->fetchColumn() : false;
 
         return $value === false ? null : (int)$value;
@@ -115,34 +128,52 @@ class FetchItDbStore implements FetchItStore
 
     /**
      * Inserted once: the action key is a hash of the properties. A render a
-     * day later keeps it for FORM_TTL more.
+     * day later keeps it for FORM_TTL more. Properties longer than MAX_FORM
+     * are not kept (logged once per form): one database would cut them,
+     * another refuse them.
      *
      * {@inheritdoc}
      */
     public function saveForm($action, $json, $now)
     {
+        $length = strlen($json);
+        if ($length > self::MAX_FORM) {
+            if (!isset($this->warned['long:' . $action])) {
+                $this->warned['long:' . $action] = true;
+                call_user_func($this->log, 'The properties of form ' . substr($action, 0, 8) . " are {$length} bytes, more than the table keeps ("
+                    . self::MAX_FORM . '); it does not work from a full-page cache');
+            }
+
+            return false;
+        }
+
         $row = 'f:' . $action;
         $expires = $now + self::FORM_TTL;
         $inserted = $this->run('INSERT INTO ' . $this->table() . ' (k, since, ' . $this->count() . ', expires, v) VALUES (?, 0, 0, ?, ?)', [
             $row, $expires, $json,
-        ]);
+        ], 'saveForm');
         if ($inserted !== 'duplicate') {
             return $inserted instanceof PDOStatement;
         }
 
         return $this->run('UPDATE ' . $this->table() . ' SET expires = ? WHERE k = ? AND expires < ?', [
             $expires, $row, $expires - 86400,
-        ]) instanceof PDOStatement;
+        ], 'saveForm') instanceof PDOStatement;
     }
 
 
     /**
+     * No row: null. A failed query: false.
+     *
      * {@inheritdoc}
      */
     public function loadForm($action)
     {
-        $read = $this->run('SELECT v FROM ' . $this->table() . ' WHERE k = ?', ['f:' . $action]);
-        $value = $read instanceof PDOStatement ? $read->fetchColumn() : false;
+        $read = $this->run('SELECT v FROM ' . $this->table() . ' WHERE k = ?', ['f:' . $action], 'loadForm');
+        if (!$read instanceof PDOStatement) {
+            return false;
+        }
+        $value = $read->fetchColumn();
 
         return is_string($value) ? $value : null;
     }
@@ -153,7 +184,7 @@ class FetchItDbStore implements FetchItStore
      */
     public function prune($now)
     {
-        $this->run('DELETE FROM ' . $this->table() . ' WHERE expires < ?', [(int)$now]);
+        $this->run('DELETE FROM ' . $this->table() . ' WHERE expires < ?', [(int)$now], 'prune');
     }
 
 
@@ -181,8 +212,8 @@ class FetchItDbStore implements FetchItStore
         }
 
         return $this->run('CREATE TABLE ' . $this->table() . ' (k VARCHAR(80) NOT NULL PRIMARY KEY, since INT NOT NULL, '
-                . $this->count() . ' INT NOT NULL, expires INT NOT NULL, v TEXT NULL)', []) instanceof PDOStatement
-            && $this->run('CREATE INDEX ' . $this->name('store_expires') . ' ON ' . $this->table() . ' (expires)', []) instanceof PDOStatement;
+                . $this->count() . ' INT NOT NULL, expires INT NOT NULL, v TEXT NULL)', [], 'install') instanceof PDOStatement
+            && $this->run('CREATE INDEX ' . $this->name('store_expires') . ' ON ' . $this->table() . ' (expires)', [], 'install') instanceof PDOStatement;
     }
 
 
@@ -193,7 +224,7 @@ class FetchItDbStore implements FetchItStore
      */
     public function uninstall()
     {
-        return !$this->exists() || $this->run('DROP TABLE ' . $this->table(), []) instanceof PDOStatement;
+        return !$this->exists() || $this->run('DROP TABLE ' . $this->table(), [], 'uninstall') instanceof PDOStatement;
     }
 
 
@@ -202,7 +233,7 @@ class FetchItDbStore implements FetchItStore
      */
     public function exists()
     {
-        return $this->run('SELECT 1 FROM ' . $this->table() . ' WHERE 1 = 0', [], true) instanceof PDOStatement;
+        return $this->run('SELECT 1 FROM ' . $this->table() . ' WHERE 1 = 0', [], null) instanceof PDOStatement;
     }
 
 
@@ -211,12 +242,13 @@ class FetchItDbStore implements FetchItStore
      *
      * @param string $sql
      * @param array $params
-     * @param bool $quiet Do not log a failure
+     * @param string|null $operation The operation for the log (a key of
+     *     CONSEQUENCES, prune, install or uninstall); null logs nothing
      *
      * @return PDOStatement|string|null The statement; "duplicate" when the
      *     primary key was taken; null on any other error
      */
-    protected function run($sql, array $params, $quiet = false)
+    protected function run($sql, array $params, $operation)
     {
         $error = null;
         try {
@@ -232,10 +264,11 @@ class FetchItDbStore implements FetchItStore
         if (isset($error[0], $error[1]) && (string)$error[0] === self::INTEGRITY && in_array((int)$error[1], self::DUPLICATE, true)) {
             return 'duplicate';
         }
-        if (!$quiet && !$this->warned) {
-            $this->warned = true;
-            call_user_func($this->log, 'the table ' . $this->table() . ' cannot be used (SQLSTATE '
-                . (isset($error[0]) ? $error[0] : '?') . '); forms are refused while fetchit.protection.store is db');
+        if ($operation !== null && !isset($this->warned[$operation])) {
+            $this->warned[$operation] = true;
+            call_user_func($this->log, 'The table ' . $this->prefixed('store') . " failed on {$operation}"
+                . ' (SQLSTATE ' . (isset($error[0]) ? $error[0] : '?') . ', code ' . (isset($error[1]) ? $error[1] : '?') . ')'
+                . (isset(self::CONSEQUENCES[$operation]) ? self::CONSEQUENCES[$operation] : ''));
         }
 
         return null;
@@ -258,7 +291,18 @@ class FetchItDbStore implements FetchItStore
      */
     protected function name($name)
     {
-        return $this->modx->escape($this->modx->getOption('table_prefix', null, '') . 'fetchit_' . $name);
+        return $this->modx->escape($this->prefixed($name));
+    }
+
+
+    /**
+     * @param string $name The name without "fetchit_"
+     *
+     * @return string The name with the table prefix, not quoted
+     */
+    protected function prefixed($name)
+    {
+        return $this->modx->getOption('table_prefix', null, '') . 'fetchit_' . $name;
     }
 
 
