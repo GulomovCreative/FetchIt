@@ -71,6 +71,12 @@ class modX
     /** @var array[] [event, params] of every invokeEvent() call */
     public $invoked = [];
 
+    /** @var string[] Resource id => the URL makeUrl() gives for it; none for a missing resource */
+    public $urls = [];
+
+    /** @var array[] [id, context, args, scheme] of every makeUrl() call */
+    public $madeUrls = [];
+
     public function __construct()
     {
         $this->lexicon = new FakeLexicon();
@@ -143,6 +149,21 @@ class modX
     public function toJSON($data)
     {
         return json_encode($data);
+    }
+
+    /**
+     * As modX::makeUrl(): '' for a resource that does not exist; the
+     * arguments as a query string.
+     */
+    public function makeUrl($id, $context = '', $args = '', $scheme = -1, array $options = [])
+    {
+        $this->madeUrls[] = [$id, $context, $args, $scheme];
+        if (!isset($this->urls[$id])) {
+            return '';
+        }
+        $query = is_array($args) ? http_build_query($args) : (string)$args;
+
+        return $this->urls[$id] . ($query !== '' ? '?' . $query : '');
     }
 
     /**
