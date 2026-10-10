@@ -20,6 +20,10 @@ export class CaptchaError extends Error {
   override name = 'CaptchaError'
 }
 
+// The fields the providers' answers go in, a widget's own included: an
+// answer is new for each submission, so it is no part of its data.
+export const captchaFields = ['cf-turnstile-response', 'g-recaptcha-response', 'smart-token']
+
 // The reCAPTCHA v3 action the server expects (FetchItCaptcha::RECAPTCHA_ACTION).
 const RECAPTCHA_ACTION = 'fetchit'
 

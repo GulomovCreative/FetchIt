@@ -1,4 +1,4 @@
-import { CaptchaError, createCaptcha, type Captcha } from './captcha'
+import { CaptchaError, captchaFields, createCaptcha, type Captcha } from './captcha'
 import { createNotifier } from './notifier'
 import { solve } from './pow'
 import { stripTags } from './text'
@@ -92,6 +92,25 @@ function submissionKey (): string {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+/**
+ * The data of a submission as a string, to tell whether the form is sent
+ * again with the same data: the fields of the form, without the token, the
+ * proof of work and the captcha answer, which are new for each submission.
+ * A file counts by its name, size, type and date.
+ */
+function fingerprint (formData: FormData): string {
+  const skipped = [FetchIt.tokenField, FetchIt.powField, ...captchaFields];
+  const entries: string[][] = [];
+  formData.forEach((value, name) => {
+    if (!skipped.includes(name)) {
+      entries.push(typeof value === 'string'
+        ? [name, value]
+        : [name, value.name, String(value.size), value.type, String(value.lastModified)]);
+    }
+  });
+  return JSON.stringify(entries);
+}
+
 class FetchIt implements FetchItInstance {
   declare static Message?: FetchItMessage;
   static forms: HTMLFormElement[] = [];
@@ -146,10 +165,11 @@ class FetchIt implements FetchItInstance {
   // The state of the submission, kept also with formState off
   // (setSubmissionState()).
   submissionState: 'sending' | 'success' | 'error' | null = null;
-  // The key of a submission that got no FetchIt answer (config.retries): the
-  // form sent again unchanged carries it, so the server does not process it
-  // twice. A change of the form, a reset or an answer forgets it.
-  unanswered: string | undefined = undefined;
+  // The key of a submission that got no FetchIt answer (config.retries) and
+  // its data (fingerprint()): the form sent again with the same data carries
+  // it, so the server does not process it twice. A change of the form, a
+  // reset or an answer forgets it.
+  unanswered: { key: string; data: string | undefined } | undefined = undefined;
 
   constructor (form: unknown, config: FetchItConfig) {
     if (!(form instanceof HTMLFormElement)) {
@@ -201,6 +221,9 @@ class FetchIt implements FetchItInstance {
       }
 
       const formData = new FormData(this.form);
+      // Before the listeners of fetchit:before add to it, as they may add
+      // something new each time.
+      const data = fingerprint(formData);
       formData.set('pageId', String(this.config.pageId));
       this.formData = formData;
 
@@ -227,7 +250,7 @@ class FetchIt implements FetchItInstance {
 
       try {
         try {
-          const answer = await this.send(formData);
+          const answer = await this.send(formData, data);
           if (answer === undefined) {
             return;
           }
@@ -430,12 +453,12 @@ class FetchIt implements FetchItInstance {
    * protection once, then up to 1 + config.retries attempts with one
    * X-FetchIt-Submission key, a pause before each retry. The key is that of
    * the last submission when it got no FetchIt answer (the last attempt
-   * failed or was still processed) and the form has not changed since; it
-   * is kept for the next one when this one ends so too. Undefined when the
-   * form was destroyed meanwhile. Throws why the last attempt failed when no
+   * failed or was still processed) and data, its fingerprint(), is the
+   * same; it is kept for the next one when this one ends so too. Undefined
+   * when the form was destroyed meanwhile. Throws why the last attempt failed when no
    * attempt brought a FetchIt answer.
    */
-  async send (formData: FormData): Promise<{ response: FetchItResponse; redirect: string | undefined } | undefined> {
+  async send (formData: FormData, data?: string): Promise<{ response: FetchItResponse; redirect: string | undefined } | undefined> {
     if (this.config.freshToken) {
       await this.awaitFreshToken();
       const token = this.currentToken();
@@ -450,7 +473,8 @@ class FetchIt implements FetchItInstance {
     await this.protectSubmission(formData);
 
     const retries = Math.min(Math.max(Math.floor(Number(this.config.retries) || 0), 0), 5);
-    const submission = retries > 0 ? this.unanswered ?? submissionKey() : '';
+    const unanswered = this.unanswered;
+    const submission = retries > 0 ? (data !== undefined && unanswered?.data === data ? unanswered.key : submissionKey()) : '';
     this.unanswered = undefined;
     for (let attempt = 0; ; attempt++) {
       let failure: unknown;
@@ -479,7 +503,7 @@ class FetchIt implements FetchItInstance {
           } else if (!pending || attempt >= retries) {
             const redirect = typeof body.redirect === 'string' && body.redirect !== '' ? body.redirect : undefined;
             if (pending && submission) {
-              this.unanswered = submission;
+              this.unanswered = { key: submission, data };
             }
             return { response: toResponse(body), redirect };
           } else {
@@ -499,7 +523,7 @@ class FetchIt implements FetchItInstance {
       }
       if (attempt >= retries || !dispatch('fetchit:retry', { form: this.form, formData, attempt: attempt + 1, error: failure, fetchit: this })) {
         if (submission) {
-          this.unanswered = submission;
+          this.unanswered = { key: submission, data };
         }
         throw failure;
       }

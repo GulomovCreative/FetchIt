@@ -42,9 +42,9 @@ FetchIt 4 replaces both with one package and installs over either of them.
   retried after pauses of 1, 2 and 4 seconds, then 8 seconds each. A retry
   does not process a form twice (unless the protection store cannot be
   written, which is logged): the server keeps the answer to a submission for
-  an hour under its key (`X-FetchIt-Submission`). A form sent again unchanged
-  after a submission that got no answer carries its key too. The new token a
-  retry gets counts against the limit of token exchanges. The event
+  an hour under its key (`X-FetchIt-Submission`). A form sent again with the
+  same data after a submission that got no answer carries its key too. The new
+  token a retry gets counts against the limit of token exchanges. The event
   `fetchit:retry` tells each retry and can stop them. Both are off by default.
 
 ### Changed

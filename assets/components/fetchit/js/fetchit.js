@@ -44,6 +44,11 @@
 			_defineProperty(this, "name", "CaptchaError");
 		}
 	};
+	const captchaFields = [
+		"cf-turnstile-response",
+		"g-recaptcha-response",
+		"smart-token"
+	];
 	const RECAPTCHA_ACTION = "fetchit";
 	const SCRIPT_WAIT = 1e4;
 	const ANSWER_WAIT = 3e4;
@@ -711,6 +716,30 @@
 		const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
 		return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 	}
+	/**
+	* The data of a submission as a string, to tell whether the form is sent
+	* again with the same data: the fields of the form, without the token, the
+	* proof of work and the captcha answer, which are new for each submission.
+	* A file counts by its name, size, type and date.
+	*/
+	function fingerprint(formData) {
+		const skipped = [
+			FetchIt.tokenField,
+			FetchIt.powField,
+			...captchaFields
+		];
+		const entries = [];
+		formData.forEach((value, name) => {
+			if (!skipped.includes(name)) entries.push(typeof value === "string" ? [name, value] : [
+				name,
+				value.name,
+				String(value.size),
+				value.type,
+				String(value.lastModified)
+			]);
+		});
+		return JSON.stringify(entries);
+	}
 	var FetchIt = class FetchIt {
 		constructor(form, config) {
 			var _FetchIt$instances$ge;
@@ -746,6 +775,7 @@
 				event.preventDefault();
 				if (this.pending) return;
 				const formData = new FormData(this.form);
+				const data = fingerprint(formData);
 				formData.set("pageId", String(this.config.pageId));
 				this.formData = formData;
 				this.clearErrors();
@@ -766,7 +796,7 @@
 				try {
 					var _this$config$captcha;
 					try {
-						const answer = await this.send(formData);
+						const answer = await this.send(formData, data);
 						if (answer === void 0) return;
 						response = answer.response;
 						redirect = answer.redirect;
@@ -923,13 +953,12 @@
 		* protection once, then up to 1 + config.retries attempts with one
 		* X-FetchIt-Submission key, a pause before each retry. The key is that of
 		* the last submission when it got no FetchIt answer (the last attempt
-		* failed or was still processed) and the form has not changed since; it
-		* is kept for the next one when this one ends so too. Undefined when the
-		* form was destroyed meanwhile. Throws why the last attempt failed when no
+		* failed or was still processed) and data, its fingerprint(), is the
+		* same; it is kept for the next one when this one ends so too. Undefined
+		* when the form was destroyed meanwhile. Throws why the last attempt failed when no
 		* attempt brought a FetchIt answer.
 		*/
-		async send(formData) {
-			var _this$unanswered;
+		async send(formData, data) {
 			if (this.config.freshToken) {
 				await this.awaitFreshToken();
 				const token = this.currentToken();
@@ -939,7 +968,8 @@
 			}
 			await this.protectSubmission(formData);
 			const retries = Math.min(Math.max(Math.floor(Number(this.config.retries) || 0), 0), 5);
-			const submission = retries > 0 ? (_this$unanswered = this.unanswered) !== null && _this$unanswered !== void 0 ? _this$unanswered : submissionKey() : "";
+			const unanswered = this.unanswered;
+			const submission = retries > 0 ? data !== void 0 && (unanswered === null || unanswered === void 0 ? void 0 : unanswered.data) === data ? unanswered.key : submissionKey() : "";
 			this.unanswered = void 0;
 			for (let attempt = 0;; attempt++) {
 				let failure;
@@ -962,7 +992,10 @@
 							if (!unavailable.includes(query.status)) throw failure;
 						} else if (!pending || attempt >= retries) {
 							const redirect = typeof body.redirect === "string" && body.redirect !== "" ? body.redirect : void 0;
-							if (pending && submission) this.unanswered = submission;
+							if (pending && submission) this.unanswered = {
+								key: submission,
+								data
+							};
 							return {
 								response: toResponse(body),
 								redirect
@@ -981,7 +1014,10 @@
 					error: failure,
 					fetchit: this
 				})) {
-					if (submission) this.unanswered = submission;
+					if (submission) this.unanswered = {
+						key: submission,
+						data
+					};
 					throw failure;
 				}
 				await new Promise((resolve) => setTimeout(resolve, Math.min(1e3 * 2 ** attempt, 8e3)));
