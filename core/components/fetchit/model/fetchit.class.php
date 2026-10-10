@@ -2,6 +2,7 @@
 
 require_once dirname(__FILE__) . '/fetchitstore.class.php';
 require_once dirname(__FILE__) . '/fetchitfilestore.class.php';
+require_once dirname(__FILE__) . '/fetchitdbstore.class.php';
 require_once dirname(__FILE__) . '/fetchitguard.class.php';
 require_once dirname(__FILE__) . '/fetchitcaptcha.class.php';
 
