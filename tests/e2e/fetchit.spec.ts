@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Browser, type Page } from '@playwright/test'
 
 const fixtures: {
   custom: number,
@@ -329,5 +329,56 @@ test.describe('a form on a page pdoPage replaces over AJAX', () => {
 
     await expect(rows.locator('[data-success]')).toHaveText('Thanks, ann@example.com')
     await expect.poll(() => handled(page)).toBe(1)
+  })
+})
+
+/**
+ * A visitor of a page as a full-page cache serves it: the HTML of one view,
+ * token included, in a browser with no cookies of that view.
+ */
+async function cachedVisitor (browser: Browser, baseURL: string, id: number, html: string) {
+  const context = await browser.newContext({ baseURL })
+  const page = await context.newPage()
+  await page.route(url => url.pathname.endsWith('/index.php') && url.searchParams.get('id') === String(id),
+    route => route.fulfill({ status: 200, contentType: 'text/html; charset=utf-8', body: html }))
+  const posts = { exchanges: 0, submissions: 0 }
+  page.on('request', request => {
+    if (request.method() === 'POST' && request.url().endsWith('/action.php')) {
+      if (request.headers()['x-fetchit-exchange'] === '1') {
+        posts.exchanges++
+      } else {
+        posts.submissions++
+      }
+    }
+  })
+  await page.goto(`/index.php?id=${id}`)
+  return { context, page, posts }
+}
+
+test.describe('a page from a full-page cache @cache', () => {
+  test('every visitor of one cached page sends the form, once each', async ({ browser, request, baseURL }) => {
+    const html = await (await request.get(`/index.php?id=${fixtures.custom}`)).text()
+
+    for (const name of ['first', 'second']) {
+      const { context, page, posts } = await cachedVisitor(browser, baseURL!, fixtures.custom, html)
+      await page.locator('input[name="email"]').fill(`${name}@example.com`)
+      await page.getByRole('button', { name: 'Send' }).click()
+
+      await expect(page.locator('[data-success]')).toHaveText(`Thanks, ${name}@example.com`, { timeout: 10000 })
+      expect(posts).toEqual({ exchanges: 1, submissions: 1 })
+      await context.close()
+    }
+  })
+
+  test('a visitor sending right after the focus waits instead of being too fast', async ({ browser, request, baseURL }) => {
+    const html = await (await request.get(`/index.php?id=${fixtures.custom}`)).text()
+    const { context, page } = await cachedVisitor(browser, baseURL!, fixtures.custom, html)
+
+    await page.locator('input[name="email"]').fill('quick@example.com')
+    await page.getByRole('button', { name: 'Send' }).click()
+
+    await expect(page.locator('[data-success]')).toHaveText('Thanks, quick@example.com', { timeout: 10000 })
+    await expect(page.locator('[data-validation-error]')).toBeHidden()
+    await context.close()
   })
 })
