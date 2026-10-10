@@ -119,6 +119,18 @@ class FetchItGuard
 
 
     /**
+     * Whether the script exchanges the token of a page for a fresh one:
+     * fetchit.page_cache with the protection on.
+     *
+     * @return bool
+     */
+    public function freshToken()
+    {
+        return $this->enabled() && $this->fetchit->pageCache();
+    }
+
+
+    /**
      * The external captcha.
      *
      * @return FetchItCaptcha

@@ -8,6 +8,8 @@ $_lang['setting_fetchit.frontend.input.invalid.class'] = 'CSS class that will be
 $_lang['setting_fetchit.frontend.custom.invalid.class'] = 'CSS class that will be added to invalid custom element.';
 $_lang['setting_fetchit.frontend.default.notifier'] = 'Show the answers as notifications.';
 $_lang['setting_fetchit.frontend.default.notifier_desc'] = 'If "Yes", the answers of the server and failed submissions are also shown as notifications in a corner of the page, unless the site sets its own FetchIt.Message. The notifier is part of the bundled FetchIt script: no other files are loaded.';
+$_lang['setting_fetchit.page_cache'] = 'Pages come from a full-page cache';
+$_lang['setting_fetchit.page_cache_desc'] = 'Turn on when nginx, a CDN or a static cache serves the pages with forms. The properties of the forms are kept in the store of the protection for 90 days after their last render, and the script gets a fresh token when the visitor starts on a form. Clear the page cache after turning it on, and keep pages in it for less than 90 days.';
 
 $_lang['area_fetchit_protection'] = 'Spam protection';
 $_lang['setting_fetchit.protection'] = 'Spam protection';

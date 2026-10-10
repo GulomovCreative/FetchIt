@@ -26,6 +26,11 @@ return [
         'value' => 0,
         'area' => 'fetchit_main',
     ],
+    'page_cache' => [
+        'xtype' => 'combo-boolean',
+        'value' => 0,
+        'area' => 'fetchit_main',
+    ],
     'protection' => [
         'xtype' => 'combo-boolean',
         'value' => 1,
