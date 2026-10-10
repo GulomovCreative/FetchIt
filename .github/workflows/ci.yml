@@ -106,15 +106,27 @@ jobs:
           coverage: none
           tools: composer
 
+      - name: ODBC driver for SQL Server
+        # pdo_sqlsrv needs the ODBC driver of Microsoft, which the runner lacks.
+        run: |
+          odbcinst -q -d 2>/dev/null | grep -q 'ODBC Driver 18' && exit 0
+          curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | sudo gpg --dearmor -o /usr/share/keyrings/microsoft.gpg
+          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/ubuntu/$(lsb_release -rs)/prod $(lsb_release -cs) main" \
+            | sudo tee /etc/apt/sources.list.d/mssql-release.list
+          sudo apt-get update -q
+          sudo ACCEPT_EULA=Y apt-get install -y -q msodbcsql18
+
       - run: composer install --no-interaction --no-progress
 
       - name: Wait for SQL Server
         run: |
           for _ in $(seq 1 60); do
-            php -r 'new PDO("sqlsrv:Server=127.0.0.1,1433;TrustServerCertificate=1", "sa", "FetchIt-Test-2026");' 2>/dev/null && exit 0
+            if error="$(php -r 'new PDO("sqlsrv:Server=127.0.0.1,1433;TrustServerCertificate=1", "sa", "FetchIt-Test-2026");' 2>&1)"; then
+              exit 0
+            fi
             sleep 2
           done
-          echo "::error::SQL Server did not start"
+          echo "::error::SQL Server cannot be reached: $error"
           exit 1
 
       - name: MySQL 8
