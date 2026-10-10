@@ -339,8 +339,9 @@ class FetchItGuard
 
     /**
      * Exchange the token of a page for a fresh one, timed now: with
-     * fetchit.page_cache the script asks for it when the visitor starts on
-     * the form, since a page from a full-page cache holds a token many got.
+     * fetchit.page_cache the script asks for it on the first focus on the
+     * form, or before the first submission if there was none, since a page
+     * from a full-page cache holds a token many got.
      * The token must belong to the form and be well signed, of any age, used
      * or not; it is not marked. Exchanges have a rate limit of their own.
      * Afterwards reason() tells why there is none: token, rate or store.
@@ -461,30 +462,31 @@ class FetchItGuard
         $age = $this->now() - $token['time'];
         $ttl = $this->ttl();
         $minTime = $this->minTime();
-        // A retry keeps the time of the first render; an expired page starts
-        // anew, as if it had been filled in already.
-        $this->next = $age > $ttl || $age < 0
-            ? $this->issue($action, $this->now() - $minTime)
-            : $this->issue($action, $token['time']);
-        // With a full-page cache many visitors hold one token: a used or
-        // expired one starts the fill time anew, or a bot replaying it would
-        // never wait.
         $restart = $this->freshToken();
+        $expired = $age > $ttl || $age < 0;
+        // An expired token is not marked: its mark would be pruned already.
+        $mark = $expired ? null : $this->mark($token['nonce']);
 
-        if ($age > $ttl || $age < 0) {
-            if ($restart) {
-                $this->next = $this->issue($action);
-            }
+        // The next token. With a full-page cache many visitors hold one
+        // token: a used or expired one gets a token timed now, so the fill
+        // time starts anew, or a bot replaying it would never wait.
+        // Otherwise a retry keeps the time of the first render, and an
+        // expired page starts anew, as if it had been filled in already.
+        if ($restart && ($expired || $mark === 'used')) {
+            $this->next = $this->issue($action);
+        } elseif ($expired) {
+            $this->next = $this->issue($action, $this->now() - $minTime);
+        } else {
+            $this->next = $this->issue($action, $token['time']);
+        }
+
+        if ($expired) {
             $this->log(self::LOG_ALL, 'expired token', $action);
 
             return $this->refuse('token', 'fetchit_err_token');
         }
 
-        $mark = $this->mark($token['nonce']);
         if ($mark === 'used') {
-            if ($restart) {
-                $this->next = $this->issue($action);
-            }
             $this->log(self::LOG_ALL, 'used token', $action);
 
             return $this->refuse('token', 'fetchit_err_token');
@@ -617,15 +619,6 @@ class FetchItGuard
         } elseif ($store !== null) {
             $store->prune($this->now());
         }
-    }
-
-
-    /**
-     * @return string
-     */
-    protected function marksPath()
-    {
-        return $this->modx->getCachePath() . 'fetchit/tokens/';
     }
 
 
