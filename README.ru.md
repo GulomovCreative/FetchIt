@@ -260,7 +260,7 @@ form[data-fetchit-state="sending"] button[type="submit"] {
 }
 ```
 
-`&formState=0` и `&ariaBusy=0` выключают их для формы. CSS-фреймворки, которые рисуют спиннер на любом `[aria-busy="true"]` (например, Pico CSS), нарисуют его на всей форме: если это не нужно, выключите там `&ariaBusy`.
+`&formState=0` и `&ariaBusy=0` выключают их для формы. CSS, который рисует спиннер на любом элементе с `[aria-busy="true"]` (например, Pico CSS 1; Pico 2 формы пропускает), нарисует его на всей форме: если это не нужно, выключите там `&ariaBusy`.
 
 ## TypeScript
 

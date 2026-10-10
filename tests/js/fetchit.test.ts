@@ -540,6 +540,38 @@ describe('forms loaded after the page', () => {
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 
+  it('a form put back while it is sent leaves its state to the new instance', async () => {
+    const { host, form } = configuredForm()
+    document.body.append(host)
+    await settle()
+    const answers: ((value: unknown) => void)[] = []
+    vi.stubGlobal('fetch', vi.fn(() => new Promise(resolve => { answers.push(resolve) })))
+    const accepted = { json: async () => ({ success: true, message: 'Thanks', data: [] }) }
+
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    await settle()
+    host.remove()
+    await settle()
+    document.body.append(host)
+    await settle()
+
+    // The new instance sends nothing yet.
+    expect(form.getAttribute('aria-busy')).toBeNull()
+    expect(form.getAttribute('data-fetchit-state')).toBeNull()
+
+    form.dispatchEvent(new Event('submit', { cancelable: true }))
+    await settle()
+    answers[0]!(accepted)
+    await settle()
+
+    expect(form.getAttribute('data-fetchit-state')).toBe('sending')
+    expect(form.getAttribute('aria-busy')).toBe('true')
+
+    answers[1]!(accepted)
+    await vi.waitFor(() => expect(form.getAttribute('data-fetchit-state')).toBe('success'))
+    expect(form.getAttribute('aria-busy')).toBeNull()
+  })
+
   it('destroy() twice does nothing more', async () => {
     const { host, form } = configuredForm()
     document.body.append(host)
