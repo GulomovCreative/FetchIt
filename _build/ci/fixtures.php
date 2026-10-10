@@ -3,8 +3,13 @@
  * Create the pages the integration tests submit, and write their ids as JSON
  * to <output> (or print them):
  * {"modx": 2|3, "custom": <id>, "api": <id>, "probe": <id>, "formit": <id|null>,
+ *  "counter": <id>, "redirect": <id>, "redirector": <id>, "formitredirect": <id|null>,
  *  "mixed": <id|null>, "pdotools": <id|null>,
  *  "installed": {"package": <signature>, "elements": <bool>}}
+ *
+ * "counter" counts its runs and keeps answers for retries, "redirect" leads to
+ * the "custom" page after a success, "redirector" redirects itself and
+ * "formitredirect" is FormIt with the redirect hook (null without FormIt).
  *
  * "custom" is processed by a snippet of its own; "api" by a snippet that
  * gets FetchIt the way custom snippets did in 1.x (MODX 2) or 3.x (MODX 3);
@@ -182,6 +187,29 @@ return "<p id=\"probe\">container={$container} namespaced={$namespaced}</p>";
 PHP
 );
 
+fixture_element($modx, 'modSnippet', 'FetchItTestCounter', 'snippet', <<<'PHP'
+// Counts its runs: a retry of a submission must not run it again. The
+// render of the page runs it too, without fields: that is no submission.
+if (empty($fields)) {
+    return '';
+}
+$count = (int)$modx->cacheManager->get('fetchit-test-counter') + 1;
+$modx->cacheManager->set('fetchit-test-counter', $count);
+
+return json_encode(['success' => true, 'message' => 'Run ' . $count, 'data' => ['run' => $count]]);
+PHP
+);
+
+fixture_element($modx, 'modSnippet', 'FetchItTestRedirector', 'snippet', <<<'PHP'
+// Redirects itself, as a snippet of a site may: FetchIt turns it into an answer.
+// Not on the render of the page, which runs it without fields.
+if (empty($fields)) {
+    return '';
+}
+$modx->sendRedirect($modx->makeUrl($modx->getOption('target', $scriptProperties), '', '', 'full'));
+PHP
+);
+
 $pages = [
     'modx' => class_exists('MODX\Revolution\modX') ? 3 : 2,
     'custom' => fixture_page(
@@ -196,11 +224,28 @@ $pages = [
     ),
     'probe' => fixture_page($modx, 'fetchit-probe', '[[!FetchItTestProbe]]'),
     'formit' => null,
+    'formitredirect' => null,
     'mixed' => null,
     'pdotools' => null,
     'pdopage' => null,
     'pdopagelinks' => null,
 ];
+
+$pages['counter'] = fixture_page(
+    $modx,
+    'fetchit-counter',
+    '[[!FetchIt? &snippet=`FetchItTestCounter` &form=`tpl.FetchIt.test` &retries=`2` &timeout=`10`]]'
+);
+$pages['redirect'] = fixture_page(
+    $modx,
+    'fetchit-redirect',
+    '[[!FetchIt? &snippet=`FetchItTestCounter` &form=`tpl.FetchIt.test` &redirectTo=`' . $pages['custom'] . '` &redirectParams=`{"from":"form"}`]]'
+);
+$pages['redirector'] = fixture_page(
+    $modx,
+    'fetchit-redirector',
+    '[[!FetchIt? &snippet=`FetchItTestRedirector` &form=`tpl.FetchIt.test` &target=`' . $pages['custom'] . '`]]'
+);
 
 // A form loaded into another page: the fragment has no template, the host
 // page loads it into a modal and can close it.
@@ -314,6 +359,11 @@ if ($modx->getObject(modx_class('modSnippet'), ['name' => 'FormIt'])) {
         $modx,
         'fetchit-formit',
         '[[!FetchIt? &snippet=`FormIt` &form=`tpl.FetchIt.test` &validate=`email:email:required` &successMessage=`Sent`]]'
+    );
+    $pages['formitredirect'] = fixture_page(
+        $modx,
+        'fetchit-formit-redirect',
+        '[[!FetchIt? &snippet=`FormIt` &form=`tpl.FetchIt.test` &hooks=`redirect` &redirectTo=`' . $pages['custom'] . '` &validate=`email:email:required` &successMessage=`Sent`]]'
     );
 }
 
