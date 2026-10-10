@@ -17,14 +17,17 @@ FetchIt 4 replaces both with one package and installs over either of them.
   removed ones.
 - The `FetchItScript` snippet adds the script to a page whose forms come
   later.
-- `FetchIt.observe()`, `FetchIt.init(root)` and `destroy()` of an instance.
+- `FetchIt.observe()`, `FetchIt.init(root)` and `destroy()` of an instance. A
+  form taken out of the page and put back later gets a new instance and is
+  sent once.
 
 ### Changed
 
 - The page starts its forms with one `FetchIt.observe()` instead of a
   `FetchIt.create()` per form. A class of the site in
   `fetchit.frontend.js.classname` that overrides `create()` needs to move that
-  code to `observe()` or to the constructor.
+  code to `observe()` or to the constructor. A script of the site with only
+  `create()` still gets one `create(config)` call per form key.
 - A fragment without `<head>` and `<body>` gets no script and logs no error.
 
 ## [4.0.0] - 2026-09-25

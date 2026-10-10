@@ -672,6 +672,16 @@ class FetchItTest extends TestCase
         $this->assertStringContainsString("console.error('FetchIt: App.Forms is not loaded')", $this->bootstrap($html));
     }
 
+    public function testTheBootstrapFallsBackToCreateOfAnOwnScript()
+    {
+        // A script of the site written for FetchIt 4.0 has create() only.
+        $bootstrap = $this->bootstrap($this->render('<html><head></head><body></body></html>'));
+
+        $this->assertStringContainsString("else if (FetchItClass && typeof FetchItClass.create === 'function')", $bootstrap);
+        $this->assertStringContainsString("document.querySelectorAll('form[data-fetchit-config]')", $bootstrap);
+        $this->assertStringContainsString('FetchItClass.create(config)', $bootstrap);
+    }
+
     public function testTheBootstrapGetsTheNotifier()
     {
         $this->modx->lexicon->entries['fetchit_notifier_close'] = 'Закрыть';
