@@ -115,8 +115,9 @@ class FetchItFileStore implements FetchItStore
 
             return false;
         }
-        // A whole file or none: a submission may read it meanwhile.
-        $temporary = $dir . '.' . $action . '.' . bin2hex(random_bytes(4));
+        // A whole file or none: a submission may read it meanwhile. A
+        // leftover ends with .php too, so the web server runs its exit.
+        $temporary = $dir . '.' . $action . '.' . bin2hex(random_bytes(4)) . '.php';
         if (@file_put_contents($temporary, self::HIDE . $json) === false || !@rename($temporary, $file)) {
             @unlink($temporary);
             call_user_func($this->log, "could not write to {$dir}; forms from a full-page cache are not found");
