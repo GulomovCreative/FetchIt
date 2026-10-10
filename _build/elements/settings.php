@@ -76,6 +76,11 @@ return [
         'value' => 0,
         'area' => 'fetchit_protection',
     ],
+    'protection.store' => [
+        'xtype' => 'textfield',
+        'value' => 'files',
+        'area' => 'fetchit_protection',
+    ],
     'captcha' => [
         'xtype' => 'textfield',
         'value' => '',

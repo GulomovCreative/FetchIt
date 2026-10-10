@@ -595,4 +595,80 @@ class GuardTest extends TestCase
         $this->assertFalse($response['success']);
         $this->assertSame('fetchit_err_token', $response['message']);
     }
+
+
+    // ------------------------------------------------------------- the store
+
+    public function testTheRateCounterKeyHidesTheAddress()
+    {
+        // md5 of an IPv4 address is reversed in minutes.
+        $_SERVER['REMOTE_ADDR'] = '203.0.113.7';
+
+        $this->submit();
+
+        $keys = array_values(preg_grep('#^fetchit/rate/#', array_keys($this->modx->cacheManager->items)));
+        $this->assertCount(1, $keys);
+        $this->assertMatchesRegularExpression('#^fetchit/rate/[0-9a-f]{64}$#', $keys[0]);
+        $this->assertNotSame('fetchit/rate/' . md5(self::ACTION . '|203.0.113.7'), $keys[0]);
+    }
+
+    public function testTheStoreSettingIgnoresCaseAndSpaces()
+    {
+        $this->modx->options['fetchit.protection.store'] = ' Files ';
+
+        $this->assertNull($this->submit());
+    }
+
+    public function testAnUnknownStoreRefusesAndIsLogged()
+    {
+        // A typo must not quietly fall back to the files of one server.
+        $this->modx->options['fetchit.protection.store'] = 'redis';
+
+        $this->assertRefused('store', 'fetchit_err_store', $this->submit());
+        $this->assertLogged('fetchit.protection.store is "redis"');
+        $this->assertNull($this->guard()->store());
+    }
+
+    public function testADatabaseStoreWithoutItsTableRefuses()
+    {
+        $this->modx->options['fetchit.protection.store'] = 'db';
+        $this->modx->options['table_prefix'] = 'fetchit_test_';
+        $this->modx->pdo = new PDO('sqlite::memory:');
+
+        $this->assertRefused('store', 'fetchit_err_store', $this->submit());
+        $this->assertLogged('cannot be used');
+    }
+
+    public function testADatabaseStoreRefusesWhenOnlyTheCounterFails()
+    {
+        // Strict: the table was chosen for a limit that holds.
+        $this->modx->options['fetchit.protection.store'] = 'db';
+        $this->modx->options['table_prefix'] = 'fetchit_test_';
+        $this->modx->pdo = new PDO('sqlite::memory:');
+        $this->modx->options['fetchit.protection.rate_limit'] = 10;
+
+        $result = $this->submit();
+
+        $this->assertRefused('store', 'fetchit_err_store', $result);
+        $this->assertNotLogged('rate limit reached');
+    }
+
+    public function testTheDatabaseStoreWorks()
+    {
+        $this->modx->options['fetchit.protection.store'] = 'db';
+        $this->modx->options['table_prefix'] = 'fetchit_test_';
+        $this->modx->pdo = new PDO('sqlite::memory:');
+        $this->guard()->store()->install();
+        $token = $this->token();
+
+        $this->assertNull($this->submit([], 10, $token));
+        $this->assertRefused('token', 'fetchit_err_token', $this->submit([], 10, $token));
+    }
+
+    private function assertNotLogged($needle)
+    {
+        foreach (array_column($this->modx->logged, 1) as $message) {
+            $this->assertStringNotContainsString($needle, $message);
+        }
+    }
 }
