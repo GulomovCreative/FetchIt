@@ -3,12 +3,14 @@
  * Create the pages the integration tests submit, and write their ids as JSON
  * to <output> (or print them):
  * {"modx": 2|3, "custom": <id>, "api": <id>, "probe": <id>, "formit": <id|null>,
- *  "counter": <id>, "redirect": <id>, "redirector": <id>, "noisyredirector": <id>, "formitredirect": <id|null>,
+ *  "counter": <id>, "redirect": <id>, "redirector": <id>, "noisyredirector": <id>, "retryredirector": <id>,
+ *  "formitredirect": <id|null>,
  *  "mixed": <id|null>, "pdotools": <id|null>,
  *  "installed": {"package": <signature>, "elements": <bool>}}
  *
- * "counter" counts its runs and keeps answers for retries, "redirect" leads to
- * the "custom" page after a success, "redirector" redirects itself, "noisyredirector" prints a few bytes first, and
+ * "counter" counts its runs, so a test sees whether a retry ran it again, "redirect" leads to
+ * the "custom" page after a success, "redirector" redirects itself, "noisyredirector" prints a few bytes first,
+ * "retryredirector" counts its runs and redirects with the run number, with retries, and
  * "formitredirect" is FormIt with the redirect hook (null without FormIt).
  *
  * "custom" is processed by a snippet of its own; "api" by a snippet that
@@ -220,6 +222,18 @@ $modx->sendRedirect($modx->makeUrl($modx->getOption('target', $scriptProperties)
 PHP
 );
 
+fixture_element($modx, 'modSnippet', 'FetchItTestCountingRedirector', 'snippet', <<<'PHP'
+// Counts its runs and redirects with the run number: a retry of a submission
+// must get the redirect of the first attempt without a second run.
+if (empty($fields)) {
+    return '';
+}
+$count = (int)$modx->cacheManager->get('fetchit-test-redirector') + 1;
+$modx->cacheManager->set('fetchit-test-redirector', $count);
+$modx->sendRedirect($modx->makeUrl($modx->getOption('target', $scriptProperties), '', ['run' => $count], 'full'));
+PHP
+);
+
 $pages = [
     'modx' => class_exists('MODX\Revolution\modX') ? 3 : 2,
     'custom' => fixture_page(
@@ -260,6 +274,11 @@ $pages['noisyredirector'] = fixture_page(
     $modx,
     'fetchit-noisyredirector',
     '[[!FetchIt? &snippet=`FetchItTestNoisyRedirector` &form=`tpl.FetchIt.test` &target=`' . $pages['custom'] . '`]]'
+);
+$pages['retryredirector'] = fixture_page(
+    $modx,
+    'fetchit-retryredirector',
+    '[[!FetchIt? &snippet=`FetchItTestCountingRedirector` &form=`tpl.FetchIt.test` &target=`' . $pages['custom'] . '` &retries=`2`]]'
 );
 
 // A form loaded into another page: the fragment has no template, the host
