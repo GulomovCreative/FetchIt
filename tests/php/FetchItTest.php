@@ -504,6 +504,22 @@ class FetchItTest extends TestCase
         $this->assertSame('fetchit_err_request', $config['requestErrorMessage']);
     }
 
+    public function testClientConfigTurnsTheStateOfTheFormOnByDefault()
+    {
+        $config = $this->fetchit()->clientConfig('abc');
+
+        $this->assertTrue($config['formState']);
+        $this->assertTrue($config['ariaBusy']);
+    }
+
+    public function testClientConfigTurnsTheStateOfTheFormOff()
+    {
+        $config = $this->fetchit(['formState' => '0', 'ariaBusy' => 0])->clientConfig('abc');
+
+        $this->assertFalse($config['formState']);
+        $this->assertFalse($config['ariaBusy']);
+    }
+
     public function testLoadScriptRegistersNothingInline()
     {
         $this->fetchit()->loadScript('abc');

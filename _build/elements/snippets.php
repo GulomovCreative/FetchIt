@@ -21,6 +21,14 @@ return [
                 'type' => 'combo-boolean',
                 'value' => true,
             ],
+            'formState' => [
+                'type' => 'combo-boolean',
+                'value' => true,
+            ],
+            'ariaBusy' => [
+                'type' => 'combo-boolean',
+                'value' => true,
+            ],
         ],
     ],
     'FetchItScript' => [
