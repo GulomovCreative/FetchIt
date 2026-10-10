@@ -1375,4 +1375,40 @@ class FetchItTest extends TestCase
 
         $this->assertSame('{"success":true,"message":"Sent","data":[]}', $this->send($fetchit)['body']);
     }
+
+    public function testClientConfigHasNoTimeoutAndNoRetriesByDefault()
+    {
+        $config = $this->fetchit()->clientConfig('abc');
+
+        $this->assertSame(0, $config['timeout']);
+        $this->assertSame(0, $config['retries']);
+        $this->assertSame('fetchit_err_timeout', $config['timeoutMessage']);
+    }
+
+    public function testClientConfigTakesTheTimeoutAndTheRetriesOfTheCall()
+    {
+        $config = $this->fetchit(['timeout' => '15', 'retries' => '2'])->clientConfig('abc');
+
+        $this->assertSame(15, $config['timeout']);
+        $this->assertSame(2, $config['retries']);
+    }
+
+    public function testClientConfigKeepsTheTimeoutAndTheRetriesInBounds()
+    {
+        $config = $this->fetchit(['timeout' => '-5', 'retries' => '50'])->clientConfig('abc');
+        $this->assertSame(0, $config['timeout']);
+        $this->assertSame(5, $config['retries']);
+
+        $config = $this->fetchit(['timeout' => 'x', 'retries' => '-1'])->clientConfig('abc');
+        $this->assertSame(0, $config['timeout']);
+        $this->assertSame(0, $config['retries']);
+    }
+
+    public function testRedirectToStaysOnTheServer()
+    {
+        $config = $this->fetchit(['redirectTo' => '5', 'redirectParams' => '{"a":"b"}'])->clientConfig('abc');
+
+        $this->assertArrayNotHasKey('redirectTo', $config);
+        $this->assertArrayNotHasKey('redirectParams', $config);
+    }
 }

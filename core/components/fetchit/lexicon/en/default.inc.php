@@ -17,6 +17,7 @@ $_lang['fetchit_err_chunk_nf'] = 'Chunk not found with name "[[+name]]".';
 $_lang['fetchit_err_snippet_ns'] = 'Snippet not specified.';
 $_lang['fetchit_err_snippet_nf'] = 'Snippet not found with name "[[+name]]".';
 $_lang['fetchit_err_request'] = 'Could not send the form. Please try again.';
+$_lang['fetchit_err_timeout'] = 'The server did not answer in time. The form may have been sent: try again if you get no confirmation.';
 $_lang['fetchit_err_token'] = 'The form has expired. Please send it again.';
 $_lang['fetchit_err_too_fast'] = 'The form was sent too fast. Please send it again.';
 $_lang['fetchit_err_rate'] = 'Too many submissions. Please try again later.';

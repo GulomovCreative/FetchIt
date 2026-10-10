@@ -29,6 +29,22 @@ return [
                 'type' => 'combo-boolean',
                 'value' => true,
             ],
+            'redirectTo' => [
+                'type' => 'textfield',
+                'value' => '',
+            ],
+            'redirectParams' => [
+                'type' => 'textfield',
+                'value' => '',
+            ],
+            'timeout' => [
+                'type' => 'numberfield',
+                'value' => 0,
+            ],
+            'retries' => [
+                'type' => 'numberfield',
+                'value' => 0,
+            ],
         ],
     ],
     'FetchItScript' => [
