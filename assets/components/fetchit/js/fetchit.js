@@ -675,6 +675,41 @@
 		const wait = time - Date.now();
 		if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
 	}
+	/**
+	* The time of config.timeout ran out before the server answered.
+	*/
+	var TimeoutError = class extends Error {
+		constructor(seconds) {
+			super(`FetchIt: no answer in ${seconds} s`);
+			this.name = "TimeoutError";
+		}
+	};
+	/**
+	* A request that brought no answer: fetch() rejected (error), or the
+	* timeout ran out (a TimeoutError). The attempt may be retried.
+	*/
+	var NoAnswer = class {
+		constructor(error) {
+			this.error = error;
+		}
+	};
+	const unavailable = [
+		502,
+		503,
+		504
+	];
+	/**
+	* A UUID v4 for one submission and its retries (X-FetchIt-Submission).
+	* crypto.randomUUID() is only there on https pages.
+	*/
+	function submissionKey() {
+		if (typeof crypto.randomUUID === "function") return crypto.randomUUID();
+		const bytes = crypto.getRandomValues(/* @__PURE__ */ new Uint8Array(16));
+		bytes[6] = bytes[6] & 15 | 64;
+		bytes[8] = bytes[8] & 63 | 128;
+		const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+		return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+	}
 	var FetchIt = class FetchIt {
 		constructor(form, config) {
 			var _FetchIt$instances$ge;
@@ -723,48 +758,16 @@
 				this.disableFields();
 				this.showSubmissionState("sending");
 				let shown = false;
+				let leaving = false;
 				let response;
+				let redirect;
 				try {
 					var _this$config$captcha;
 					try {
-						var _query$headers, _query$headers2, _query$headers$get, _query$headers3, _this$config$pow;
-						if (this.config.freshToken) {
-							await this.awaitFreshToken();
-							const token = this.currentToken();
-							if (token) formData.set(FetchIt.tokenField, token);
-							await this.untilReady();
-							if (this.destroyed) return;
-						}
-						await this.protectSubmission(formData);
-						let query = await fetch(this.request, {
-							method: "post",
-							body: formData
-						});
-						let next = (_query$headers = query.headers) === null || _query$headers === void 0 ? void 0 : _query$headers.get("X-FetchIt-Token");
-						this.updateToken(next);
-						const refused = (_query$headers2 = query.headers) === null || _query$headers2 === void 0 ? void 0 : _query$headers2.get("X-FetchIt-Refused");
-						const bits = Number((_query$headers$get = (_query$headers3 = query.headers) === null || _query$headers3 === void 0 ? void 0 : _query$headers3.get("X-FetchIt-Pow")) !== null && _query$headers$get !== void 0 ? _query$headers$get : 0);
-						if (next && (refused === "token" || refused === "pow" && bits > ((_this$config$pow = this.config.pow) !== null && _this$config$pow !== void 0 ? _this$config$pow : 0))) {
-							var _query$headers5;
-							if (refused === "pow") this.config.pow = bits;
-							if (refused === "token") {
-								var _query$headers$get2, _query$headers4;
-								await until(readyAt(Number((_query$headers$get2 = (_query$headers4 = query.headers) === null || _query$headers4 === void 0 ? void 0 : _query$headers4.get("X-FetchIt-Min-Time")) !== null && _query$headers$get2 !== void 0 ? _query$headers$get2 : 0)));
-								if (this.destroyed) return;
-							}
-							formData.set(FetchIt.tokenField, next);
-							if (this.config.pow) formData.set(FetchIt.powField, await this.solution(next));
-							query = await fetch(this.request, {
-								method: "post",
-								body: formData
-							});
-							next = (_query$headers5 = query.headers) === null || _query$headers5 === void 0 ? void 0 : _query$headers5.get("X-FetchIt-Token");
-							this.updateToken(next);
-						}
-						if (refused === "captcha" && !this.config.captcha) console.warn("FetchIt: the server asks for a captcha this page does not have; the page may come from a cache made before the captcha was turned on");
-						const body = await query.json();
-						if (!FetchIt.isResponse(body)) throw new Error(`FetchIt: unexpected answer from ${query.url || this.config.actionUrl} (HTTP ${query.status})`);
-						response = toResponse(body);
+						const answer = await this.send(formData);
+						if (answer === void 0) return;
+						response = answer.response;
+						redirect = answer.redirect;
 					} catch (error) {
 						this.failRequest(error, formData);
 						return;
@@ -801,7 +804,8 @@
 						form: this.form,
 						formData,
 						response,
-						fetchit: this
+						fetchit: this,
+						...redirect ? { redirect } : {}
 					})) return;
 					if (((_this$config$captcha = this.config.captcha) === null || _this$config$captcha === void 0 ? void 0 : _this$config$captcha.provider) !== "recaptcha") try {
 						var _window$grecaptcha, _window$grecaptcha$re;
@@ -814,15 +818,34 @@
 						this.form.reset();
 						this.preserveFormMessagesOnReset = false;
 					}
+					if (redirect) try {
+						leaving = this.navigate(redirect);
+						if (leaving) {
+							const restore = (pageEvent) => {
+								if (pageEvent.persisted) {
+									var _this$captcha;
+									window.removeEventListener("pageshow", restore);
+									this.enableFields();
+									this.pending = false;
+									(_this$captcha = this.captcha) === null || _this$captcha === void 0 || _this$captcha.reset();
+								}
+							};
+							window.addEventListener("pageshow", restore, { signal: this.listening.signal });
+						}
+					} catch (error) {
+						console.error("FetchIt: navigate() threw; the visitor stays on the page", error);
+					}
 				} catch (error) {
 					if (shown || (response === null || response === void 0 ? void 0 : response.success)) console.error(error);
 					else this.failRequest(error, formData);
 				} finally {
-					var _this$captcha;
 					if (this.submissionState === "sending") this.showSubmissionState(null);
-					this.enableFields();
-					this.pending = false;
-					(_this$captcha = this.captcha) === null || _this$captcha === void 0 || _this$captcha.reset();
+					if (!leaving) {
+						var _this$captcha2;
+						this.enableFields();
+						this.pending = false;
+						(_this$captcha2 = this.captcha) === null || _this$captcha2 === void 0 || _this$captcha2.reset();
+					}
 				}
 			}, { signal });
 			this.form.addEventListener("reset", () => {
@@ -857,7 +880,7 @@
 		* way is handled as usual, but starts no new proof of work.
 		*/
 		destroy() {
-			var _this$work, _this$captcha2;
+			var _this$work, _this$captcha3;
 			if (FetchIt.instances.get(this.form) !== this) return;
 			this.destroyed = true;
 			FetchIt.instances.delete(this.form);
@@ -866,7 +889,7 @@
 			if (index !== -1) FetchIt.forms.splice(index, 1);
 			(_this$work = this.work) === null || _this$work === void 0 || _this$work.stop.abort();
 			this.work = void 0;
-			(_this$captcha2 = this.captcha) === null || _this$captcha2 === void 0 || _this$captcha2.destroy();
+			(_this$captcha3 = this.captcha) === null || _this$captcha3 === void 0 || _this$captcha3.destroy();
 		}
 		/**
 		* fetch() rejected (network error), the body was not a FetchIt answer
@@ -879,7 +902,7 @@
 			if (this.destroyed) return;
 			this.showSubmissionState("error");
 			console.error(error);
-			const message = error instanceof CaptchaError && this.config.captchaErrorMessage || this.config.requestErrorMessage || FetchIt.defaultRequestErrorMessage;
+			const message = error instanceof CaptchaError && this.config.captchaErrorMessage || error instanceof TimeoutError && this.config.timeoutMessage || this.config.requestErrorMessage || FetchIt.defaultRequestErrorMessage;
 			FetchIt.notify("error", message);
 			if (!dispatch("fetchit:error", {
 				form: this.form,
@@ -891,16 +914,165 @@
 			this.setFormMessage("validation", message);
 		}
 		/**
+		* Send the form and read the answer: the token exchange and the
+		* protection once, then up to 1 + config.retries attempts with one
+		* X-FetchIt-Submission key, a pause before each retry. Undefined when the
+		* form was destroyed meanwhile. Throws why the last attempt failed when no
+		* attempt brought a FetchIt answer.
+		*/
+		async send(formData) {
+			if (this.config.freshToken) {
+				await this.awaitFreshToken();
+				const token = this.currentToken();
+				if (token) formData.set(FetchIt.tokenField, token);
+				await this.untilReady();
+				if (this.destroyed) return;
+			}
+			await this.protectSubmission(formData);
+			const retries = Math.min(Math.max(Math.floor(Number(this.config.retries) || 0), 0), 5);
+			const submission = retries > 0 ? submissionKey() : "";
+			for (let attempt = 0;; attempt++) {
+				let failure;
+				try {
+					var _query$headers;
+					const sent = await this.attempt(formData, submission);
+					if (sent === void 0) return;
+					const query = sent.query;
+					const pending = ((_query$headers = query.headers) === null || _query$headers === void 0 ? void 0 : _query$headers.get("X-FetchIt-Refused")) === "pending";
+					let body;
+					try {
+						body = await sent.read();
+					} catch (error) {
+						if (error instanceof NoAnswer || !unavailable.includes(query.status)) throw error;
+						failure = error;
+					}
+					if (failure === void 0) {
+						if (!FetchIt.isResponse(body)) {
+							failure = /* @__PURE__ */ new Error(`FetchIt: unexpected answer from ${query.url || this.config.actionUrl} (HTTP ${query.status})`);
+							if (!unavailable.includes(query.status)) throw failure;
+						} else if (!pending || attempt >= retries) {
+							const redirect = typeof body.redirect === "string" && body.redirect !== "" ? body.redirect : void 0;
+							return {
+								response: toResponse(body),
+								redirect
+							};
+						} else failure = /* @__PURE__ */ new Error("FetchIt: the form is still processed");
+					}
+				} catch (error) {
+					if (!(error instanceof NoAnswer)) throw error;
+					failure = error.error;
+				}
+				if (this.destroyed) return;
+				if (attempt >= retries || !dispatch("fetchit:retry", {
+					form: this.form,
+					formData,
+					attempt: attempt + 1,
+					error: failure,
+					fetchit: this
+				})) throw failure;
+				await new Promise((resolve) => setTimeout(resolve, Math.min(1e3 * 2 ** attempt, 8e3)));
+				if (this.destroyed) return;
+				const token = this.currentToken();
+				if (token && token !== formData.get(FetchIt.tokenField)) {
+					formData.set(FetchIt.tokenField, token);
+					if (this.config.pow) formData.set(FetchIt.powField, await this.solution(token));
+					if (this.destroyed) return;
+				}
+			}
+		}
+		/**
+		* One attempt: the request and, when the server refused a stale token
+		* or asked for more proof of work, once more with the new token.
+		* Undefined when the form was destroyed meanwhile.
+		*/
+		async attempt(formData, submission) {
+			var _query$headers2, _query$headers3, _query$headers$get, _query$headers4, _this$config$pow;
+			let sent = await this.post(formData, submission);
+			let query = sent.query;
+			let next = (_query$headers2 = query.headers) === null || _query$headers2 === void 0 ? void 0 : _query$headers2.get("X-FetchIt-Token");
+			this.updateToken(next);
+			const refused = (_query$headers3 = query.headers) === null || _query$headers3 === void 0 ? void 0 : _query$headers3.get("X-FetchIt-Refused");
+			const bits = Number((_query$headers$get = (_query$headers4 = query.headers) === null || _query$headers4 === void 0 ? void 0 : _query$headers4.get("X-FetchIt-Pow")) !== null && _query$headers$get !== void 0 ? _query$headers$get : 0);
+			if (next && (refused === "token" || refused === "pow" && bits > ((_this$config$pow = this.config.pow) !== null && _this$config$pow !== void 0 ? _this$config$pow : 0))) {
+				var _query$headers6;
+				sent.done();
+				if (refused === "pow") this.config.pow = bits;
+				if (refused === "token") {
+					var _query$headers$get2, _query$headers5;
+					await until(readyAt(Number((_query$headers$get2 = (_query$headers5 = query.headers) === null || _query$headers5 === void 0 ? void 0 : _query$headers5.get("X-FetchIt-Min-Time")) !== null && _query$headers$get2 !== void 0 ? _query$headers$get2 : 0)));
+					if (this.destroyed) return;
+				}
+				formData.set(FetchIt.tokenField, next);
+				if (this.config.pow) formData.set(FetchIt.powField, await this.solution(next));
+				sent = await this.post(formData, submission);
+				query = sent.query;
+				next = (_query$headers6 = query.headers) === null || _query$headers6 === void 0 ? void 0 : _query$headers6.get("X-FetchIt-Token");
+				this.updateToken(next);
+			}
+			if (refused === "captcha" && !this.config.captcha) console.warn("FetchIt: the server asks for a captcha this page does not have; the page may come from a cache made before the captcha was turned on");
+			return sent;
+		}
+		/**
+		* POST the form. Without a key and a timeout exactly as before; with
+		* them the X-FetchIt-Submission header and an abort after
+		* config.timeout, which also covers reading the body. A rejection, or a
+		* body read stopped by the timeout, becomes a NoAnswer.
+		*/
+		async post(formData, submission) {
+			const timeout = Math.max(Number(this.config.timeout) || 0, 0);
+			const init = {
+				method: "post",
+				body: formData
+			};
+			if (submission) {
+				const headers = new Headers(this.request.headers);
+				headers.set("X-FetchIt-Submission", submission);
+				init.headers = headers;
+			}
+			let timer;
+			let timedOut = false;
+			if (timeout > 0) {
+				const stop = new AbortController();
+				init.signal = stop.signal;
+				timer = setTimeout(() => {
+					timedOut = true;
+					stop.abort();
+				}, timeout * 1e3);
+			}
+			const done = () => clearTimeout(timer);
+			let query;
+			try {
+				query = await fetch(this.request, init);
+			} catch (error) {
+				done();
+				throw new NoAnswer(timedOut ? new TimeoutError(timeout) : error);
+			}
+			const read = async () => {
+				try {
+					return await query.json();
+				} catch (error) {
+					throw timedOut ? new NoAnswer(new TimeoutError(timeout)) : error;
+				} finally {
+					done();
+				}
+			};
+			return {
+				query,
+				read,
+				done
+			};
+		}
+		/**
 		* Add the solution of the proof of work and the captcha's answer.
 		*/
 		async protectSubmission(formData) {
-			var _this$captcha3;
+			var _this$captcha4;
 			if (this.config.pow) {
 				var _formData$get;
 				const token = String((_formData$get = formData.get(FetchIt.tokenField)) !== null && _formData$get !== void 0 ? _formData$get : "");
 				formData.set(FetchIt.powField, await this.solution(token));
 			}
-			await ((_this$captcha3 = this.captcha) === null || _this$captcha3 === void 0 ? void 0 : _this$captcha3.answer(formData));
+			await ((_this$captcha4 = this.captcha) === null || _this$captcha4 === void 0 ? void 0 : _this$captcha4.answer(formData));
 		}
 		/**
 		* The solution of the proof of work for a token, started once; solving
@@ -1044,6 +1216,28 @@
 			} catch (error) {
 				console.error("FetchIt: setSubmissionState() threw; the form does not show its state", error);
 			}
+		}
+		/**
+		* Go to the page of a successful answer: an http(s) address only,
+		* relative ones against the page. True when the page is left (a change of
+		* the hash of the same page is not leaving).
+		*/
+		navigate(url) {
+			let target;
+			try {
+				target = new URL(url, window.location.href);
+			} catch {
+				console.error(`FetchIt: the redirect ${url} is not an address; the visitor stays on the page`);
+				return false;
+			}
+			if (target.protocol !== "http:" && target.protocol !== "https:") {
+				console.error(`FetchIt: the redirect ${url} is not an http(s) address; the visitor stays on the page`);
+				return false;
+			}
+			const here = new URL(window.location.href);
+			const sameDocument = target.hash !== "" && target.href.split("#")[0] === here.href.split("#")[0];
+			window.location.assign(target.href);
+			return !sameDocument;
 		}
 		clearErrors() {
 			this.fields.forEach((field) => this.clearError(field.getAttribute("name")));
@@ -1300,7 +1494,8 @@
 		success: "fetchit:success",
 		error: "fetchit:error",
 		after: "fetchit:after",
-		reset: "fetchit:reset"
+		reset: "fetchit:reset",
+		retry: "fetchit:retry"
 	});
 	window.FetchIt = FetchIt;
 	//#endregion
