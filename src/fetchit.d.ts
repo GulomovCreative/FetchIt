@@ -40,6 +40,11 @@ interface FetchItConfig extends FetchItObserveOptions {
   captcha?: FetchItCaptchaConfig | null | undefined;
   /** Shown when the captcha gave no answer to send */
   captchaErrorMessage?: string | undefined;
+  /**
+   * Exchange the token of the page for a fresh one when the visitor starts
+   * on the form: fetchit.page_cache, for pages from a full-page cache
+   */
+  freshToken?: boolean | undefined;
   pageId: number | string;
 }
 

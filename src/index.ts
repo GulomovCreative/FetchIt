@@ -69,6 +69,12 @@ class FetchIt implements FetchItInstance {
   readonly listening = new AbortController();
   // Set by destroy(): what the instance still has running ends quietly.
   destroyed = false;
+  // The exchange of the token of the page for a fresh one (config.freshToken),
+  // started on the first focus or submission.
+  exchange?: Promise<void> = undefined;
+  // Date.now() from which the server takes the fresh token as filled in:
+  // min_time counts from the exchange.
+  readyAt = 0;
 
   constructor (form: unknown, config: FetchItConfig) {
     if (!(form instanceof HTMLFormElement)) {
@@ -135,6 +141,14 @@ class FetchIt implements FetchItInstance {
 
       try {
         try {
+          if (this.config.freshToken) {
+            await this.freshToken();
+            const token = this.currentToken();
+            if (token) {
+              formData.set(FetchIt.tokenField, token);
+            }
+            await this.untilReady();
+          }
           await this.protectSubmission(formData);
           let query = await fetch(this.request, { method: 'post', body: formData });
           let next = query.headers?.get('X-FetchIt-Token');
@@ -253,8 +267,15 @@ class FetchIt implements FetchItInstance {
       }, { signal });
     });
 
-    // The visitor started on the form: solve the proof of work meanwhile.
-    this.form.addEventListener('focusin', () => this.solveAhead(), { once: true, signal });
+    // The visitor started on the form: get a fresh token when the page comes
+    // from a full-page cache, and solve the proof of work meanwhile.
+    this.form.addEventListener('focusin', () => {
+      if (this.config.freshToken) {
+        void this.freshToken();
+      } else {
+        this.solveAhead();
+      }
+    }, { once: true, signal });
   }
 
   /**
@@ -346,7 +367,7 @@ class FetchIt implements FetchItInstance {
     if (this.destroyed) {
       return;
     }
-    const token = this.form.querySelector<HTMLInputElement>(`input[name="${FetchIt.tokenField}"]`)?.value;
+    const token = this.currentToken();
     if (this.config.pow && token) {
       this.solution(token).catch(error => {
         // Stopped for a newer token: nothing went wrong.
@@ -355,6 +376,79 @@ class FetchIt implements FetchItInstance {
         }
       });
     }
+  }
+
+  /**
+   * Exchange the token of the page for a fresh one, once: a page from a
+   * full-page cache holds a token many visitors got.
+   */
+  freshToken (): Promise<void> {
+    this.exchange ??= this.exchangeToken();
+    return this.exchange;
+  }
+
+  /**
+   * Ask the server for a fresh token (FetchItGuard::exchange()). A failed
+   * exchange keeps the token of the page: the retry after a refusal still
+   * covers it. destroy() stops it quietly.
+   */
+  async exchangeToken () {
+    const token = this.currentToken();
+    let fresh: string | null | undefined;
+    if (token) {
+      const body = new FormData();
+      body.set(FetchIt.tokenField, token);
+      try {
+        const answer = await fetch(this.config.actionUrl, {
+          method: 'post',
+          credentials: 'same-origin',
+          headers: { 'X-FetchIt-Action': this.config.action, 'X-FetchIt-Exchange': '1' },
+          body,
+          signal: this.listening.signal,
+        });
+        fresh = answer.headers?.get('X-FetchIt-Token');
+        if (fresh) {
+          const bits = Number(answer.headers.get('X-FetchIt-Pow') ?? 0);
+          if (bits > (this.config.pow ?? 0)) {
+            this.config.pow = bits;
+          }
+          const minTime = Number(answer.headers.get('X-FetchIt-Min-Time') ?? 0);
+          // The server counts whole seconds; a little more keeps clear of it.
+          this.readyAt = minTime > 0 ? Date.now() + minTime * 1000 + 250 : 0;
+        } else if (!this.destroyed) {
+          console.warn(`FetchIt: no fresh token (${answer.headers?.get('X-FetchIt-Refused') ?? `HTTP ${answer.status}`}); the form keeps the token of the page`);
+        }
+      } catch (error) {
+        if (!this.destroyed) {
+          console.warn('FetchIt: could not get a fresh token; the form keeps the token of the page', error);
+        }
+      }
+    }
+    if (this.destroyed) {
+      return;
+    }
+    if (fresh) {
+      this.updateToken(fresh);
+    } else {
+      this.solveAhead();
+    }
+  }
+
+  /**
+   * Wait until the fill time of the server has passed since the exchange.
+   */
+  async untilReady () {
+    const wait = this.readyAt - Date.now();
+    if (wait > 0) {
+      await new Promise(resolve => setTimeout(resolve, wait));
+    }
+  }
+
+  /**
+   * The token in the form now.
+   */
+  currentToken () {
+    return this.form.querySelector<HTMLInputElement>(`input[name="${FetchIt.tokenField}"]`)?.value;
   }
 
   /**

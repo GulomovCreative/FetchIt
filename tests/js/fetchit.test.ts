@@ -1827,3 +1827,192 @@ describe('the bootstrap of the page', () => {
     expect(String(vi.mocked(console.error).mock.calls[0]![0])).toContain('fetchit.frontend.js.classname')
   })
 })
+
+type Exchange = (init: RequestInit) => Promise<Record<string, string>>
+
+/**
+ * A server for a page from a full-page cache: exchanges answer with
+ * `exchange`, submissions with the answers in turn.
+ */
+const submitted: string[] = []
+
+function cachedPageServer(exchange: Exchange, ...answers: { body: unknown, headers: Record<string, string> }[]) {
+  submitted.length = 0
+  const fetch = vi.fn(async (_input: RequestInfo, init?: RequestInit) => {
+    if (new Headers(init?.headers).get('X-FetchIt-Exchange') === '1') {
+      const headers = await exchange(init!)
+      return { status: 204, headers: new Headers(headers), json: async () => { throw new SyntaxError('No body') } }
+    }
+    // The script reuses one FormData for the retry: remember what each submission carried.
+    submitted.push(String((init!.body as FormData).get('fetchit_token')))
+    const answer = answers.shift() ?? { body: { success: true, message: 'Sent', data: [] }, headers: {} }
+    return { headers: new Headers(answer.headers), json: async () => answer.body }
+  })
+  vi.stubGlobal('fetch', fetch)
+  return fetch
+}
+
+const isExchange = ([, init]: unknown[]) => new Headers((init as RequestInit | undefined)?.headers).get('X-FetchIt-Exchange') === '1'
+const exchangesOf = (fetch: ReturnType<typeof vi.fn>) => fetch.mock.calls.filter(isExchange)
+const submissionsOf = (fetch: ReturnType<typeof vi.fn>) => fetch.mock.calls.filter(call => !isExchange(call))
+const sentToken = (call: unknown[]) => ((call[1] as RequestInit).body as FormData).get('fetchit_token')
+
+function focus(form: HTMLFormElement) {
+  field(form, 'email').dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+}
+
+describe('a page from a full-page cache', () => {
+  it('exchanges the token of the page once, on the first focus', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config({ freshToken: true }))
+    const fetch = cachedPageServer(async () => ({ 'X-FetchIt-Token': 'fresh' }))
+
+    focus(form)
+    focus(form)
+    await settle()
+
+    const exchanges = exchangesOf(fetch)
+    expect(exchanges).toHaveLength(1)
+    expect(sentToken(exchanges[0]!)).toBe('old-token')
+    expect(new Headers((exchanges[0]![1] as RequestInit).headers).get('X-FetchIt-Action')).toBe(action)
+    expect((exchanges[0]![1] as RequestInit).method).toBe('post')
+    expect(field(form, 'fetchit_token').value).toBe('fresh')
+  })
+
+  it('sends the fresh token, once', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config({ freshToken: true }))
+    const fetch = cachedPageServer(async () => ({ 'X-FetchIt-Token': 'fresh' }))
+
+    focus(form)
+    await settle()
+    await submit(form)
+
+    const submissions = submissionsOf(fetch)
+    expect(submissions).toHaveLength(1)
+    expect(sentToken(submissions[0]!)).toBe('fresh')
+    expect(element(form, '[data-success]').textContent).toBe('Sent')
+  })
+
+  it('waits for the exchange when sent before its answer', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config({ freshToken: true }))
+    let answer!: (headers: Record<string, string>) => void
+    const fetch = cachedPageServer(() => new Promise(resolve => { answer = resolve }))
+
+    focus(form)
+    await submit(form)
+    expect(submissionsOf(fetch)).toHaveLength(0)
+
+    answer({ 'X-FetchIt-Token': 'fresh' })
+    await vi.waitFor(() => expect(submissionsOf(fetch)).toHaveLength(1))
+    expect(sentToken(submissionsOf(fetch)[0]!)).toBe('fresh')
+    expect(exchangesOf(fetch)).toHaveLength(1)
+  })
+
+  it('exchanges first when sent without a focus', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config({ freshToken: true }))
+    const fetch = cachedPageServer(async () => ({ 'X-FetchIt-Token': 'fresh' }))
+
+    await submit(form)
+
+    await vi.waitFor(() => expect(submissionsOf(fetch)).toHaveLength(1))
+    expect(exchangesOf(fetch)).toHaveLength(1)
+    expect(sentToken(submissionsOf(fetch)[0]!)).toBe('fresh')
+  })
+
+  it('keeps the token of the page and the retry when the exchange fails', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config({ freshToken: true }))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const fetch = cachedPageServer(
+      async () => { throw new TypeError('Failed to fetch') },
+      { body: { success: false, message: 'Expired', data: [] }, headers: { 'X-FetchIt-Token': 'retry', 'X-FetchIt-Refused': 'token' } },
+      { body: { success: true, message: 'Sent', data: [] }, headers: {} },
+    )
+
+    focus(form)
+    await settle()
+    await submit(form)
+    await vi.waitFor(() => expect(submissionsOf(fetch)).toHaveLength(2))
+
+    expect(submitted).toEqual(['old-token', 'retry'])
+    expect(warn).toHaveBeenCalled()
+    expect(element(form, '[data-success]').textContent).toBe('Sent')
+  })
+
+  it('keeps the token of the page when the server gives none', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config({ freshToken: true }))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    cachedPageServer(async () => ({ 'X-FetchIt-Refused': 'rate' }))
+
+    focus(form)
+    await settle()
+
+    expect(field(form, 'fetchit_token').value).toBe('old-token')
+  })
+
+  it('solves the proof of work for the fresh token, at the difficulty of the server', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config({ freshToken: true, pow: 0 }))
+    const fetch = cachedPageServer(async () => ({ 'X-FetchIt-Token': 'fresh', 'X-FetchIt-Pow': '8' }))
+
+    focus(form)
+    await settle()
+    await submit(form)
+    await vi.waitFor(() => expect(submissionsOf(fetch)).toHaveLength(1))
+
+    const body = (submissionsOf(fetch)[0]![1] as RequestInit).body as FormData
+    expect(zeroBitsOf(`fresh:${body.get('fetchit_pow')}`)).toBeGreaterThanOrEqual(8)
+  })
+
+  it('waits for the fill time of the server before sending', async () => {
+    // Autofill and Send right away would be "too fast" for a token of now.
+    const form = mountProtectedForm()
+    FetchIt.create(config({ freshToken: true }))
+    const fetch = cachedPageServer(async () => ({ 'X-FetchIt-Token': 'fresh', 'X-FetchIt-Min-Time': '1' }))
+    focus(form)
+    await settle()
+    const started = Date.now()
+
+    await submit(form)
+    expect(submissionsOf(fetch)).toHaveLength(0)
+
+    await vi.waitFor(() => expect(submissionsOf(fetch)).toHaveLength(1), { timeout: 3000 })
+    expect(Date.now() - started).toBeGreaterThanOrEqual(1000)
+  })
+
+  it('stops the exchange quietly when the form is destroyed', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config({ freshToken: true }))
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    let signal: AbortSignal | undefined
+    cachedPageServer(init => new Promise((_resolve, reject) => {
+      signal = init.signal ?? undefined
+      signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+    }))
+
+    focus(form)
+    await settle()
+    instance(form)!.destroy()
+    await settle()
+
+    expect(signal?.aborted).toBe(true)
+    expect(warn).not.toHaveBeenCalled()
+  })
+
+  it('exchanges nothing without freshToken', async () => {
+    const form = mountProtectedForm()
+    FetchIt.create(config())
+    const fetch = cachedPageServer(async () => ({ 'X-FetchIt-Token': 'fresh' }))
+
+    focus(form)
+    await settle()
+    await submit(form)
+
+    expect(exchangesOf(fetch)).toHaveLength(0)
+    expect(sentToken(submissionsOf(fetch)[0]!)).toBe('old-token')
+  })
+})
