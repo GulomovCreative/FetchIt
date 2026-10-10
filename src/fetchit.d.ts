@@ -204,7 +204,8 @@ interface FetchItInstance {
   readonly fields: Element[];
   /**
    * Forget the form: it leaves FetchIt.instances and FetchIt.forms, its
-   * proof of work stops, its captcha widget is removed. Called when the form
+   * listeners are removed, its proof of work stops, its captcha widget is
+   * removed; put back on the page, it gets a new instance. Called when the form
    * leaves the page; calling it again does nothing.
    */
   destroy(): void;

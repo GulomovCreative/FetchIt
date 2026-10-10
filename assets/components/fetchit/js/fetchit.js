@@ -652,6 +652,7 @@
 	var FetchIt = class FetchIt {
 		constructor(form, config) {
 			_defineProperty(this, "formData", void 0);
+			_defineProperty(this, "listening", new AbortController());
 			if (!(form instanceof HTMLFormElement)) throw new Error("FetchIt: the element is not a form");
 			this.form = form;
 			this.config = config;
@@ -669,7 +670,9 @@
 			FetchIt.instances.set(this.form, this);
 		}
 		prepareEvents() {
+			const signal = this.listening.signal;
 			this.form.addEventListener("submit", async (event) => {
+				if (FetchIt.instances.get(this.form) !== this) return;
 				event.preventDefault();
 				if (this.pending) return;
 				const formData = new FormData(this.form);
@@ -773,7 +776,7 @@
 					this.pending = false;
 					(_this$captcha = this.captcha) === null || _this$captcha === void 0 || _this$captcha.reset();
 				}
-			});
+			}, { signal });
 			this.form.addEventListener("reset", () => {
 				dispatch("fetchit:reset", {
 					form: this.form,
@@ -782,23 +785,27 @@
 				this.clearErrors();
 				if (!this.preserveFormMessagesOnReset) this.clearFormMessages();
 				FetchIt.notify("reset");
-			});
+			}, { signal });
 			["change", "input"].forEach((eventName) => {
 				this.form.addEventListener(eventName, ({ target }) => {
 					this.clearError(target.getAttribute("name"));
-				});
+				}, { signal });
 			});
-			this.form.addEventListener("focusin", () => this.solveAhead(), { once: true });
+			this.form.addEventListener("focusin", () => this.solveAhead(), {
+				once: true,
+				signal
+			});
 		}
 		/**
-		* The form is gone: forget it, stop the proof of work, remove the
-		* captcha widget. Its listeners go with the form; an answer still on
-		* its way is handled as usual.
+		* The form is gone: forget it, remove its listeners, stop the proof of
+		* work, remove the captcha widget. An answer still on its way is handled
+		* as usual.
 		*/
 		destroy() {
 			var _this$work, _this$captcha2;
 			if (FetchIt.instances.get(this.form) !== this) return;
 			FetchIt.instances.delete(this.form);
+			this.listening.abort();
 			const index = FetchIt.forms.indexOf(this.form);
 			if (index !== -1) FetchIt.forms.splice(index, 1);
 			(_this$work = this.work) === null || _this$work === void 0 || _this$work.stop.abort();
