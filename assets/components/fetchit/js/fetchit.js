@@ -667,6 +667,8 @@
 			_defineProperty(this, "formData", void 0);
 			_defineProperty(this, "listening", new AbortController());
 			_defineProperty(this, "destroyed", false);
+			_defineProperty(this, "exchange", void 0);
+			_defineProperty(this, "readyAt", 0);
 			if (!(form instanceof HTMLFormElement)) throw new Error("FetchIt: the element is not a form");
 			(_FetchIt$instances$ge = FetchIt.instances.get(form)) === null || _FetchIt$instances$ge === void 0 || _FetchIt$instances$ge.destroy();
 			this.form = form;
@@ -709,6 +711,12 @@
 					var _this$config$captcha;
 					try {
 						var _query$headers, _query$headers2, _query$headers$get, _query$headers3, _this$config$pow;
+						if (this.config.freshToken) {
+							await this.freshToken();
+							const token = this.currentToken();
+							if (token) formData.set(FetchIt.tokenField, token);
+							await this.untilReady();
+						}
 						await this.protectSubmission(formData);
 						let query = await fetch(this.request, {
 							method: "post",
@@ -806,7 +814,10 @@
 					this.clearError(target.getAttribute("name"));
 				}, { signal });
 			});
-			this.form.addEventListener("focusin", () => this.solveAhead(), {
+			this.form.addEventListener("focusin", () => {
+				if (this.config.freshToken) this.freshToken();
+				else this.solveAhead();
+			}, {
 				once: true,
 				signal
 			});
@@ -890,13 +901,77 @@
 		* time the visitor sends it.
 		*/
 		solveAhead() {
-			var _this$form$querySelec;
 			if (this.destroyed) return;
-			const token = (_this$form$querySelec = this.form.querySelector(`input[name="${FetchIt.tokenField}"]`)) === null || _this$form$querySelec === void 0 ? void 0 : _this$form$querySelec.value;
+			const token = this.currentToken();
 			if (this.config.pow && token) this.solution(token).catch((error) => {
 				var _this$work4;
 				if (((_this$work4 = this.work) === null || _this$work4 === void 0 ? void 0 : _this$work4.token) === token) console.error(error);
 			});
+		}
+		/**
+		* Exchange the token of the page for a fresh one, once: a page from a
+		* full-page cache holds a token many visitors got.
+		*/
+		freshToken() {
+			var _this$exchange;
+			(_this$exchange = this.exchange) !== null && _this$exchange !== void 0 || (this.exchange = this.exchangeToken());
+			return this.exchange;
+		}
+		/**
+		* Ask the server for a fresh token (FetchItGuard::exchange()). A failed
+		* exchange keeps the token of the page: the retry after a refusal still
+		* covers it. destroy() stops it quietly.
+		*/
+		async exchangeToken() {
+			const token = this.currentToken();
+			let fresh;
+			if (token) {
+				const body = new FormData();
+				body.set(FetchIt.tokenField, token);
+				try {
+					var _answer$headers;
+					const answer = await fetch(this.config.actionUrl, {
+						method: "post",
+						credentials: "same-origin",
+						headers: {
+							"X-FetchIt-Action": this.config.action,
+							"X-FetchIt-Exchange": "1"
+						},
+						body,
+						signal: this.listening.signal
+					});
+					fresh = (_answer$headers = answer.headers) === null || _answer$headers === void 0 ? void 0 : _answer$headers.get("X-FetchIt-Token");
+					if (fresh) {
+						var _answer$headers$get, _this$config$pow3, _answer$headers$get2;
+						const bits = Number((_answer$headers$get = answer.headers.get("X-FetchIt-Pow")) !== null && _answer$headers$get !== void 0 ? _answer$headers$get : 0);
+						if (bits > ((_this$config$pow3 = this.config.pow) !== null && _this$config$pow3 !== void 0 ? _this$config$pow3 : 0)) this.config.pow = bits;
+						const minTime = Number((_answer$headers$get2 = answer.headers.get("X-FetchIt-Min-Time")) !== null && _answer$headers$get2 !== void 0 ? _answer$headers$get2 : 0);
+						this.readyAt = minTime > 0 ? Date.now() + minTime * 1e3 + 250 : 0;
+					} else if (!this.destroyed) {
+						var _answer$headers$get3, _answer$headers2;
+						console.warn(`FetchIt: no fresh token (${(_answer$headers$get3 = (_answer$headers2 = answer.headers) === null || _answer$headers2 === void 0 ? void 0 : _answer$headers2.get("X-FetchIt-Refused")) !== null && _answer$headers$get3 !== void 0 ? _answer$headers$get3 : `HTTP ${answer.status}`}); the form keeps the token of the page`);
+					}
+				} catch (error) {
+					if (!this.destroyed) console.warn("FetchIt: could not get a fresh token; the form keeps the token of the page", error);
+				}
+			}
+			if (this.destroyed) return;
+			if (fresh) this.updateToken(fresh);
+			else this.solveAhead();
+		}
+		/**
+		* Wait until the fill time of the server has passed since the exchange.
+		*/
+		async untilReady() {
+			const wait = this.readyAt - Date.now();
+			if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+		}
+		/**
+		* The token in the form now.
+		*/
+		currentToken() {
+			var _this$form$querySelec;
+			return (_this$form$querySelec = this.form.querySelector(`input[name="${FetchIt.tokenField}"]`)) === null || _this$form$querySelec === void 0 ? void 0 : _this$form$querySelec.value;
 		}
 		/**
 		* The protection token is single-use: every answer brings the next one.
