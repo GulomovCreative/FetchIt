@@ -271,4 +271,39 @@ class FileStoreTest extends TestCase
         $this->assertFalse($store->loadAnswer(self::KEY, 1000));
         $this->assertNotEmpty($this->logged);
     }
+
+    public function testAnAnswerFileJustCreatedIsTakenWithoutAnAnswer()
+    {
+        // claim() creates the file, then writes its guard: a retry may read it in between.
+        $store = $this->store();
+        $file = $store->answerFile(self::KEY);
+        mkdir(dirname($file), 0775, true);
+        touch($file, 1000);
+
+        $this->assertSame('', $store->loadAnswer(self::KEY, 1000));
+        $this->assertSame([], $this->logged);
+    }
+
+    public function testAReleasedKeyIsFreeAgain()
+    {
+        $store = $this->store();
+        $store->claim(self::KEY, 1000);
+
+        $this->assertTrue($store->release(self::KEY));
+        $this->assertNull($store->loadAnswer(self::KEY, 1000));
+        $this->assertSame('marked', $store->claim(self::KEY, 1000));
+        $this->assertTrue($store->release(str_repeat('c', 64)), 'A free key stays free');
+        $this->assertSame([], $this->logged);
+    }
+
+    public function testAKeyWithAnAnswerIsNotReleased()
+    {
+        $store = $this->store();
+        $store->claim(self::KEY, 1000);
+        $store->saveAnswer(self::KEY, '{"success":true}', 1000);
+
+        $store->release(self::KEY);
+
+        $this->assertSame('{"success":true}', $store->loadAnswer(self::KEY, 1000));
+    }
 }

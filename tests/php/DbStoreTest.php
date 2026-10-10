@@ -338,4 +338,46 @@ class DbStoreTest extends TestCase
         $this->assertCount(3, $this->logged);
         $this->assertStringContainsString('failed on claim', $this->logged[0]);
     }
+
+    /**
+     * @dataProvider errorModes
+     */
+    public function testAReleasedKeyIsFreeAgain($errorMode)
+    {
+        $this->connect($errorMode);
+        $store = $this->store();
+        $store->claim(self::KEY, 1000);
+
+        $this->assertTrue($store->release(self::KEY));
+        $this->assertNull($store->loadAnswer(self::KEY, 1000));
+        $this->assertSame('marked', $store->claim(self::KEY, 1000));
+        $this->assertTrue($store->release(str_repeat('c', 64)), 'A free key stays free');
+        $this->assertSame([], $this->logged);
+    }
+
+    public function testAKeyWithAnAnswerIsNotReleased()
+    {
+        $store = $this->store();
+        $store->claim(self::KEY, 1000);
+        $store->saveAnswer(self::KEY, '{"success":true}', 1000);
+
+        $store->release(self::KEY);
+
+        $this->assertSame('{"success":true}', $store->loadAnswer(self::KEY, 1000));
+    }
+
+    /**
+     * @dataProvider errorModes
+     */
+    public function testWithoutTheTableAReleaseFailsAndIsLoggedOnce($errorMode)
+    {
+        $this->connect($errorMode);
+        $store = $this->store();
+        $store->uninstall();
+
+        $this->assertFalse($store->release(self::KEY));
+        $this->assertFalse($store->release(self::KEY));
+        $this->assertCount(1, $this->logged);
+        $this->assertStringContainsString('failed on release', $this->logged[0]);
+    }
 }

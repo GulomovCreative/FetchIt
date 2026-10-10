@@ -1104,6 +1104,23 @@ class FetchItTest extends TestCase
         $this->modx->removeCache();
     }
 
+    public function testASubmissionAnsweredWithAStoreFailureIsProcessedByItsRetry()
+    {
+        // Nothing was processed: the retry must not get the failure kept for an hour.
+        $this->modx->options['fetchit.page_cache'] = true;
+        $snippet = $this->counted();
+        $this->storedForm('not a form file');
+        $first = $this->fetchit()->submit(self::ACTION, ['email' => 'a@b.c'], self::UUID, function () {});
+        file_put_contents($this->modx->getCachePath() . 'fetchit/forms/01/' . self::ACTION . '.php', FetchItFileStore::HIDE . '{"snippet":"Handler"}');
+
+        $retry = $this->fetchit()->submit(self::ACTION, ['email' => 'a@b.c'], self::UUID, function () {});
+
+        $this->assertSame('fetchit_err_store', $this->decode($first['body'])['message']);
+        $this->assertSame('Run 1', $this->decode($retry['body'])['message']);
+        $this->assertSame(1, $snippet->runs);
+        $this->modx->removeCache();
+    }
+
     public function testWithThePageCacheStoredPropertiesThatAreNotJsonAreLogged()
     {
         $this->modx->options['fetchit.page_cache'] = true;
