@@ -35,6 +35,18 @@ interface FetchItConfig extends FetchItObserveOptions {
    * answer, without captchaErrorMessage)
    */
   requestErrorMessage?: string | undefined;
+  /** Seconds to wait for the answer to one attempt (&timeout); 0 or none waits as long as the browser */
+  timeout?: number | undefined;
+  /**
+   * Attempts after a network error, a timeout, a 502/503/504 that is not a
+   * FetchIt answer or an answer that the form is still processed
+   * (&retries, 0 to 5). With retries every submission carries a key
+   * (X-FetchIt-Submission), and the server answers a retry of a processed
+   * form with its kept answer.
+   */
+  retries?: number | undefined;
+  /** Shown when the last attempt ran out of time: the form may have been processed */
+  timeoutMessage?: string | undefined;
   /**
    * Bits of the proof of work from fetchit.protection.pow, capped by the
    * server (FetchItGuard::MAX_POW); 0 or none for no proof of work. A
@@ -173,6 +185,17 @@ interface FetchItErrorDetail extends FetchItBeforeDetail {
 }
 
 /**
+ * fetchit:retry, cancelable: an attempt failed and another follows after a
+ * pause (1, 2, 4, 8 s). error is why the last attempt failed. Cancelling it
+ * ends the submission with that error.
+ */
+interface FetchItRetryDetail extends FetchItBeforeDetail {
+  /** The number of this retry, from 1 */
+  attempt: number;
+  error: unknown;
+}
+
+/**
  * fetchit:reset, not cancelable: the form is being reset (its button,
  * form.reset(), or after a success); the fields still hold their values.
  */
@@ -187,6 +210,7 @@ interface FetchItEventMap {
   'fetchit:success': CustomEvent<FetchItSuccessDetail>;
   'fetchit:error': CustomEvent<FetchItErrorDetail>;
   'fetchit:reset': CustomEvent<FetchItResetDetail>;
+  'fetchit:retry': CustomEvent<FetchItRetryDetail>;
 }
 
 // The events are dispatched on document and do not bubble: listen on
@@ -249,6 +273,7 @@ interface FetchItStatic {
     readonly error: 'fetchit:error';
     readonly after: 'fetchit:after';
     readonly reset: 'fetchit:reset';
+    readonly retry: 'fetchit:retry';
   };
   /** Used when the config has no requestErrorMessage */
   defaultRequestErrorMessage: string;

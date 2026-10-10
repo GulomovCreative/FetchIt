@@ -158,3 +158,20 @@ document.addEventListener('fetchit:success', event => {
     console.log('leaving')
   }
 })
+
+// ----------------------------------------------------------------- retries
+
+export type RetryChecks = [
+  Assert<Equals<DocumentEventMap['fetchit:retry'], CustomEvent<FetchItRetryDetail>>>,
+  Assert<Equals<FetchItRetryDetail['attempt'], number>>,
+]
+
+document.addEventListener(FetchIt.events.retry, event => {
+  console.log(event.detail.attempt, event.detail.error, event.detail.form.id)
+  if (event.detail.attempt > 1) {
+    event.preventDefault()
+  }
+})
+
+const retrying: FetchItConfig = { action: 'a', actionUrl: '/action.php', pageId: 1, timeout: 10, retries: 2, timeoutMessage: 'Late' }
+console.log(retrying)
