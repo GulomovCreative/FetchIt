@@ -103,6 +103,8 @@ The [documentation](https://docs.modx.pro/components/fetchit/) (in Russian) has 
 | `snippet` | `FormIt` | The snippet that processes the form, see below |
 | `actionUrl` | `[[+assetsUrl]]action.php` | Where the form is sent |
 | `clearFieldsOnSuccess` | `1` | Clear the fields after a successful submission |
+| `formState` | `1` | Put the state of the submission into `data-fetchit-state` of the form |
+| `ariaBusy` | `1` | Put `aria-busy="true"` on the form while it is sent |
 
 All other properties go to the processing snippet: for FormIt, `&hooks`, `&validate`, `&emailTo`, `&successMessage`, `&placeholderPrefix` and the rest.
 
@@ -246,6 +248,19 @@ FetchIt.Message = {
 The global `FetchIt` exists once the deferred `fetchit.js` has run, so set `FetchIt.Message` from a deferred script added after it, or on `DOMContentLoaded`. The instance of a form is `FetchIt.instances.get(form)`, with `setError(name, message)`, `clearErrors()`, `setFormMessage(type, message)` and other methods.
 
 The page starts FetchIt with `FetchIt.observe()` on `DOMContentLoaded`. It handles the forms on the page and those inserted later, and calls `destroy()` on forms taken out of the page: the instance leaves `FetchIt.instances`, its proof of work stops, its captcha widget is removed. `FetchIt.init(root)` handles the forms in `root` right away, with the class that observes the page. A form whose config is broken or that cannot start is logged in the console and sent the usual way; the other forms start all the same. A form removed while it is being sent ends quietly, without an error message. `FetchIt.create(config)` still works for pages cached by FetchIt 4.0. A class of your own in `fetchit.frontend.js.classname` with a `create()` of its own gets a `create(config)` call per form key first, as in FetchIt 4.0, and then `observe()`; a script of your own without `observe()` gets only the `create()` calls, for the forms on the page when it loads.
+
+### The state of the form
+
+While a form is sent, it has `data-fetchit-state="sending"` and `aria-busy="true"`; after the answer, `data-fetchit-state` is `success` or `error` (a refusal of the server or a failed request), and `aria-busy` is gone. The state is set before the events, so it holds when a listener cancels them. A reset by the visitor removes it; the reset of `clearFieldsOnSuccess` keeps `success`. A spinner needs only CSS:
+
+```css
+form[data-fetchit-state="sending"] button[type="submit"] {
+  cursor: progress;
+  opacity: .6;
+}
+```
+
+`&formState=0` and `&ariaBusy=0` turn them off for a form. CSS frameworks that draw a spinner on any `[aria-busy="true"]` (Pico CSS, for example) draw it over the whole form: turn `&ariaBusy` off there if that is not wanted.
 
 ## TypeScript
 

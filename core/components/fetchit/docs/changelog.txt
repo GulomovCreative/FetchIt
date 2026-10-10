@@ -29,6 +29,9 @@ FetchIt 4 replaces both with one package and installs over either of them.
 - `FetchIt.observe()`, `FetchIt.init(root)` and `destroy()` of an instance. A
   form taken out of the page and put back later gets a new instance and is
   sent once.
+- `data-fetchit-state` (`sending`, `success`, `error`) and `aria-busy` on a
+  form while it is sent and after the answer, for spinners and styles in CSS
+  alone. On by default; `&formState=0` and `&ariaBusy=0` turn them off.
 
 ### Changed
 
