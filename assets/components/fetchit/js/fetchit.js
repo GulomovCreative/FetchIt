@@ -688,7 +688,7 @@
 			(_FetchIt$instances$ge = FetchIt.instances.get(form)) === null || _FetchIt$instances$ge === void 0 || _FetchIt$instances$ge.destroy();
 			this.form = form;
 			this.config = config;
-			this.setSubmissionState(null);
+			if (form.getAttribute("data-fetchit-state") === "sending" || form.hasAttribute("aria-busy")) this.showSubmissionState(null);
 			this.request = new Request(this.config.actionUrl, {
 				method: "post",
 				credentials: "same-origin",
@@ -721,7 +721,7 @@
 				})) return;
 				this.pending = true;
 				this.disableFields();
-				this.setSubmissionState("sending");
+				this.showSubmissionState("sending");
 				let shown = false;
 				let response;
 				try {
@@ -769,7 +769,7 @@
 						this.failRequest(error, formData);
 						return;
 					}
-					this.setSubmissionState(response.success ? "success" : "error");
+					this.showSubmissionState(response.success ? "success" : "error");
 					FetchIt.notify("after", response.message);
 					if (!dispatch("fetchit:after", {
 						form: this.form,
@@ -819,7 +819,7 @@
 					else this.failRequest(error, formData);
 				} finally {
 					var _this$captcha;
-					if (this.submissionState === "sending") this.setSubmissionState(null);
+					if (this.submissionState === "sending") this.showSubmissionState(null);
 					this.enableFields();
 					this.pending = false;
 					(_this$captcha = this.captcha) === null || _this$captcha === void 0 || _this$captcha.reset();
@@ -833,7 +833,7 @@
 				this.clearErrors();
 				if (!this.preserveFormMessagesOnReset) {
 					this.clearFormMessages();
-					if (!this.pending) this.setSubmissionState(null);
+					if (!this.pending) this.showSubmissionState(null);
 				}
 				FetchIt.notify("reset");
 			}, { signal });
@@ -877,7 +877,7 @@
 		*/
 		failRequest(error, formData) {
 			if (this.destroyed) return;
-			this.setSubmissionState("error");
+			this.showSubmissionState("error");
 			console.error(error);
 			const message = error instanceof CaptchaError && this.config.captchaErrorMessage || this.config.requestErrorMessage || FetchIt.defaultRequestErrorMessage;
 			FetchIt.notify("error", message);
@@ -1019,7 +1019,8 @@
 		* data-fetchit-state (config.formState) and aria-busy while it is sent
 		* (config.ariaBusy). A config without them, from a page cached by an
 		* earlier version, has both on. Null removes the state. A destroyed
-		* instance leaves a form put back on the page to its new instance.
+		* instance leaves a form that has a new instance alone, and keeps its
+		* own state as it was.
 		*/
 		setSubmissionState(state) {
 			if (this.destroyed && FetchIt.instances.has(this.form)) return;
@@ -1031,6 +1032,17 @@
 			if (this.config.ariaBusy !== false) {
 				if (state === "sending") this.form.setAttribute("aria-busy", "true");
 				else this.form.removeAttribute("aria-busy");
+			}
+		}
+		/**
+		* setSubmissionState() for the submission: one a class of the site made
+		* that throws is logged; it must not keep the form from being sent.
+		*/
+		showSubmissionState(state) {
+			try {
+				this.setSubmissionState(state);
+			} catch (error) {
+				console.error("FetchIt: setSubmissionState() threw; the form does not show its state", error);
 			}
 		}
 		clearErrors() {
