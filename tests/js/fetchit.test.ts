@@ -2939,6 +2939,69 @@ describe('timeout and retries', () => {
     expect(keyOf(fetch.mock.calls[2])).toBe(keyOf(fetch.mock.calls[0]))
   })
 
+  it('gives a new key for data changed without an event', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const form = mountForm()
+    const fetch = await timedOut(form, {}, { body: sent })
+
+    field(form, 'email').value = 'ann@example.com'
+    await send(form)
+
+    expect(keyOf(fetch.mock.calls[2])).toMatch(uuid)
+    expect(keyOf(fetch.mock.calls[2])).not.toBe(keyOf(fetch.mock.calls[0]))
+  })
+
+  it('keeps the key for the same file, and gives a new one for another', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    let file = new File(['one'], 'cv.pdf', { type: 'application/pdf', lastModified: 1 })
+    // jsdom cannot set the files of an input: the form data of the form
+    // gets the file of the test.
+    vi.stubGlobal('FormData', class extends FormData {
+      constructor (form?: HTMLFormElement) {
+        super(form)
+        if (form) {
+          this.append('cv', file)
+        }
+      }
+    })
+    const form = mountForm()
+    const fetch = await timedOut(form, {}, 'hang', 'hang', { body: sent })
+
+    file = new File(['one'], 'cv.pdf', { type: 'application/pdf', lastModified: 1 })
+    await send(form)
+    await vi.advanceTimersByTimeAsync(5000 + 1000 + 5000)
+    file = new File(['two!'], 'cv.pdf', { type: 'application/pdf', lastModified: 2 })
+    await send(form)
+
+    expect(fetch).toHaveBeenCalledTimes(5)
+    expect(keyOf(fetch.mock.calls[2])).toBe(keyOf(fetch.mock.calls[0]))
+    expect(keyOf(fetch.mock.calls[4])).toMatch(uuid)
+    expect(keyOf(fetch.mock.calls[4])).not.toBe(keyOf(fetch.mock.calls[0]))
+  })
+
+  it('keeps the key when only the token and the captcha answer changed', async () => {
+    let answers = 0
+    window.grecaptcha = { ready: callback => callback(), execute: vi.fn(async () => `answer-${++answers}`), reset: vi.fn() }
+    try {
+      const form = mountProtectedForm()
+      FetchIt.create(config({ retries: 1, captcha: { provider: 'recaptcha', siteKey: 'site-key' } }))
+      const pending = { status: 409, body: { success: false, message: 'Still', data: [] }, headers: { 'X-FetchIt-Refused': 'pending', 'X-FetchIt-Token': 'next' } }
+      const fetch = server(pending, pending, { body: sent })
+
+      await send(form)
+      await vi.advanceTimersByTimeAsync(1000)
+      expect(element(form, '[data-validation-error]').textContent).toBe('Still')
+      await send(form)
+
+      expect(fetch).toHaveBeenCalledTimes(3)
+      expect(tokenOf(fetch.mock.calls[2])).toBe('next')
+      expect(((fetch.mock.calls[2][1] as RequestInit).body as FormData).get('g-recaptcha-response')).toBe('answer-2')
+      expect(keyOf(fetch.mock.calls[2])).toBe(keyOf(fetch.mock.calls[0]))
+    } finally {
+      delete window.grecaptcha
+    }
+  })
+
   // Headers at once, then the connection drops while the body is read.
   const dropped = new TypeError('network error')
   function droppedBody() {
