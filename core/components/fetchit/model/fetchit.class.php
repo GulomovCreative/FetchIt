@@ -15,7 +15,8 @@ class FetchIt
     protected $guard;
 
     /**
-     * Set by loadScript() when the snippet puts a form on the page, so the
+     * Set by loadScript() when the FetchIt snippet puts a form on the page,
+     * or FetchItScript asks for the script of forms that come later, so the
      * plugin adds the scripts at OnWebPagePrerender of the same request.
      * Kept per request, not in the session, which may not exist. Only an
      * uncached call ([[!FetchIt]]) sets it on every page view.
@@ -149,7 +150,8 @@ class FetchIt
 
 
     /**
-     * Give every form in the chunk the POST method and the action key.
+     * Give every form in the chunk the POST method, the action key and the
+     * config of the script.
      *
      * The form tag loses any method, data-fetchit and data-fetchit-config of
      * its own, and gets method="post", data-fetchit="$action" and
@@ -172,7 +174,7 @@ class FetchIt
 
         // Brackets and braces as entities: the page may go through the MODX
         // parser and Fenom again, which would take them for tags.
-        $config = strtr(htmlspecialchars($this->modx->toJSON($this->clientConfig($action)), ENT_QUOTES, 'UTF-8'), [
+        $config = strtr(htmlspecialchars($this->encode($this->clientConfig($action), "the config of the form {$action}"), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'), [
             '[' => '&#91;',
             ']' => '&#93;',
             '{' => '&#123;',
@@ -357,9 +359,11 @@ class FetchIt
 
 
     /**
-     * The config of the script for the forms of an action. The snippet
+     * The config of the script for the forms of an action. prepareForm()
      * writes it into data-fetchit-config of every form, so a form inserted
-     * after the page loaded brings it along.
+     * after the page loaded brings it along. pageId is the resource that
+     * outputs the form: for a fragment loaded into another page, the
+     * fragment; action.php processes the form in its context.
      *
      * @param string $action
      *
@@ -403,25 +407,84 @@ class FetchIt
 
 
     /**
+     * JSON for the script. Text that is not UTF-8 (a lexicon entry or a
+     * setting saved in another encoding) gets replacement characters
+     * instead of breaking all of it; what cannot be encoded at all is
+     * logged, and '' is returned.
+     *
+     * @param mixed $data
+     * @param string $what
+     *
+     * @return string
+     */
+    protected function encode($data, $what)
+    {
+        $json = json_encode($data, JSON_INVALID_UTF8_SUBSTITUTE);
+        if (!is_string($json)) {
+            $this->modx->log(modX::LOG_LEVEL_ERROR, "[FetchIt] Could not encode {$what}: " . json_last_error_msg() . '; the forms are sent without FetchIt');
+
+            return '';
+        }
+
+        return $json;
+    }
+
+
+    /**
      * The inline code that starts the forms of the page once the deferred
-     * scripts have run. The class may be a window property, a top-level
+     * scripts have run: tests/fixtures/bootstrap.html is its output for the
+     * class name Forms. The class may be a window property, a top-level
      * "class" declaration (no window property) or a dotted name. Without
-     * the script (blocked, failed) the forms fall back to a normal submit
-     * instead of throwing. A script of the site written for FetchIt 4.0
-     * has only create(): it gets one call per action of the forms on the
-     * page, as before.
+     * the script (blocked, failed, a misspelt class name) the forms fall
+     * back to a normal submit and the console says what to check. A script
+     * of the site without observe(), or a class of the site with a create()
+     * of its own (written for FetchIt 4.0), gets one create() per form key
+     * first, as before.
      *
      * @return string
      */
     protected function bootstrapScript()
     {
         $classname = trim($this->modx->getOption('fetchit.frontend.js.classname', null, 'FetchIt', true));
-        $options = $this->modx->toJSON([
+        $options = $this->encode([
             'defaultNotifier' => (bool)$this->config['default_notifier'],
             'notifierCloseLabel' => $this->config['default_notifier'] ? $this->lexiconOrEmpty('fetchit_notifier_close') : '',
-        ]);
+        ], 'the notifier options') ?: '{}';
 
-        return "<script>window.addEventListener('DOMContentLoaded', () => { let FetchItClass; try { FetchItClass = {$classname}; } catch (e) {} if (FetchItClass && typeof FetchItClass.observe === 'function') { FetchItClass.observe({$options}); } else if (FetchItClass && typeof FetchItClass.create === 'function') { const actions = {}; document.querySelectorAll('form[data-fetchit-config]').forEach(form => { try { const config = JSON.parse(form.getAttribute('data-fetchit-config')); if (!actions[config.action]) { actions[config.action] = true; FetchItClass.create(config); } } catch (e) { console.error(e); } }); } else { console.error('FetchIt: {$classname} is not loaded'); } });</script>";
+        return <<<HTML
+<script>
+window.addEventListener('DOMContentLoaded', () => {
+  let FetchItClass;
+  let missing;
+  try { FetchItClass = {$classname}; } catch (e) { missing = e; }
+  const options = {$options};
+  if (!FetchItClass || (typeof FetchItClass.observe !== 'function' && typeof FetchItClass.create !== 'function')) {
+    console.error('FetchIt: {$classname} is not loaded; check that its script loads and the setting fetchit.frontend.js.classname', missing || '');
+    return;
+  }
+  // A script of the site without observe(), or a class of the site with a
+  // create() of its own (FetchIt 4.0): one create() per form key, as before.
+  if (typeof FetchItClass.create === 'function' && (typeof FetchItClass.observe !== 'function'
+    || (FetchItClass !== window.FetchIt && Object.prototype.hasOwnProperty.call(FetchItClass, 'create')))) {
+    const actions = {};
+    document.querySelectorAll('form[data-fetchit-config]').forEach(form => {
+      try {
+        const config = JSON.parse(form.getAttribute('data-fetchit-config'));
+        if (!actions[config.action]) {
+          actions[config.action] = true;
+          FetchItClass.create(config);
+        }
+      } catch (e) {
+        console.error('FetchIt: could not start the form; it is sent without FetchIt', form, e);
+      }
+    });
+  }
+  if (typeof FetchItClass.observe === 'function') {
+    FetchItClass.observe(options);
+  }
+});
+</script>
+HTML;
     }
 
 
@@ -456,10 +519,20 @@ class FetchIt
         self::$scriptRequested = false;
 
         $output = &$this->modx->resource->_output;
+        $id = $this->modx->resource->get('id');
         // A fragment (a resource with an empty template, loaded into
-        // another page): its forms carry their config, and the page they go
-        // into has the script.
-        if (!preg_match('#<(?:head|body)\b#i', $output)) {
+        // another page): its forms carry their config, and the script comes
+        // with the page they go into, through its own FetchIt call or
+        // [[!FetchItScript]].
+        $page = preg_match('#<(?:head|body)\b#i', $output);
+        if ($page === false) {
+            $this->modx->log(modX::LOG_LEVEL_ERROR, "[FetchIt] Could not add the script to resource {$id}: " . $this->pcreError());
+
+            return;
+        }
+        if (!$page) {
+            $this->modx->log(modX::LOG_LEVEL_INFO, "[FetchIt] Resource {$id} has no <head> or <body>: no script added; the page it is loaded into needs its own FetchIt call or [[!FetchItScript]]");
+
             return;
         }
 

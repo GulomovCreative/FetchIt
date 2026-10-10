@@ -131,6 +131,26 @@ class FetchItTest extends TestCase
         $this->assertSame('Не удалось "отправить" <форму> & всё', $this->formConfig($html)['requestErrorMessage']);
     }
 
+    public function testConfigKeepsWorkingWithBrokenUtf8()
+    {
+        $this->modx->lexicon->entries['fetchit_err_request'] = "Broken \xB1 text";
+
+        $html = $this->fetchit()->prepareForm('<form>', 'abc');
+
+        $this->assertSame("Broken \u{FFFD} text", $this->formConfig($html)['requestErrorMessage']);
+        $this->assertSame([], $this->modx->logged);
+    }
+
+    public function testConfigThatCannotBeEncodedIsLogged()
+    {
+        $this->modx->resource = new FakeResource(INF);
+
+        $html = $this->fetchit()->prepareForm('<form>', 'abc');
+
+        $this->assertStringContainsString(' data-fetchit-config=""', $html);
+        $this->assertLogged('Could not encode the config of the form abc');
+    }
+
     public function testConfigHasNoTagsForTheParsers()
     {
         // The page output may go through the MODX parser and Fenom again.
@@ -504,7 +524,7 @@ class FetchItTest extends TestCase
         $html = $this->render("<html><head>\n<title>T</title>\n<script src=\"/app.js\"></script>\n</head><body></body></html>");
 
         $this->assertMatchesRegularExpression(
-            '#<script src="/assets/components/fetchit/js/fetchit\.js\?v=[^"]+" defer></script>\n<script>window\.addEventListener.*?</script>\s*<script src="/app\.js">#s',
+            '#<script src="/assets/components/fetchit/js/fetchit\.js\?v=[^"]+" defer></script>\n<script>\nwindow\.addEventListener.*?</script>\s*<script src="/app\.js">#s',
             $html
         );
     }
@@ -513,7 +533,7 @@ class FetchItTest extends TestCase
     {
         $html = $this->render('<html><head><title>T</title></head><body></body></html>');
 
-        $this->assertMatchesRegularExpression('#fetchit\.js\?v=[^"]+" defer></script>\n<script>window\.addEventListener.*?</script>\n</head>#s', $html);
+        $this->assertMatchesRegularExpression('#fetchit\.js\?v=[^"]+" defer></script>\n<script>\nwindow\.addEventListener.*?</script>\n</head>#s', $html);
     }
 
     public function testTheNotifierNeedsNoFilesOfItsOwn()
@@ -603,22 +623,60 @@ class FetchItTest extends TestCase
     {
         $html = $this->render('<HTML><HEAD prefix="og: x"><SCRIPT src="/a.js"></SCRIPT></HEAD></HTML>');
 
-        $this->assertMatchesRegularExpression('#<HEAD prefix="og: x"><script src="[^"]+fetchit\.js[^"]*" defer></script>\n<script>window.*?</script>\s*<SCRIPT src="/a\.js">#s', $html);
+        $this->assertMatchesRegularExpression('#<HEAD prefix="og: x"><script src="[^"]+fetchit\.js[^"]*" defer></script>\n<script>\nwindow.*?</script>\s*<SCRIPT src="/a\.js">#s', $html);
     }
 
     public function testScriptsInTheBodyDoNotCount()
     {
         $html = $this->render('<html><head><title>T</title></head><body><script src="/b.js"></script></body></html>');
 
-        $this->assertMatchesRegularExpression('#fetchit\.js[^"]*" defer></script>\n<script>window.*?</script>\s*</head>#s', $html);
+        $this->assertMatchesRegularExpression('#fetchit\.js[^"]*" defer></script>\n<script>\nwindow.*?</script>\s*</head>#s', $html);
     }
 
-    public function testFragmentIsLeftAloneAndNotLogged()
+    /**
+     * @dataProvider fragments
+     */
+    public function testFragmentIsLeftAloneWithANote($fragment)
     {
-        $fragment = '<form method="post" data-fetchit="abc"></form>';
-
         $this->assertSame($fragment, $this->render($fragment));
-        $this->assertSame([], $this->modx->logged);
+        $this->assertSame([], array_filter($this->modx->logged, function ($entry) {
+            return $entry[0] <= modX::LOG_LEVEL_WARN;
+        }));
+        $this->assertLogged('[[!FetchItScript]]');
+    }
+
+    public function fragments()
+    {
+        return [
+            'a form' => ['<form method="post" data-fetchit="abc"></form>'],
+            'a header' => ['<header>Menu</header><form></form>'],
+            'a table' => ['<table><tbody><tr><td><form></form></td></tr></tbody></table>'],
+        ];
+    }
+
+    /**
+     * A pattern used before is cached with JIT; a process of its own
+     * compiles it without.
+     *
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function testPcreFailureOnThePageIsLogged()
+    {
+        $limit = ini_get('pcre.backtrack_limit');
+        $jit = ini_get('pcre.jit');
+        ini_set('pcre.jit', '0');
+        ini_set('pcre.backtrack_limit', '1');
+        try {
+            $page = str_repeat('<div>', 50) . '<form></form>';
+            $html = $this->render($page);
+        } finally {
+            ini_set('pcre.backtrack_limit', $limit);
+            ini_set('pcre.jit', $jit);
+        }
+
+        $this->assertSame($page, $html);
+        $this->assertLogged('Could not add the script');
     }
 
     public function testBodyWithoutHeadIsStillLogged()
@@ -646,9 +704,20 @@ class FetchItTest extends TestCase
 
     private function bootstrap($html)
     {
-        $this->assertSame(1, preg_match('#<script>window\.addEventListener\(\'DOMContentLoaded\'.*?</script>#', $html, $match), $html);
+        $this->assertSame(1, preg_match('#<script>\nwindow\.addEventListener\(\'DOMContentLoaded\'.*?</script>#s', $html, $match), $html);
 
         return $match[0];
+    }
+
+    public function testTheBootstrapIsTheOneTheScriptTestsRun()
+    {
+        // tests/js/fetchit.test.ts runs this file in a browser environment.
+        $html = $this->render('<html><head></head><body></body></html>', ['fetchit.frontend.js.classname' => 'Forms']);
+
+        $this->assertSame(
+            trim(file_get_contents(dirname(__DIR__) . '/fixtures/bootstrap.html')),
+            $this->bootstrap($html)
+        );
     }
 
     public function testThePageStartsTheObserverOnce()
@@ -658,8 +727,8 @@ class FetchItTest extends TestCase
 
         $html = $this->render('<html><head></head><body></body></html>');
 
-        $this->assertSame(1, substr_count($html, '.observe('));
-        $this->assertStringContainsString('FetchItClass.observe({"defaultNotifier":false,"notifierCloseLabel":""});', $this->bootstrap($html));
+        $this->assertSame(1, substr_count($html, 'DOMContentLoaded'));
+        $this->assertStringContainsString('const options = {"defaultNotifier":false,"notifierCloseLabel":""};', $this->bootstrap($html));
     }
 
     public function testTheBootstrapUsesTheConfiguredClassName()
@@ -668,18 +737,8 @@ class FetchItTest extends TestCase
 
         // A window property, a top-level "class" declaration or a dotted
         // name, and no exception when the script is missing.
-        $this->assertStringContainsString('try { FetchItClass = App.Forms; } catch (e) {}', $this->bootstrap($html));
-        $this->assertStringContainsString("console.error('FetchIt: App.Forms is not loaded')", $this->bootstrap($html));
-    }
-
-    public function testTheBootstrapFallsBackToCreateOfAnOwnScript()
-    {
-        // A script of the site written for FetchIt 4.0 has create() only.
-        $bootstrap = $this->bootstrap($this->render('<html><head></head><body></body></html>'));
-
-        $this->assertStringContainsString("else if (FetchItClass && typeof FetchItClass.create === 'function')", $bootstrap);
-        $this->assertStringContainsString("document.querySelectorAll('form[data-fetchit-config]')", $bootstrap);
-        $this->assertStringContainsString('FetchItClass.create(config)', $bootstrap);
+        $this->assertStringContainsString('try { FetchItClass = App.Forms; } catch (e) { missing = e; }', $this->bootstrap($html));
+        $this->assertStringContainsString("console.error('FetchIt: App.Forms is not loaded;", $this->bootstrap($html));
     }
 
     public function testTheBootstrapGetsTheNotifier()
