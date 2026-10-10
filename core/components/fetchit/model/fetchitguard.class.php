@@ -506,6 +506,21 @@ class FetchItGuard
 
 
     /**
+     * See FetchItStore::release().
+     *
+     * @param string $key From submissionKey()
+     *
+     * @return bool
+     */
+    public function release($key)
+    {
+        $store = $this->store();
+
+        return $store !== null && $store->release($key);
+    }
+
+
+    /**
      * Why the last check() refused, or null.
      *
      * @return string|null

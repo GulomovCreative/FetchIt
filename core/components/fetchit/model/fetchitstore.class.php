@@ -97,9 +97,20 @@ interface FetchItStore
      *
      * @return string|null|false The answer; '' when the key is taken and the
      *     answer not there yet; null when the key is free; false when the
-     *     store failed (logged)
+     *     store failed (logged). Callers compare strictly: '', null and
+     *     false mean different things.
      */
     public function loadAnswer($key, $now);
+
+    /**
+     * Free the key of a submission that was not processed, so a retry
+     * processes it. A key with an answer is kept.
+     *
+     * @param string $key 64 hex characters
+     *
+     * @return bool false when the store failed (logged)
+     */
+    public function release($key);
 
     /**
      * Drop what expired; called now and then.

@@ -223,8 +223,12 @@ class FetchItFileStore implements FetchItStore
         for ($attempt = 0; $attempt < 2; $attempt++) {
             $handle = @fopen($file, 'x');
             if ($handle !== false) {
-                fwrite($handle, self::HIDE);
+                $written = fwrite($handle, self::HIDE);
                 fclose($handle);
+                if ($written !== strlen(self::HIDE)) {
+                    @unlink($file);
+                    break;
+                }
                 @touch($file, $now);
 
                 if (mt_rand(1, 100) === 1) {
@@ -272,8 +276,10 @@ class FetchItFileStore implements FetchItStore
 
 
     /**
-     * No file, or one older than ANSWER_TTL: null. A file that cannot be
-     * read or does not start with HIDE: false, logged once per request.
+     * No file, or one older than ANSWER_TTL: null. An empty file was just
+     * created by claim(), which writes HIDE next: taken, ''. A file that
+     * cannot be read or does not start with HIDE: false, logged once per
+     * request.
      *
      * {@inheritdoc}
      */
@@ -285,6 +291,9 @@ class FetchItFileStore implements FetchItStore
             return null;
         }
         $content = @file_get_contents($file);
+        if ($content === '') {
+            return '';
+        }
         if ($content === false || strpos($content, self::HIDE) !== 0) {
             if (!$this->unreadableAnswer) {
                 $this->unreadableAnswer = true;
@@ -295,6 +304,36 @@ class FetchItFileStore implements FetchItStore
         }
 
         return substr($content, strlen(self::HIDE));
+    }
+
+
+    /**
+     * Only a file without an answer is deleted.
+     *
+     * {@inheritdoc}
+     */
+    public function release($key)
+    {
+        $file = $this->answerFile($key);
+        if (!file_exists($file)) {
+            return true;
+        }
+        $content = @file_get_contents($file);
+        if ($content !== '' && $content !== self::HIDE) {
+            if ($content !== false) {
+                return true;
+            }
+            call_user_func($this->log, "the answer in {$file} cannot be read; a retry of a form is answered that it is still processed");
+
+            return false;
+        }
+        if (!@unlink($file) && file_exists($file)) {
+            call_user_func($this->log, "could not delete {$file}; a retry of a form is answered that it is still processed");
+
+            return false;
+        }
+
+        return true;
     }
 
 

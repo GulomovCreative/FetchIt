@@ -33,6 +33,7 @@ class FetchItDbStore implements FetchItStore
         'claim' => '; a retry of a form may process it twice',
         'saveAnswer' => '; a retry of a form is answered that it is still processed',
         'loadAnswer' => '; a retry of a form may process it twice',
+        'release' => '; a retry of a form is answered that it is still processed',
     ];
 
     /** @var modX */
@@ -252,6 +253,17 @@ class FetchItDbStore implements FetchItStore
         }
 
         return $row[0] === null ? '' : (string)$row[0];
+    }
+
+
+    /**
+     * Only a row without an answer is deleted.
+     *
+     * {@inheritdoc}
+     */
+    public function release($key)
+    {
+        return $this->run('DELETE FROM ' . $this->table() . ' WHERE k = ? AND v IS NULL', ['s:' . $key], 'release') instanceof PDOStatement;
     }
 
 

@@ -353,6 +353,8 @@ class FetchIt
         $this->catchRedirect();
         try {
             $response = $this->process($action, $fields);
+            // fetchit_err_store: the properties of the form could not be read.
+            $unprocessed = $this->storeFailed;
         } finally {
             // An exception goes on up: finishRedirect() at the shutdown must not answer for it.
             $this->processing = null;
@@ -360,7 +362,12 @@ class FetchIt
 
         $body = $this->withRedirect($action, $this->json($response));
         if ($key !== null) {
-            $guard->saveAnswer($key, $body);
+            if ($unprocessed) {
+                // Nothing was processed: a retry may find the store working again.
+                $guard->release($key);
+            } else {
+                $guard->saveAnswer($key, $body);
+            }
         }
 
         return ['status' => 200, 'body' => $body];
