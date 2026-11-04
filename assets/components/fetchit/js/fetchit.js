@@ -1,5 +1,5 @@
 (function() {
-	//#region \0@oxc-project+runtime@0.154.0/helpers/esm/typeof.js
+	// \0@oxc-project+runtime@0.156.0/helpers/esm/typeof.js
 	function _typeof(o) {
 		"@babel/helpers - typeof";
 		return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function(o) {
@@ -8,8 +8,7 @@
 			return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o;
 		}, _typeof(o);
 	}
-	//#endregion
-	//#region \0@oxc-project+runtime@0.154.0/helpers/esm/toPrimitive.js
+	// \0@oxc-project+runtime@0.156.0/helpers/esm/toPrimitive.js
 	function toPrimitive(t, r) {
 		if ("object" != _typeof(t) || !t) return t;
 		var e = t[Symbol.toPrimitive];
@@ -20,14 +19,12 @@
 		}
 		return ("string" === r ? String : Number)(t);
 	}
-	//#endregion
-	//#region \0@oxc-project+runtime@0.154.0/helpers/esm/toPropertyKey.js
+	// \0@oxc-project+runtime@0.156.0/helpers/esm/toPropertyKey.js
 	function toPropertyKey(t) {
 		var i = toPrimitive(t, "string");
 		return "symbol" == _typeof(i) ? i : i + "";
 	}
-	//#endregion
-	//#region \0@oxc-project+runtime@0.154.0/helpers/esm/defineProperty.js
+	// \0@oxc-project+runtime@0.156.0/helpers/esm/defineProperty.js
 	function _defineProperty(e, r, t) {
 		return (r = toPropertyKey(r)) in e ? Object.defineProperty(e, r, {
 			value: t,
@@ -36,8 +33,7 @@
 			writable: !0
 		}) : e[r] = t, e;
 	}
-	//#endregion
-	//#region src/captcha.ts
+	// src/captcha.ts
 	var CaptchaError = class extends Error {
 		constructor(..._args) {
 			super(..._args);
@@ -265,8 +261,7 @@
 			default: return null;
 		}
 	}
-	//#endregion
-	//#region src/text.ts
+	// src/text.ts
 	/**
 	* Drop anything tag-like between < and >: messages are shown as text.
 	* Entities such as &amp; are left as they are.
@@ -274,8 +269,7 @@
 	function stripTags(value = "") {
 		return value.replace(/(<([^>]+)>)/gi, "");
 	}
-	//#endregion
-	//#region src/notifier.ts
+	// src/notifier.ts
 	var _document$currentScri;
 	const STYLE_ID = "fetchit-toasts-style";
 	const MAX_TOASTS = 3;
@@ -488,8 +482,7 @@
 			}
 		};
 	}
-	//#endregion
-	//#region src/pow.ts
+	// src/pow.ts
 	const K = new Uint32Array([
 		1116352408,
 		1899447441,
@@ -641,8 +634,7 @@
 			}
 		}
 	}
-	//#endregion
-	//#region src/index.ts
+	// src/index.ts
 	/**
 	* Dispatch an event of FetchIt on document, its detail checked against the
 	* public types (FetchItEventMap). False when a listener cancelled it.
@@ -1556,5 +1548,4 @@
 		retry: "fetchit:retry"
 	});
 	window.FetchIt = FetchIt;
-	//#endregion
 })();
