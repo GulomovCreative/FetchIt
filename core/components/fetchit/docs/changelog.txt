@@ -75,6 +75,10 @@ FetchIt 4 replaces both with one package and installs over either of them.
   answer, and the script goes to its page.
 - The README said a full-page cache works through the retry of a stale token;
   without `fetchit.page_cache` a form from a cached page is not found.
+- The log of MODX got `opendir(): Failed to open directory` warnings from the
+  cleanup of old marks, forms and answers whenever it picked a shard directory
+  that was not created yet, which is most of them on a quiet site or after
+  "Clear cache". A shard that does not exist is now skipped.
 
 ## [4.0.0] - 2026-09-25
 
