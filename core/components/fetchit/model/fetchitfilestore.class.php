@@ -189,6 +189,9 @@ class FetchItFileStore implements FetchItStore
     public function pruneForms($shard, $now)
     {
         $dir = $this->modx->getCachePath() . 'fetchit/forms/' . $shard . '/';
+        if (!is_dir($dir)) {
+            return;
+        }
         $handle = @opendir($dir);
         if ($handle === false) {
             return;
@@ -360,6 +363,9 @@ class FetchItFileStore implements FetchItStore
     public function pruneAnswers($shard, $now)
     {
         $dir = $this->modx->getCachePath() . 'fetchit/answers/' . $shard . '/';
+        if (!is_dir($dir)) {
+            return;
+        }
         $handle = @opendir($dir);
         if ($handle === false) {
             return;
@@ -396,6 +402,9 @@ class FetchItFileStore implements FetchItStore
     public function pruneShard($shard)
     {
         $dir = $this->path() . $shard . '/';
+        if (!is_dir($dir)) {
+            return;
+        }
         $handle = @opendir($dir);
         if ($handle === false) {
             return;

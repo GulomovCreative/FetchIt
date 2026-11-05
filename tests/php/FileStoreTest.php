@@ -89,6 +89,21 @@ class FileStoreTest extends TestCase
         $this->assertFileExists($dir . 'ab00000000000new');
     }
 
+    public function testPruneSkipsShardsThatWereNeverCreated()
+    {
+        $store = $this->store();
+        $base = $this->modx->getCachePath() . 'fetchit/';
+
+        $store->pruneShard('76');
+        $store->pruneForms('76', 1000);
+        $store->pruneAnswers('76', 1000);
+
+        $this->assertDirectoryDoesNotExist($base . 'tokens/76');
+        $this->assertDirectoryDoesNotExist($base . 'forms/76');
+        $this->assertDirectoryDoesNotExist($base . 'answers/76');
+        $this->assertSame([], $this->logged);
+    }
+
     public function testItIsNotStrict()
     {
         $this->assertFalse($this->store()->strict());
