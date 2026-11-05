@@ -378,7 +378,7 @@ FetchIt 4 это один пакет для MODX 2.8 и MODX 3 вместо ли
 - повторная отправка, пока идёт запрос, игнорируется;
 - `method` и `data-fetchit` ставятся последними атрибутами тега формы.
 
-Полный список изменений в [changelog](core/components/fetchit/docs/changelog.txt).
+Полный список изменений — в [CHANGELOG.ru.md](CHANGELOG.ru.md); он же по-английски в [changelog](core/components/fetchit/docs/changelog.txt), который едет в пакете.
 
 ## Требования
 
@@ -457,7 +457,7 @@ CI проверяет каждый PR: синтаксис PHP 7.4–8.4, PHPUnit
 Релиз:
 
 1. Поднять версию в `_build/config.inc.php` (и при необходимости `release`, например `alpha` → `pl`) и `core/components/fetchit/model/fetchit.class.php`, в `package.json` и `package-lock.json` через `npm version X.Y.Z --no-git-tag-version`.
-2. Добавить в `core/components/fetchit/docs/changelog.txt` раздел `## [X.Y.Z] - ГГГГ-ММ-ДД`.
+2. Добавить раздел `## [X.Y.Z] - ГГГГ-ММ-ДД` в `core/components/fetchit/docs/changelog.txt` и его перевод в `CHANGELOG.ru.md`.
 3. Слить это в `master` и запушить тег: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 
 Workflow проверит версию, соберёт пакет, прогонит его на MODX 2 и 3 и только потом создаст GitHub-релиз с пакетом. Заметки к релизу собираются из коммитов `feat`, `fix`, `perf` и `refactor` ([conventional commits](https://www.conventionalcommits.org/ru/)); если таких нет, берётся раздел из changelog.
