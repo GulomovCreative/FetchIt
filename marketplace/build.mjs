@@ -40,13 +40,24 @@ const escape = text => text
   .replace(/"/g, '&quot;')
   .replace(/'/g, '&#x27;')
 
+// A URL goes into an attribute, and modstore decodes entities when it saves the
+// description, so it must be a plain http(s), mailto, anchor or site-relative
+// address with no quote or angle bracket in it.
+function url (value) {
+  const href = value.trim()
+  if (!/^(https?:\/\/|mailto:|#|\/)/i.test(href) || /["'<>\s]/.test(href)) {
+    throw new Error(`Bad URL in the markdown: ${value}`)
+  }
+  return escape(href)
+}
+
 // Inline markdown, on already escaped text: code first, so that the markup
 // inside a code span is left alone.
 function inline (text) {
   return escape(text)
     .replace(/`([^`]+)`/g, (all, code) => plain ? code : `<kbd>${code}</kbd>`)
     .replace(/\*\*([^*]+)\*\*/g, (all, bold) => `<strong>${bold}</strong>`)
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (all, label, href) => `<a href="${href}">${label}</a>`)
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (all, label, href) => `<a href="${url(href.replace(/&amp;/g, '&'))}">${label}</a>`)
 }
 
 function section (markdown, heading) {
@@ -103,9 +114,10 @@ function render (lines) {
     if (image) {
       // modstore decodes the entities of the description when it saves it, so a
       // &quot; in alt text comes back as a raw quote and breaks the tag: curly
-      // quotes go in instead.
-      const alt = escape(image[1].replace(/"([^"]*)"/g, '\u201c$1\u201d'))
-      blocks.push([`<img src="${image[2]}" alt="${alt}">`, '\n\n'])
+      // quotes go in instead, paired when they come in pairs, any left alone
+      // becomes a closing one.
+      const alt = escape(image[1].replace(/"([^"]*)"/g, '\u201c$1\u201d').replace(/"/g, '\u201d'))
+      blocks.push([`<img src="${url(image[2])}" alt="${alt}">`, '\n\n'])
       continue
     }
     blocks.push([inline(line), '\n\n'])
