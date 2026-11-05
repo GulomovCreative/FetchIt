@@ -1,0 +1,64 @@
+FetchIt submits the forms of a site with the Fetch API: no page reload, no jQuery or other libraries. The forms are processed by FormIt, with all its hooks and validation, or by a snippet of your own. Every form is protected from spam from the start: a single-use token, a fill time, a trap field and a limit of submissions, and a proof of work and a captcha when you need them. One package installs on MODX 2.8 and on MODX 3.
+
+<h3>The snippet call</h3>
+The call must be uncached: every output of the form has a token of its own.
+
+<pre class="notranslate">[[!FetchIt?
+  &amp;form=`myForm.tpl`
+  &amp;hooks=`email`
+  &amp;emailTo=`info@example.com`
+  &amp;validate=`name:required,email:email:required`
+  &amp;successMessage=`Your message has been sent`
+]]</pre>
+The properties <kbd>&amp;hooks</kbd>, <kbd>&amp;validate</kbd>, <kbd>&amp;emailTo</kbd> and the rest go to FormIt as they are, with no wrappers. Instead of FormIt you can name a snippet of your own: it gets the fields sent and answers through <kbd>$FetchIt-&gt;success()</kbd> or <kbd>$FetchIt-&gt;error()</kbd>.
+
+<h3>Your own markup</h3>
+The component brings no ready-made form: all it takes is a chunk with attributes. <kbd>data-error=&quot;name&quot;</kbd> gets the error of the field, the field itself gets <kbd>aria-invalid</kbd> and the class from a system setting, and <kbd>data-success</kbd> and <kbd>data-validation-error</kbd> get the message of the form.
+
+<pre class="notranslate">&lt;form action=&quot;[[~[[*id]]]]&quot; method=&quot;post&quot;&gt;
+  &lt;input type=&quot;email&quot; name=&quot;email&quot; value=&quot;[[+fi.email]]&quot;&gt;
+  &lt;span data-error=&quot;email&quot;&gt;[[+fi.error.email]]&lt;/span&gt;
+  &lt;button type=&quot;submit&quot;&gt;Send&lt;/button&gt;
+&lt;/form&gt;</pre>
+Chunks go through pdoTools, with Fenom and <kbd>@FILE</kbd>, on MODX 2 and MODX 3. A ready example, <kbd>tpl.FetchIt.example</kbd>, comes with the package.
+
+<h3>Spam protection out of the box</h3>
+The checks run before FormIt and before your snippet, both for FetchIt submissions and for a form sent without JavaScript.
+
+<ul><li><strong>Token.</strong> The form gets a hidden field with a signature of the key of the form, the time it was output and a random number. A token is used once and needs no session. A new one is given only in answer to a well-signed token of the same form, so a bot cannot send the form without loading the page.</li><li><strong>Fill time.</strong> A form sent sooner than <kbd>fetchit.protection.min_time</kbd> seconds after the page was output (3 by default) is refused.</li><li><strong>Trap.</strong> A hidden field with a random name per installation: people do not see it and browser autofill does not recognise it. A bot that fills it gets a success answer, but the form is not processed and no email goes out.</li><li><strong>Limit.</strong> At most <kbd>fetchit.protection.rate_limit</kbd> submissions of a form from one address within <kbd>fetchit.protection.rate_window</kbd> seconds — 10 in 10 minutes by default. Every attempt with a well-signed token counts, refused ones too.</li></ul>
+The service fields are removed from <kbd>$_POST</kbd> before FormIt runs and never reach emails. The signing key is generated at install. Behind a proxy or a CDN the visitor&#x27;s address is taken from the header named in the settings — otherwise the limit would be one for the whole site.
+
+A refusal comes as an ordinary error of the form: a message from the lexicon, the <kbd>fetchit:error</kbd> event and a notification. When the token of the page is stale — a page from a cache, a page open for long, a new key — FetchIt sends the form once more with a new token by itself, and the visitor notices nothing.
+
+<h3>Proof of work and captcha</h3>
+Both are off by default and help when spam gets through the main checks.
+
+<strong>Proof of work.</strong> <kbd>fetchit.protection.pow</kbd> sets the difficulty in bits. The browser looks for a number whose SHA-256 of <kbd>token:number</kbd> starts with that many zero bits and sends it with the form. Solving starts as soon as the visitor enters the form, so the solution is usually ready by the time they press the button, while every submission costs a bot processor time. 16 bits are about 65 thousand hashes, about a third of a second on a computer; every bit doubles the time.
+
+<strong>Captcha.</strong> Cloudflare Turnstile, Google reCAPTCHA v3 or Yandex SmartCaptcha, chosen with a setting, with the keys from the provider&#x27;s dashboard. FetchIt adds the provider&#x27;s script, gets its answer before sending and checks it on the server last among the checks, so bots without a token never reach the provider. When the provider is unavailable or does not accept the key, the form is refused with a message of its own and the cause is logged.
+
+<h3>It works without JavaScript too</h3>
+With FormIt the form is sent the usual way, and the messages and the values entered come back through its placeholders. The protection works here as well. The exceptions are the proof of work and the captcha: those need JavaScript.
+
+<h3>Notifications</h3>
+With <kbd>fetchit.frontend.default.notifier</kbd> the answers of the server are shown as notifications in a corner of the page. The component pulls in no libraries of its own: the notifications are its own.
+
+<img src="https://file.modx.pro/files/f/f/8/ff89684caf0c699222cbaf7c8b84fb68.png" alt="The built-in notifications of FetchIt: an error and a successful submission">
+
+Screen readers hear them from two hidden live regions: an error at once, a success when the reader is idle. A notification closes with its button or by itself after six seconds, and the countdown stops while the pointer or the focus is on it. The colours are CSS variables, by default the pastel shades of Tailwind CSS 4 with a text contrast of about 6.5:1. When the site shows messages its own way, <kbd>FetchIt.Message</kbd> takes any library: Bootstrap, SweetAlert2, anything.
+
+<h3>Events and TypeScript</h3>
+<kbd>fetchit:before</kbd>, <kbd>fetchit:after</kbd>, <kbd>fetchit:success</kbd>, <kbd>fetchit:error</kbd> and <kbd>fetchit:reset</kbd> are dispatched on <kbd>document</kbd>, with the form, its data and the answer of the server in <kbd>detail</kbd>. Any of them can be cancelled: add fields before sending, show a modal, send an event to analytics.
+
+<pre class="notranslate">document.addEventListener(&#x27;fetchit:success&#x27;, ({ detail }) =&gt; {
+  gtag(&#x27;event&#x27;, &#x27;form_submit&#x27;, { form_id: detail.form.id })
+})</pre>
+The TypeScript types ship next to the script — <kbd>fetchit.d.ts</kbd> with the class, the instances of forms and the <kbd>detail</kbd> of every event. The script itself is type-checked against that same file, so the types and the code cannot drift apart.
+
+<h3>No dependencies</h3>
+The script needs no jQuery or other libraries: the native Fetch API and <kbd>FormData</kbd>, files included. Minified it is 19 KB, about 7 KB over the network in gzip. It is loaded with <kbd>defer</kbd> and loads nothing else, except the script of the captcha provider when a captcha is on. A page can hold as many forms as you like, each with its own key and its own handler.
+
+<h3>One package for MODX 2.8 and MODX 3</h3>
+There used to be two: the 1.x line for MODX 2 and 3.x for MODX 3. FetchIt 4 installs over either of them, and the system settings and chunks stay as they are; the snippet calls on your pages need no changes. The API of the earlier versions works on both versions of MODX: <kbd>FetchIt::service($modx)</kbd>, the <kbd>FetchIt\FetchIt</kbd> class, the earlier names of the methods.
+
+What may affect your code: forms get the service fields of the protection, so a script of your own instead of the bundled one must send the token; the notifications no longer load Notyf; <kbd>fetchit:error</kbd> now fires on a failed request too. The full list is in the changelog and in the README on GitHub.
