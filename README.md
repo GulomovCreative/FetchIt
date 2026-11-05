@@ -457,7 +457,7 @@ The database store is tested on SQLite in the usual PHPUnit run, and in CI on My
 To release:
 
 1. Raise the version in `_build/config.inc.php` (and `release` when needed, `alpha` → `pl` for example) and `core/components/fetchit/model/fetchit.class.php`, and in `package.json` and `package-lock.json` with `npm version X.Y.Z --no-git-tag-version`.
-2. Add a `## [X.Y.Z] - YYYY-MM-DD` section to `core/components/fetchit/docs/changelog.txt`.
+2. Add a `## [X.Y.Z] - YYYY-MM-DD` section to `core/components/fetchit/docs/changelog.txt`, and its Russian translation to `CHANGELOG.ru.md`.
 3. Merge it into `master` and push a tag: `git tag vX.Y.Z && git push origin vX.Y.Z`.
 
 The workflow checks the version, builds the package, runs it on MODX 2 and 3, and only then creates the GitHub release with the package. The release notes come from the `feat`, `fix`, `perf` and `refactor` commits ([conventional commits](https://www.conventionalcommits.org/)); when there are none, from the changelog section.
